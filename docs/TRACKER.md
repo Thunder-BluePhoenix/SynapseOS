@@ -1,6 +1,6 @@
 # SynapseOS — Implementation Tracker
 
-> Last updated: 2026-06-03 (Phase 2/3: KAN symbolic + Mamba data prep + SFT generator done — 190/190 tests passing)
+> Last updated: 2026-06-04 (REST API + evaluation framework done — 221/221 tests passing, overall eval grade A 94.5%)
 
 ---
 
@@ -14,7 +14,7 @@
 | [Phase 4 — Advanced Capabilities](Phase4_Advanced_Capabilities.md) | Weeks 13–20 | In Progress | 65% |
 | [Phase 5 — SynapseOS](Phase5_SynapseOS.md) | Week 21+ | In Progress | 100% CPU |
 
-**Active Phase:** Phase 5 CPU-COMPLETE — all CPU-runnable work done; GPU needed for Mamba, Liquid NN, Whisper, RL
+**Active Phase:** SYSTEM COMPLETE (CPU) — REST API + evaluator added; GPU needed for Mamba, Liquid NN, Whisper, RL
 
 ---
 
@@ -68,6 +68,8 @@
 
 **Phase 3 blockers:** Output synthesizer SFT data generated (`output_synth_data.py`); fine-tuning still needs GPU + `pip install trl transformers`
 **New:** `scripts/prepare_mamba_data.py` — corpus analysis + tokenizer + window packing, ready for GPU session
+**New:** `synapseos/api/` — FastAPI REST server (`/query`, `/agents`, `/memory`, `/kg`, `/voice`, `/benchmark`)
+**New:** `synapseos/eval/` — quality evaluator (field accuracy A, rule coverage A, code quality C, routing A, latency A, agent quality A → overall A 94.5%)
 
 ---
 
