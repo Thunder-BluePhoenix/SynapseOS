@@ -1,6 +1,6 @@
 # SynapseOS — Implementation Tracker
 
-> Last updated: 2026-05-23 (Phase 2 trainers complete on CPU — Phase 3 bridges done)
+> Last updated: 2026-06-03 (Phase 5 foundations: memory architecture + cognitive controller done)
 
 ---
 
@@ -12,9 +12,9 @@
 | [Phase 2 — Neural Components](Phase2_Neural_Components.md) | Weeks 5–8 | In Progress | 60% |
 | [Phase 3 — Integration](Phase3_Integration.md) | Weeks 9–12 | In Progress | 80% |
 | [Phase 4 — Advanced Capabilities](Phase4_Advanced_Capabilities.md) | Weeks 13–20 | In Progress | 65% |
-| [Phase 5 — SynapseOS](Phase5_SynapseOS.md) | Week 21+ | Not Started | 0% |
+| [Phase 5 — SynapseOS](Phase5_SynapseOS.md) | Week 21+ | In Progress | 25% |
 
-**Active Phase:** Phase 2 / Phase 3 in parallel — GPU needed for Mamba + full-scale training
+**Active Phase:** Phase 5 foundations running — GPU still needed for Mamba, CLIP, Whisper, RL
 
 ---
 
@@ -99,17 +99,25 @@
 
 | Task | Status | Notes |
 |---|---|---|
-| Unified parallel cognitive flow | Not Started | |
+| Episodic memory (vector similarity retrieval) | **Done** | `synapseos/phase5/memory.py` — numpy cosine, 2k entry rolling store |
+| Semantic memory (KG-backed fact store) | **Done** | `synapseos/phase5/memory.py` — 3101 KG facts ingested, add_fact API |
+| Working memory (TTL-based scratchpad) | **Done** | `synapseos/phase5/memory.py` — per-session, expiring slots |
+| Memory controller (unified read/write) | **Done** | `synapseos/phase5/memory.py` — get_context() packs all three tiers |
+| Mode router (deterministic input classifier) | **Done** | `synapseos/phase5/cognitive_controller.py` — keyword signals, confidence scores |
+| Parallel stream executor (ThreadPoolExecutor) | **Done** | `synapseos/phase5/cognitive_controller.py` — per-mode timeout, concurrent |
+| Result synthesizer (merge + output routing) | **Done** | `synapseos/phase5/cognitive_controller.py` — code/language/both |
+| CognitiveController end-to-end | **Done** | `synapseos/phase5/cognitive_controller.py` — 37/37 tests passing |
 | Distributed multi-node architecture | Not Started | |
-| Voice interface (streaming Whisper + TTS) | Not Started | |
+| Voice interface (streaming Whisper + TTS) | Not Started | Needs GPU + `openai-whisper` |
 | Production liquid layer monitoring + drift control | Not Started | |
-| Cross-domain analogy engine | Not Started | |
+| Cross-domain analogy engine (Phase 5 scale) | Not Started | |
 | ARIEL sub-agent (business logic) | Not Started | |
 | NYX sub-agent (security) | Not Started | |
 | NOVA sub-agent (optimization) | Not Started | |
 | ATLAS sub-agent (infrastructure) | Not Started | |
 
-**Phase 5 blockers:** Phase 4 not complete
+**Tests:** `tests/test_phase5.py` — **37/37 passing**
+**Phase 5 blockers:** Sub-agents, voice, distributed arch — next CPU-runnable targets: ARIEL + NYX sub-agents
 
 ---
 
@@ -147,11 +155,11 @@
 
 | Mode | Name | Phase | Status |
 |---|---|---|---|
-| Mode 1 | Focused Reasoning | Phase 3 | Not Started |
-| Mode 2 | Creative Generation | Phase 4 | Not Started |
-| Mode 3 | New Thought Synthesis | Phase 4 | Not Started |
-| Mode 4 | Code Thinking | Phase 3 | Not Started |
-| Mode 5 | Idle Exploration | Phase 4 | Not Started |
+| Mode 1 | Focused Reasoning | Phase 3 | **Done** — neurosymbolic pipeline, routed by CognitiveController |
+| Mode 2 | Creative Generation | Phase 4 | **Done** — creativity engine, routed by CognitiveController |
+| Mode 3 | New Thought Synthesis | Phase 4 | **Done** — cross-domain analogy, routed by CognitiveController |
+| Mode 4 | Code Thinking | Phase 3/4 | **Done** — program synthesis, routed by CognitiveController |
+| Mode 5 | Idle Exploration | Phase 4 | **Done** — idle loop daemon, integrated into CognitiveController |
 
 ---
 
