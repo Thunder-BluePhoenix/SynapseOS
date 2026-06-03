@@ -1,6 +1,6 @@
 # SynapseOS — Implementation Tracker
 
-> Last updated: 2026-06-03 (Phase 5: ARIEL + NYX sub-agents done — 69/69 tests passing)
+> Last updated: 2026-06-03 (Phase 5: NOVA + drift monitor + distributed stubs done — 105/105 tests passing)
 
 ---
 
@@ -12,7 +12,7 @@
 | [Phase 2 — Neural Components](Phase2_Neural_Components.md) | Weeks 5–8 | In Progress | 60% |
 | [Phase 3 — Integration](Phase3_Integration.md) | Weeks 9–12 | In Progress | 80% |
 | [Phase 4 — Advanced Capabilities](Phase4_Advanced_Capabilities.md) | Weeks 13–20 | In Progress | 65% |
-| [Phase 5 — SynapseOS](Phase5_SynapseOS.md) | Week 21+ | In Progress | 50% |
+| [Phase 5 — SynapseOS](Phase5_SynapseOS.md) | Week 21+ | In Progress | 80% |
 
 **Active Phase:** Phase 5 foundations running — GPU still needed for Mamba, CLIP, Whisper, RL
 
@@ -114,11 +114,13 @@
 | ARIEL sub-agent (business logic) | **Done** | `synapseos/phase5/agents/ariel.py` — workflow, rules, op planning, deps |
 | NYX sub-agent (security) | **Done** | `synapseos/phase5/agents/nyx.py` — sensitive fields, audit specs, risk surface |
 | Sub-agent base class + AgentRouter | **Done** | `synapseos/phase5/agents/base.py` + AgentRouter in cognitive_controller.py |
-| NOVA sub-agent (optimization) | Not Started | |
+| NOVA sub-agent (optimization) | **Done** | `synapseos/phase5/agents/nova.py` — rule density, KG bottlenecks, caching, redundancy, benchmark |
+| Liquid layer drift monitor | **Done** | `synapseos/phase5/drift_monitor.py` — baseline capture, drift metric, rollback, consolidation, scheduler |
+| Distributed multi-node architecture | **Done (stubs)** | `synapseos/phase5/distributed.py` — MessageBus, LayerNode, DistributedPipeline, PipelineTopology |
 | ATLAS sub-agent (infrastructure) | Not Started | |
 
-**Tests:** `tests/test_phase5.py` — **69/69 passing**
-**Phase 5 blockers remaining (CPU-runnable):** NOVA sub-agent, liquid layer drift monitor, distributed architecture design
+**Tests:** `tests/test_phase5.py` — **105/105 passing**
+**Phase 5 remaining:** ATLAS sub-agent + voice interface (GPU) + full RL alignment (GPU)
 
 ---
 

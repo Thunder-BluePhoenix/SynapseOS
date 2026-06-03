@@ -2,5 +2,6 @@
 from synapseos.phase5.agents.base import SubAgent, AgentResult, AgentCapability
 from synapseos.phase5.agents.ariel import ARIELAgent
 from synapseos.phase5.agents.nyx import NYXAgent
+from synapseos.phase5.agents.nova import NOVAAgent
 
-__all__ = ["SubAgent", "AgentResult", "AgentCapability", "ARIELAgent", "NYXAgent"]
+__all__ = ["SubAgent", "AgentResult", "AgentCapability", "ARIELAgent", "NYXAgent", "NOVAAgent"]

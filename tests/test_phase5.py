@@ -33,6 +33,13 @@ from synapseos.phase5.cognitive_controller import (
 from synapseos.phase5.agents.base import SubAgent, AgentResult, AgentCapability
 from synapseos.phase5.agents.ariel import ARIELAgent
 from synapseos.phase5.agents.nyx import NYXAgent
+from synapseos.phase5.agents.nova import NOVAAgent
+from synapseos.phase5.drift_monitor import DriftMonitor, AdaptationLog, WeightSnapshot, DriftMetric
+from synapseos.phase5.distributed import (
+    MessageBus, LayerNode, LayerRequest, LayerResponse,
+    LayerType, NodeConfig, PipelineTopology, DistributedPipeline,
+    TextEncoderNode, NeurosymbolicNode, OutputRendererNode,
+)
 
 
 results = []
@@ -796,6 +803,482 @@ def test_controller_agent_results_in_dict():
 
 
 # ---------------------------------------------------------------------------
+# NOVA sub-agent tests
+# ---------------------------------------------------------------------------
+
+_nova = None
+def get_nova():
+    global _nova
+    if _nova is None:
+        _nova = NOVAAgent(
+            kg_path="data/graph/knowledge_graph.json",
+            rules_path="data/rules/rules.json",
+        )
+    return _nova
+
+
+@test("NOVA: can_handle scores optimization queries high")
+def test_nova_can_handle_high():
+    agent = get_nova()
+    score = agent.can_handle("which doctypes should we cache for better performance?")
+    assert score >= 0.55, f"Expected ≥0.55, got {score}"
+
+
+@test("NOVA: can_handle scores security queries low")
+def test_nova_can_handle_low():
+    agent = get_nova()
+    score = agent.can_handle("audit the security permissions")
+    assert score < 0.60, f"Expected <0.60 for security query, got {score}"
+
+
+@test("NOVA: rule_density_report returns sorted list")
+def test_nova_rule_density():
+    agent = get_nova()
+    entries = agent.rule_density_report(top_k=5)
+    assert len(entries) <= 5
+    assert len(entries) >= 1
+    for i in range(len(entries) - 1):
+        assert entries[i].rule_count >= entries[i+1].rule_count, "Expected sorted descending"
+
+
+@test("NOVA: kg_bottlenecks returns nodes with degree info")
+def test_nova_kg_bottlenecks():
+    agent = get_nova()
+    bottlenecks = agent.kg_bottlenecks(top_k=5)
+    assert len(bottlenecks) >= 1
+    for b in bottlenecks:
+        assert b.combined == b.in_degree + b.out_degree
+        assert b.combined >= 1
+
+
+@test("NOVA: cache_recommendations returns valid entries")
+def test_nova_cache_recommendations():
+    agent = get_nova()
+    recs = agent.cache_recommendations(top_k=8)
+    assert isinstance(recs, list)
+    for r in recs:
+        assert r.priority in ("HIGH", "MEDIUM", "LOW")
+        assert r.in_degree >= 1
+
+
+@test("NOVA: detect_redundancies returns findings with duplicate_count >= 2")
+def test_nova_redundancies():
+    agent = get_nova()
+    findings = agent.detect_redundancies(top_k=10)
+    assert isinstance(findings, list)
+    for f in findings:
+        assert f.duplicate_count >= 2, f"Expected ≥2 duplicates, got {f.duplicate_count}"
+
+
+@test("NOVA: system_benchmark returns populated SystemBenchmark")
+def test_nova_benchmark():
+    agent = get_nova()
+    bm = agent.system_benchmark()
+    assert bm.kg_nodes > 0
+    assert bm.kg_edges > 0
+    assert bm.total_rules > 0
+    assert bm.avg_rules_per_doctype > 0
+    assert bm.most_connected_node != ""
+    assert bm.most_rule_dense_doctype != ""
+
+
+@test("NOVA: handle() returns AgentResult with output")
+def test_nova_handle_basic():
+    agent = get_nova()
+    result = agent.handle("show the full system optimization report")
+    assert result.agent_name == "NOVA"
+    assert result.output, "Expected non-empty output"
+    assert result.traceable
+    assert result.latency_ms > 0
+
+
+@test("NOVA: handle() routes cache query")
+def test_nova_handle_cache():
+    agent = get_nova()
+    result = agent.handle("which doctypes should we cache?")
+    assert result.agent_name == "NOVA"
+    assert "recommendations" in result.structured
+
+
+@test("NOVA: handle() routes bottleneck query")
+def test_nova_handle_bottleneck():
+    agent = get_nova()
+    result = agent.handle("identify the KG connectivity bottlenecks")
+    assert result.agent_name == "NOVA"
+    assert "bottlenecks" in result.structured
+
+
+@test("NOVA: handle() routes redundancy query")
+def test_nova_handle_redundancy():
+    agent = get_nova()
+    result = agent.handle("find redundant duplicate rules in the system")
+    assert result.agent_name == "NOVA"
+    assert "redundancies" in result.structured
+
+
+@test("NOVA: handle() routes benchmark query")
+def test_nova_handle_benchmark():
+    agent = get_nova()
+    result = agent.handle("show system benchmark stats report")
+    assert result.agent_name == "NOVA"
+    assert "kg_nodes" in result.structured
+
+
+@test("NOVA: confidence is in [0, 1]")
+def test_nova_confidence_range():
+    agent = get_nova()
+    result = agent.handle("optimize caching strategy for the pipeline")
+    assert 0.0 <= result.confidence <= 1.0, f"Confidence out of range: {result.confidence}"
+
+
+@test("controller: NOVA loaded in agent router")
+def test_controller_nova_loaded():
+    c = get_controller()
+    agents = c.stats()["agents_loaded"]
+    assert "NOVA" in agents, f"NOVA missing from {agents}"
+
+
+@test("controller: optimization query routes to NOVA")
+def test_controller_nova_routing():
+    c = get_controller()
+    result = c.think("optimize and benchmark the system performance")
+    agent_names = [a.agent_name for a in result.agent_results]
+    assert "NOVA" in agent_names, f"Expected NOVA in agent_results: {agent_names}"
+
+
+# ---------------------------------------------------------------------------
+# Drift Monitor tests
+# ---------------------------------------------------------------------------
+
+import torch
+import torch.nn as nn
+
+def _small_model() -> nn.Module:
+    return nn.Sequential(nn.Linear(8, 4), nn.Tanh(), nn.Linear(4, 2))
+
+
+@test("drift monitor: initialises and reports stats")
+def test_drift_init():
+    monitor = DriftMonitor(
+        checkpoint_dir="/tmp/test_drift_ckpt",
+        log_path="/tmp/test_drift_log.json",
+    )
+    stats = monitor.stats()
+    assert "snapshots" in stats
+    assert "drift_threshold" in stats
+    assert "rollback_threshold" in stats
+
+
+@test("drift monitor: capture() saves snapshot and returns id")
+def test_drift_capture():
+    monitor = DriftMonitor(checkpoint_dir="/tmp/test_drift_ckpt", log_path="/tmp/test_drift_log.json")
+    model = _small_model()
+    snap_id = monitor.capture(model, label="test_capture")
+    assert snap_id, "Expected non-empty snapshot ID"
+    snap = monitor.get_snapshot(snap_id)
+    assert snap is not None
+    assert snap.label == "test_capture"
+    assert len(snap.param_norms) > 0
+    assert snap.total_params > 0
+
+
+@test("drift monitor: capture_from_file() works with saved .pt")
+def test_drift_capture_from_file():
+    import tempfile
+    model = _small_model()
+    with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
+        torch.save(model.state_dict(), f.name)
+        tmp_path = f.name
+
+    monitor = DriftMonitor(checkpoint_dir="/tmp/test_drift_ckpt", log_path="/tmp/test_drift_log.json")
+    snap_id = monitor.capture_from_file(tmp_path, label="file_test")
+    snap = monitor.get_snapshot(snap_id)
+    assert snap is not None
+    assert len(snap.param_norms) > 0
+
+
+@test("drift monitor: measure() detects zero drift on same model")
+def test_drift_measure_zero():
+    monitor = DriftMonitor(checkpoint_dir="/tmp/test_drift_ckpt", log_path="/tmp/test_drift_log.json")
+    model = _small_model()
+    baseline_id = monitor.capture(model, label="baseline")
+    metric = monitor.measure(model, baseline_id)
+    # Same model, same weights → zero drift
+    assert metric.overall_drift < 1e-4, f"Expected near-zero drift, got {metric.overall_drift}"
+    assert metric.within_threshold
+    assert not metric.alert
+    assert not metric.force_rollback
+
+
+@test("drift monitor: measure() detects high drift after perturbation")
+def test_drift_measure_perturbed():
+    monitor = DriftMonitor(
+        checkpoint_dir="/tmp/test_drift_ckpt",
+        log_path="/tmp/test_drift_log.json",
+        drift_threshold=0.10,
+        rollback_threshold=0.25,
+    )
+    model = _small_model()
+    baseline_id = monitor.capture(model, label="pre_perturb")
+
+    # Apply large perturbation
+    with torch.no_grad():
+        for p in model.parameters():
+            p.data += torch.randn_like(p.data) * 2.0   # large noise
+
+    metric = monitor.measure(model, baseline_id)
+    assert metric.overall_drift > 0.0, "Expected non-zero drift after perturbation"
+
+
+@test("drift monitor: measure_between() compares two snapshots")
+def test_drift_measure_between():
+    monitor = DriftMonitor(checkpoint_dir="/tmp/test_drift_ckpt", log_path="/tmp/test_drift_log.json")
+    model_a = _small_model()
+    model_b = _small_model()  # different init
+    id_a = monitor.capture(model_a, label="snap_a")
+    id_b = monitor.capture(model_b, label="snap_b")
+    metric = monitor.measure_between(id_a, id_b)
+    assert isinstance(metric.overall_drift, float)
+    assert metric.baseline_id == id_a
+    assert metric.current_id == id_b
+
+
+@test("drift monitor: rollback() restores model weights")
+def test_drift_rollback():
+    monitor = DriftMonitor(checkpoint_dir="/tmp/test_drift_ckpt", log_path="/tmp/test_drift_log.json")
+    model = _small_model()
+    baseline_id = monitor.capture(model, label="rollback_baseline")
+
+    # Get original first param value
+    orig_val = next(model.parameters()).data[0, 0].item()
+
+    # Perturb
+    with torch.no_grad():
+        for p in model.parameters():
+            p.data.fill_(99.0)
+
+    # Rollback
+    monitor.rollback(model, baseline_id)
+    restored_val = next(model.parameters()).data[0, 0].item()
+    assert abs(restored_val - orig_val) < 1e-5, f"Expected {orig_val}, got {restored_val}"
+
+
+@test("drift monitor: adaptation log records measurements")
+def test_drift_log_records():
+    monitor = DriftMonitor(checkpoint_dir="/tmp/test_drift_ckpt", log_path="/tmp/test_drift_log2.json")
+    monitor.log.measurements.clear()
+    model_a = _small_model()
+    model_b = _small_model()
+    id_a = monitor.capture(model_a, label="log_test_a")
+    id_b = monitor.capture(model_b, label="log_test_b")
+    monitor.measure_between(id_a, id_b)
+    assert len(monitor.log.measurements) >= 1
+
+
+@test("drift monitor: consolidate() blends adapted weights")
+def test_drift_consolidate():
+    monitor = DriftMonitor(checkpoint_dir="/tmp/test_drift_ckpt", log_path="/tmp/test_drift_log3.json")
+    base    = _small_model()
+    adapted = _small_model()
+
+    # Capture baseline first
+    baseline_id = monitor.capture(base, label="consol_base")
+
+    # Get base param before consolidation
+    p_before = next(base.parameters()).data.clone()
+
+    new_id = monitor.consolidate(adapted, base, alpha=0.1, label="consolidated")
+    assert new_id, "Expected non-empty consolidated snapshot ID"
+
+    # Base weights should have changed (blended)
+    p_after = next(base.parameters()).data
+    assert not torch.allclose(p_before, p_after), "Expected weights to change after consolidation"
+
+
+@test("drift monitor: list_snapshots returns snapshots sorted by timestamp")
+def test_drift_list_snapshots():
+    monitor = DriftMonitor(checkpoint_dir="/tmp/test_drift_ckpt", log_path="/tmp/test_drift_log.json")
+    snaps = monitor.list_snapshots()
+    assert isinstance(snaps, list)
+    if len(snaps) >= 2:
+        assert snaps[0].timestamp >= snaps[1].timestamp
+
+
+# ---------------------------------------------------------------------------
+# Distributed Pipeline tests
+# ---------------------------------------------------------------------------
+
+@test("distributed: MessageBus registers and routes requests")
+def test_bus_register_route():
+    bus = MessageBus()
+    responses = []
+
+    def handler(req: LayerRequest) -> LayerResponse:
+        return LayerResponse(
+            request_id=req.request_id,
+            layer_type=req.layer_type,
+            payload={"echo": req.payload.get("text", "")},
+            source_node="test_node",
+            success=True,
+        )
+
+    bus.register_node("test_node", handler)
+    assert bus.is_registered("test_node")
+
+    req = LayerRequest(
+        request_id="req-001",
+        layer_type=LayerType.TEXT_ENCODER,
+        payload={"text": "hello"},
+        source_node="client",
+    )
+    resp = bus.request("test_node", req)
+    assert resp.success
+    assert resp.payload["echo"] == "hello"
+
+
+@test("distributed: MessageBus returns error for unknown node")
+def test_bus_unknown_node():
+    bus = MessageBus()
+    req = LayerRequest(
+        request_id="req-002",
+        layer_type=LayerType.TEXT_ENCODER,
+        payload={"text": "hello"},
+        source_node="client",
+    )
+    resp = bus.request("nonexistent_node", req)
+    assert not resp.success
+    assert "not registered" in resp.error
+
+
+@test("distributed: TextEncoderNode produces latent vector")
+def test_text_encoder_node():
+    bus = MessageBus()
+    config = NodeConfig(node_id="enc-1", layer_type=LayerType.TEXT_ENCODER, endpoint="local")
+    node = TextEncoderNode(config, bus)
+
+    req = LayerRequest(
+        request_id="req-003",
+        layer_type=LayerType.TEXT_ENCODER,
+        payload={"text": "Sales Invoice validation"},
+        source_node="client",
+    )
+    resp = bus.request("enc-1", req)
+    assert resp.success
+    assert "latent" in resp.payload
+    assert len(resp.payload["latent"]) == 64
+
+
+@test("distributed: OutputRendererNode produces output string")
+def test_output_renderer_node():
+    bus = MessageBus()
+    config = NodeConfig(node_id="rend-1", layer_type=LayerType.OUTPUT_RENDERER, endpoint="local")
+    node = OutputRendererNode(config, bus)
+
+    req = LayerRequest(
+        request_id="req-004",
+        layer_type=LayerType.OUTPUT_RENDERER,
+        payload={"query": "What fields are required?", "facts": [{"f": "Customer"}]},
+        source_node="client",
+    )
+    resp = bus.request("rend-1", req)
+    assert resp.success
+    assert "output" in resp.payload
+    assert resp.payload["output"]
+
+
+@test("distributed: PipelineTopology local_default has 3 stages")
+def test_topology_local_default():
+    topo = PipelineTopology.local_default()
+    assert len(topo.stages) == 3
+    layer_types = {s["layer_type"] for s in topo.stages}
+    assert LayerType.TEXT_ENCODER.value in layer_types
+    assert LayerType.NEUROSYMBOLIC.value in layer_types
+    assert LayerType.OUTPUT_RENDERER.value in layer_types
+
+
+@test("distributed: PipelineTopology serialises to JSON and back")
+def test_topology_serialise():
+    import json
+    topo = PipelineTopology.local_default()
+    serialised = topo.to_json()
+    parsed = json.loads(serialised)
+    assert "stages" in parsed
+    assert len(parsed["stages"]) == 3
+
+
+@test("distributed: DistributedPipeline initialises with local topology")
+def test_distributed_pipeline_init():
+    pipeline = DistributedPipeline(
+        topology=PipelineTopology.local_default(),
+        kg_path="data/graph/knowledge_graph.json",
+        rules_path="data/rules/rules.json",
+    )
+    health = pipeline.health_check_all()
+    assert len(health) == 3
+    assert all(ok for ok in health.values())
+
+
+@test("distributed: DistributedPipeline.run() returns payload with stage trace")
+def test_distributed_pipeline_run():
+    pipeline = DistributedPipeline(
+        topology=PipelineTopology.local_default(),
+        kg_path="data/graph/knowledge_graph.json",
+        rules_path="data/rules/rules.json",
+    )
+    result = pipeline.run("What fields are required for Sales Invoice?")
+    assert "_stage_trace" in result
+    assert len(result["_stage_trace"]) == 3
+    for stage in result["_stage_trace"]:
+        assert "node" in stage
+        assert "success" in stage
+        assert "latency_ms" in stage
+
+
+@test("distributed: DistributedPipeline collects latency metrics")
+def test_distributed_pipeline_latency():
+    pipeline = DistributedPipeline(
+        topology=PipelineTopology.local_default(),
+        kg_path="data/graph/knowledge_graph.json",
+        rules_path="data/rules/rules.json",
+    )
+    pipeline.run("test latency query")
+    report = pipeline.latency_report()
+    assert len(report) == 3
+    for node_id, stats in report.items():
+        assert stats["calls"] >= 1
+
+
+@test("distributed: DistributedPipeline.node_stats() returns stats list")
+def test_distributed_pipeline_node_stats():
+    pipeline = DistributedPipeline(
+        topology=PipelineTopology.local_default(),
+        kg_path="data/graph/knowledge_graph.json",
+        rules_path="data/rules/rules.json",
+    )
+    stats = pipeline.node_stats()
+    assert len(stats) == 3
+    for s in stats:
+        assert "node_id" in s
+        assert "layer_type" in s
+        assert "healthy" in s
+
+
+@test("distributed: LayerRequest serialises and deserialises")
+def test_layer_request_serde():
+    req = LayerRequest(
+        request_id="r-001",
+        layer_type=LayerType.NEUROSYMBOLIC,
+        payload={"text": "hello", "query_type": "retrieve"},
+        source_node="pipeline",
+    )
+    d   = req.to_dict()
+    req2 = LayerRequest.from_dict(d)
+    assert req2.request_id == req.request_id
+    assert req2.layer_type == req.layer_type
+    assert req2.payload == req.payload
+
+
+# ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
 
@@ -874,6 +1357,45 @@ if __name__ == "__main__":
         test_controller_agent_nyx_routing,
         test_controller_routed_to_agent_field,
         test_controller_agent_results_in_dict,
+        # NOVA
+        test_nova_can_handle_high,
+        test_nova_can_handle_low,
+        test_nova_rule_density,
+        test_nova_kg_bottlenecks,
+        test_nova_cache_recommendations,
+        test_nova_redundancies,
+        test_nova_benchmark,
+        test_nova_handle_basic,
+        test_nova_handle_cache,
+        test_nova_handle_bottleneck,
+        test_nova_handle_redundancy,
+        test_nova_handle_benchmark,
+        test_nova_confidence_range,
+        test_controller_nova_loaded,
+        test_controller_nova_routing,
+        # Drift Monitor
+        test_drift_init,
+        test_drift_capture,
+        test_drift_capture_from_file,
+        test_drift_measure_zero,
+        test_drift_measure_perturbed,
+        test_drift_measure_between,
+        test_drift_rollback,
+        test_drift_log_records,
+        test_drift_consolidate,
+        test_drift_list_snapshots,
+        # Distributed Pipeline
+        test_bus_register_route,
+        test_bus_unknown_node,
+        test_text_encoder_node,
+        test_output_renderer_node,
+        test_topology_local_default,
+        test_topology_serialise,
+        test_distributed_pipeline_init,
+        test_distributed_pipeline_run,
+        test_distributed_pipeline_latency,
+        test_distributed_pipeline_node_stats,
+        test_layer_request_serde,
     ]
 
     for t in tests:

@@ -502,6 +502,11 @@ class AgentRouter:
             self._agents.append(NYXAgent(self._kg_path, self._rules_path))
         except Exception as e:
             print(f"[AgentRouter] NYX load failed: {e}")
+        try:
+            from synapseos.phase5.agents.nova import NOVAAgent
+            self._agents.append(NOVAAgent(self._kg_path, self._rules_path))
+        except Exception as e:
+            print(f"[AgentRouter] NOVA load failed: {e}")
 
     def score(self, query: str) -> list[tuple[float, Any]]:
         """Return (confidence, agent) pairs for agents above threshold, highest first."""
