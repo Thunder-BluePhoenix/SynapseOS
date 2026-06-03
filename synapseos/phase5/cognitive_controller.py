@@ -82,15 +82,18 @@ class CognitionResult:
     memory_context: dict       # summary of memory context used
     total_latency_ms: float
     confidence: float
+    agent_results: list = field(default_factory=list)   # AgentResult objects
+    routed_to_agent: str = ""                           # name of winning agent, if any
 
     def to_dict(self) -> dict:
         return {
-            "query":           self.query,
-            "modes_activated": [m.value for m in self.modes_activated],
-            "primary_output":  self.primary_output,
-            "output_type":     self.output_type,
-            "confidence":      round(self.confidence, 3),
-            "latency_ms":      round(self.total_latency_ms, 1),
+            "query":            self.query,
+            "modes_activated":  [m.value for m in self.modes_activated],
+            "primary_output":   self.primary_output,
+            "output_type":      self.output_type,
+            "confidence":       round(self.confidence, 3),
+            "latency_ms":       round(self.total_latency_ms, 1),
+            "routed_to_agent":  self.routed_to_agent,
             "mode_results": [
                 {
                     "mode":       r.mode.value,
@@ -100,6 +103,9 @@ class CognitionResult:
                     "output":     r.output[:200],
                 }
                 for r in self.mode_results
+            ],
+            "agent_results": [
+                a.to_dict() for a in self.agent_results
             ],
         }
 
@@ -458,6 +464,91 @@ class ResultSynthesizer:
 
 
 # ---------------------------------------------------------------------------
+# Agent Router
+# ---------------------------------------------------------------------------
+
+class AgentRouter:
+    """
+    Scores registered sub-agents against each query and dispatches to the
+    highest-confidence match(es) in parallel with (or instead of) generic modes.
+
+    Dispatch strategy:
+    - Score all agents with can_handle(query)
+    - If top agent confidence > AGENT_THRESHOLD, run it alongside modes
+    - Agent result is passed to ResultSynthesizer; if its confidence exceeds
+      all mode results it becomes the primary output
+    """
+
+    AGENT_THRESHOLD = 0.55
+
+    def __init__(
+        self,
+        kg_path: str = "data/graph/knowledge_graph.json",
+        rules_path: str = "data/rules/rules.json",
+    ):
+        self._agents: list = []
+        self._kg_path    = kg_path
+        self._rules_path = rules_path
+        self._load_agents()
+
+    def _load_agents(self) -> None:
+        try:
+            from synapseos.phase5.agents.ariel import ARIELAgent
+            self._agents.append(ARIELAgent(self._kg_path, self._rules_path))
+        except Exception as e:
+            print(f"[AgentRouter] ARIEL load failed: {e}")
+        try:
+            from synapseos.phase5.agents.nyx import NYXAgent
+            self._agents.append(NYXAgent(self._kg_path, self._rules_path))
+        except Exception as e:
+            print(f"[AgentRouter] NYX load failed: {e}")
+
+    def score(self, query: str) -> list[tuple[float, Any]]:
+        """Return (confidence, agent) pairs for agents above threshold, highest first."""
+        scored = [(a.can_handle(query), a) for a in self._agents]
+        scored = [(c, a) for c, a in scored if c >= self.AGENT_THRESHOLD]
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return scored
+
+    def dispatch(self, query: str, context: Any, timeout: float = 20.0) -> list:
+        """
+        Run all qualifying agents in parallel.
+        Returns list of AgentResult objects.
+        """
+        candidates = self.score(query)
+        if not candidates:
+            return []
+
+        results = []
+        with ThreadPoolExecutor(max_workers=len(candidates)) as pool:
+            futures = {
+                pool.submit(agent.handle, query, context): agent
+                for _, agent in candidates
+            }
+            for future in as_completed(futures, timeout=timeout * len(candidates)):
+                agent = futures[future]
+                try:
+                    results.append(future.result(timeout=timeout))
+                except Exception as e:
+                    from synapseos.phase5.agents.base import AgentResult
+                    results.append(AgentResult(
+                        agent_name=agent.name,
+                        query=query,
+                        output=f"[{agent.name} error: {e}]",
+                        structured={},
+                        confidence=0.0,
+                        latency_ms=0.0,
+                        traceable=False,
+                        error=str(e),
+                    ))
+        return results
+
+    @property
+    def agent_names(self) -> list[str]:
+        return [a.name for a in self._agents]
+
+
+# ---------------------------------------------------------------------------
 # Cognitive Controller
 # ---------------------------------------------------------------------------
 
@@ -476,18 +567,21 @@ class CognitiveController:
         memory_episodic_path: str = "data/memory/episodic.json",
         memory_semantic_path: str = "data/memory/semantic.json",
         kg_path: str = "data/graph/knowledge_graph.json",
+        rules_path: str = "data/rules/rules.json",
         mode_timeout: float = 30.0,
         max_parallel_modes: int = 2,
         enable_idle_loop: bool = False,
+        enable_agents: bool = True,
     ):
-        self.router    = ModeRouter()
-        self.executor  = ParallelExecutor(mode_timeout=mode_timeout)
-        self.synthesizer = ResultSynthesizer()
-        self.memory    = MemoryController(
+        self.router       = ModeRouter()
+        self.executor     = ParallelExecutor(mode_timeout=mode_timeout)
+        self.synthesizer  = ResultSynthesizer()
+        self.memory       = MemoryController(
             episodic_path=memory_episodic_path,
             semantic_path=memory_semantic_path,
             kg_path=kg_path,
         )
+        self.agent_router = AgentRouter(kg_path=kg_path, rules_path=rules_path) if enable_agents else None
         self.max_parallel_modes = max_parallel_modes
         self._idle_loop = None
 
@@ -524,7 +618,7 @@ class CognitiveController:
         ctx = self.memory.get_context(query)
         self.memory.set_working("current_query", query)
 
-        # 2. Route
+        # 2. Route to thinking modes
         if force_modes:
             modes = []
             for m in force_modes:
@@ -538,13 +632,37 @@ class CognitiveController:
         if not modes:
             modes = [ThinkingMode.MODE1_REASONING]
 
-        # 3. Execute in parallel
-        mode_results = self.executor.run(query, modes, ctx)
+        # 3. Run modes + agents in parallel
+        #    Agents dispatch in their own thread pool via AgentRouter.dispatch()
+        agent_future = None
+        agent_results = []
 
-        # 4. Synthesize
+        with ThreadPoolExecutor(max_workers=2) as outer:
+            mode_future  = outer.submit(self.executor.run, query, modes, ctx)
+            if self.agent_router:
+                agent_future = outer.submit(
+                    self.agent_router.dispatch, query, ctx, self.executor.mode_timeout
+                )
+            mode_results = mode_future.result()
+            if agent_future:
+                try:
+                    agent_results = agent_future.result()
+                except Exception:
+                    agent_results = []
+
+        # 4. Synthesize — agents can supersede modes if higher confidence
         primary_output, output_type, confidence = self.synthesizer.synthesize(
             query, mode_results, ctx
         )
+
+        routed_to_agent = ""
+        if agent_results:
+            best_agent = max(agent_results, key=lambda a: a.confidence)
+            if best_agent.confidence > confidence and not best_agent.error:
+                primary_output  = best_agent.output
+                output_type     = "language"
+                confidence      = best_agent.confidence
+                routed_to_agent = best_agent.agent_name
 
         total_ms = (time.time() - t0) * 1000
 
@@ -557,13 +675,18 @@ class CognitiveController:
             memory_context={"summary": ctx.summary},
             total_latency_ms=total_ms,
             confidence=confidence,
+            agent_results=agent_results,
+            routed_to_agent=routed_to_agent,
         )
 
         # 5. Record in episodic memory
+        mode_tag = "+".join(m.value for m in modes)
+        if routed_to_agent:
+            mode_tag = f"{routed_to_agent}+{mode_tag}"
         self.memory.record_interaction(
             query=query,
             response=primary_output[:500],
-            mode_used="+".join(m.value for m in modes),
+            mode_used=mode_tag,
             tags=[output_type] + [m.value for m in modes],
         )
 
@@ -577,6 +700,7 @@ class CognitiveController:
     def stats(self) -> dict:
         s = self.memory.stats()
         s["idle_loop_active"] = self._idle_loop is not None
+        s["agents_loaded"] = self.agent_router.agent_names if self.agent_router else []
         return s
 
 
@@ -603,6 +727,7 @@ def main():
     result = controller.think(args.query, force_modes=force_modes)
 
     print(f"Modes activated  : {[m.value for m in result.modes_activated]}")
+    print(f"Routed to agent  : {result.routed_to_agent or '(none — modes primary)'}")
     print(f"Output type      : {result.output_type}")
     print(f"Confidence       : {result.confidence:.3f}")
     print(f"Total latency    : {result.total_latency_ms:.1f}ms")
@@ -614,6 +739,12 @@ def main():
     for r in result.mode_results:
         status = "OK" if not r.error else f"ERR: {r.error[:50]}"
         print(f"  [{r.mode.value}] {status} | conf={r.confidence:.2f} | {r.latency_ms:.0f}ms | traceable={r.traceable}")
+
+    if result.agent_results:
+        print(f"\n--- Agent breakdown ---")
+        for a in result.agent_results:
+            status = "OK" if not a.error else f"ERR: {a.error[:50]}"
+            print(f"  [{a.agent_name}] {status} | conf={a.confidence:.2f} | {a.latency_ms:.0f}ms | traceable={a.traceable}")
 
     controller.shutdown()
 

@@ -26,9 +26,13 @@ from synapseos.phase5.cognitive_controller import (
     ModeRouter,
     ThinkingMode,
     CognitiveController,
+    AgentRouter,
     ParallelExecutor,
     ResultSynthesizer,
 )
+from synapseos.phase5.agents.base import SubAgent, AgentResult, AgentCapability
+from synapseos.phase5.agents.ariel import ARIELAgent
+from synapseos.phase5.agents.nyx import NYXAgent
 
 
 results = []
@@ -458,8 +462,337 @@ def test_controller_latency():
 def test_controller_stats():
     c = get_controller()
     stats = c.stats()
-    for key in ("episodic_entries", "semantic_facts", "working_slots", "idle_loop_active"):
+    for key in ("episodic_entries", "semantic_facts", "working_slots", "idle_loop_active", "agents_loaded"):
         assert key in stats, f"Missing key: {key}"
+
+
+@test("controller: agents_loaded includes ARIEL and NYX")
+def test_controller_agents_loaded():
+    c = get_controller()
+    agents = c.stats()["agents_loaded"]
+    assert "ARIEL" in agents, f"ARIEL missing from {agents}"
+    assert "NYX" in agents, f"NYX missing from {agents}"
+
+
+# ---------------------------------------------------------------------------
+# ARIEL sub-agent tests
+# ---------------------------------------------------------------------------
+
+_ariel = None
+def get_ariel():
+    global _ariel
+    if _ariel is None:
+        _ariel = ARIELAgent(
+            kg_path="data/graph/knowledge_graph.json",
+            rules_path="data/rules/rules.json",
+        )
+    return _ariel
+
+
+@test("ARIEL: can_handle scores business logic queries high")
+def test_ariel_can_handle_high():
+    agent = get_ariel()
+    score = agent.can_handle("plan the submission steps for a Sales Invoice")
+    assert score >= 0.55, f"Expected ≥0.55, got {score}"
+
+
+@test("ARIEL: can_handle scores security queries low")
+def test_ariel_can_handle_low():
+    agent = get_ariel()
+    score = agent.can_handle("audit the security permissions for Sales Invoice")
+    assert score < 0.7, f"Expected <0.7 for security query, got {score}"
+
+
+@test("ARIEL: find_doctype extracts known DocType from query")
+def test_ariel_find_doctype():
+    agent = get_ariel()
+    dt = agent.find_doctype("plan submission steps for a Sales Invoice")
+    assert dt != "Unknown", f"Expected a real DocType, got {dt}"
+
+
+@test("ARIEL: find_operation extracts submit")
+def test_ariel_find_operation():
+    agent = get_ariel()
+    op = agent.find_operation("how do I submit a Sales Invoice?")
+    assert op == "submit", f"Expected 'submit', got '{op}'"
+
+
+@test("ARIEL: analyze_workflow returns WorkflowAnalysis with fields populated")
+def test_ariel_analyze_workflow():
+    agent = get_ariel()
+    analysis = agent.analyze_workflow("Sales Invoice")
+    assert analysis.doctype == "Sales Invoice"
+    assert isinstance(analysis.rule_count, int)
+    assert isinstance(analysis.linked_doctypes, list)
+    assert isinstance(analysis.reverse_links, list)
+
+
+@test("ARIEL: plan_operation returns OperationPlan with steps")
+def test_ariel_plan_operation():
+    agent = get_ariel()
+    plan = agent.plan_operation("Sales Invoice", "submit")
+    assert plan.operation == "submit"
+    assert len(plan.steps) >= 2, f"Expected ≥2 steps, got {len(plan.steps)}"
+    assert isinstance(plan.warnings, list)
+
+
+@test("ARIEL: get_mandatory_fields returns list")
+def test_ariel_mandatory_fields():
+    agent = get_ariel()
+    fields = agent.get_mandatory_fields("Sales Invoice")
+    assert isinstance(fields, list)
+
+
+@test("ARIEL: handle() returns AgentResult with output")
+def test_ariel_handle_basic():
+    agent = get_ariel()
+    result = agent.handle("plan the submission steps for Sales Invoice")
+    assert result.agent_name == "ARIEL"
+    assert result.output, "Expected non-empty output"
+    assert result.traceable
+    assert len(result.trace) >= 2
+    assert result.latency_ms > 0
+
+
+@test("ARIEL: handle() routes dependency query to workflow analysis")
+def test_ariel_handle_dependency():
+    agent = get_ariel()
+    result = agent.handle("what does Sales Invoice depend on and link to?")
+    assert result.agent_name == "ARIEL"
+    assert not result.error, f"Error: {result.error}"
+    assert "linked" in result.structured or "linked_doctypes" in result.structured
+
+
+@test("ARIEL: handle() routes mandatory fields query")
+def test_ariel_handle_mandatory():
+    agent = get_ariel()
+    result = agent.handle("what mandatory fields does Sales Invoice require?")
+    assert result.agent_name == "ARIEL"
+    assert "mandatory_fields" in result.structured
+
+
+@test("ARIEL: confidence is in [0, 1]")
+def test_ariel_confidence_range():
+    agent = get_ariel()
+    result = agent.handle("plan the submission for a Purchase Order")
+    assert 0.0 <= result.confidence <= 1.0, f"Confidence out of range: {result.confidence}"
+
+
+# ---------------------------------------------------------------------------
+# NYX sub-agent tests
+# ---------------------------------------------------------------------------
+
+_nyx = None
+def get_nyx():
+    global _nyx
+    if _nyx is None:
+        _nyx = NYXAgent(
+            kg_path="data/graph/knowledge_graph.json",
+            rules_path="data/rules/rules.json",
+        )
+    return _nyx
+
+
+@test("NYX: can_handle scores security queries high")
+def test_nyx_can_handle_high():
+    agent = get_nyx()
+    score = agent.can_handle("audit the security permissions for Sales Invoice")
+    assert score >= 0.60, f"Expected ≥0.60, got {score}"
+
+
+@test("NYX: can_handle scores business logic queries lower")
+def test_nyx_can_handle_lower():
+    agent = get_nyx()
+    score = agent.can_handle("plan the submission steps for a Sales Invoice")
+    assert score < 0.65, f"Expected <0.65 for business logic query, got {score}"
+
+
+@test("NYX: detect_sensitive_fields returns list")
+def test_nyx_detect_sensitive():
+    agent = get_nyx()
+    fields = agent.detect_sensitive_fields("Sales Invoice")
+    assert isinstance(fields, list)
+
+
+@test("NYX: sensitive field patterns compile and match correctly")
+def test_nyx_pattern_matching():
+    agent = get_nyx()
+    # Test internal pattern matching directly
+    hit = agent._check_sensitive("api_key", "TestDocType")
+    assert hit is not None, "Expected a hit for 'api_key'"
+    assert hit.risk_level == "CRITICAL"
+    assert hit.category == "credential"
+
+    hit2 = agent._check_sensitive("customer_email", "TestDocType")
+    assert hit2 is not None, "Expected a hit for 'customer_email'"
+    assert hit2.risk_level == "MEDIUM"
+
+    no_hit = agent._check_sensitive("item_name", "TestDocType")
+    assert no_hit is None, "Expected no hit for 'item_name'"
+
+
+@test("NYX: generate_audit_spec returns AuditSpec with must_log")
+def test_nyx_audit_spec():
+    agent = get_nyx()
+    spec = agent.generate_audit_spec("Sales Invoice", "submit")
+    assert spec.doctype == "Sales Invoice"
+    assert spec.operation == "submit"
+    assert len(spec.must_log) >= 3, f"Expected ≥3 must_log items, got {len(spec.must_log)}"
+    assert any("user" in item.lower() for item in spec.must_log), "Expected 'user' in must_log"
+    assert any("timestamp" in item.lower() for item in spec.must_log), "Expected 'timestamp' in must_log"
+
+
+@test("NYX: security_report returns SecurityReport with risk_level")
+def test_nyx_security_report():
+    agent = get_nyx()
+    report = agent.security_report("Sales Invoice")
+    assert report.doctype == "Sales Invoice"
+    assert report.risk_level in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "OK")
+    assert isinstance(report.findings, list)
+    assert isinstance(report.recommendations, list)
+
+
+@test("NYX: scan_high_risk_doctypes returns list")
+def test_nyx_surface_scan():
+    agent = get_nyx()
+    results_out = agent.scan_high_risk_doctypes(top_k=5)
+    assert isinstance(results_out, list)
+    assert len(results_out) <= 5
+    for dt, level in results_out:
+        assert level in ("CRITICAL", "HIGH"), f"Surface scan should only return CRITICAL/HIGH, got {level}"
+
+
+@test("NYX: handle() returns AgentResult with output")
+def test_nyx_handle_basic():
+    agent = get_nyx()
+    result = agent.handle("audit the permission model for Sales Invoice")
+    assert result.agent_name == "NYX"
+    assert result.output, "Expected non-empty output"
+    assert result.traceable
+    assert result.latency_ms > 0
+
+
+@test("NYX: handle() routes audit query to audit spec")
+def test_nyx_handle_audit():
+    agent = get_nyx()
+    result = agent.handle("generate an audit trail spec for Sales Invoice submit")
+    assert result.agent_name == "NYX"
+    assert not result.error, f"Error: {result.error}"
+    assert "must_log" in result.structured
+
+
+@test("NYX: handle() routes sensitive field query")
+def test_nyx_handle_sensitive():
+    agent = get_nyx()
+    result = agent.handle("what sensitive fields does the User doctype expose?")
+    assert result.agent_name == "NYX"
+    assert "sensitive_fields" in result.structured
+
+
+@test("NYX: handle() routes surface scan query")
+def test_nyx_handle_surface_scan():
+    agent = get_nyx()
+    result = agent.handle("scan for high risk doctypes in the system")
+    assert result.agent_name == "NYX"
+    assert "high_risk_doctypes" in result.structured
+
+
+@test("NYX: confidence is in [0, 1]")
+def test_nyx_confidence_range():
+    agent = get_nyx()
+    result = agent.handle("check security for Purchase Order")
+    assert 0.0 <= result.confidence <= 1.0, f"Confidence out of range: {result.confidence}"
+
+
+# ---------------------------------------------------------------------------
+# AgentRouter tests
+# ---------------------------------------------------------------------------
+
+_agent_router = None
+def get_agent_router():
+    global _agent_router
+    if _agent_router is None:
+        _agent_router = AgentRouter(
+            kg_path="data/graph/knowledge_graph.json",
+            rules_path="data/rules/rules.json",
+        )
+    return _agent_router
+
+
+@test("agent router: loads ARIEL and NYX")
+def test_agent_router_loads():
+    router = get_agent_router()
+    assert "ARIEL" in router.agent_names
+    assert "NYX" in router.agent_names
+
+
+@test("agent router: score() returns agents above threshold for business query")
+def test_agent_router_score_business():
+    router = get_agent_router()
+    scored = router.score("plan the submission workflow for Sales Invoice")
+    assert len(scored) >= 1, "Expected at least one agent above threshold"
+    names = [a.name for _, a in scored]
+    assert "ARIEL" in names, f"Expected ARIEL in scored agents: {names}"
+
+
+@test("agent router: score() returns NYX for security query")
+def test_agent_router_score_security():
+    router = get_agent_router()
+    scored = router.score("audit security permissions for Sales Invoice")
+    names = [a.name for _, a in scored]
+    assert "NYX" in names, f"Expected NYX in scored agents: {names}"
+
+
+@test("agent router: dispatch() returns AgentResult list")
+def test_agent_router_dispatch():
+    router = get_agent_router()
+    agent_results = router.dispatch("plan submission steps for Sales Invoice", context=None, timeout=20.0)
+    assert isinstance(agent_results, list)
+    assert len(agent_results) >= 1
+    for r in agent_results:
+        assert hasattr(r, "agent_name")
+        assert hasattr(r, "output")
+        assert hasattr(r, "confidence")
+
+
+# ---------------------------------------------------------------------------
+# CognitiveController + agents end-to-end
+# ---------------------------------------------------------------------------
+
+@test("controller: think() with business query routes to ARIEL")
+def test_controller_agent_ariel_routing():
+    c = get_controller()
+    result = c.think("plan the submission workflow steps for a Sales Invoice")
+    # ARIEL should have been dispatched (either primary or in agent_results)
+    agent_names = [a.agent_name for a in result.agent_results]
+    assert "ARIEL" in agent_names, f"Expected ARIEL in agent_results: {agent_names}"
+
+
+@test("controller: think() with security query routes to NYX")
+def test_controller_agent_nyx_routing():
+    c = get_controller()
+    result = c.think("audit the security and permissions for Sales Invoice")
+    agent_names = [a.agent_name for a in result.agent_results]
+    assert "NYX" in agent_names, f"Expected NYX in agent_results: {agent_names}"
+
+
+@test("controller: routed_to_agent is set when agent confidence wins")
+def test_controller_routed_to_agent_field():
+    c = get_controller()
+    result = c.think("plan the submission steps for Sales Invoice")
+    # routed_to_agent should be a string (empty or agent name)
+    assert isinstance(result.routed_to_agent, str)
+
+
+@test("controller: agent_results included in to_dict()")
+def test_controller_agent_results_in_dict():
+    import json
+    c = get_controller()
+    result = c.think("audit security for Sales Invoice")
+    d = result.to_dict()
+    assert "agent_results" in d
+    assert isinstance(d["agent_results"], list)
+    json.dumps(d)   # must be JSON-serialisable
 
 
 # ---------------------------------------------------------------------------
@@ -505,6 +838,42 @@ if __name__ == "__main__":
         test_controller_confidence_range,
         test_controller_latency,
         test_controller_stats,
+        test_controller_agents_loaded,
+        # ARIEL
+        test_ariel_can_handle_high,
+        test_ariel_can_handle_low,
+        test_ariel_find_doctype,
+        test_ariel_find_operation,
+        test_ariel_analyze_workflow,
+        test_ariel_plan_operation,
+        test_ariel_mandatory_fields,
+        test_ariel_handle_basic,
+        test_ariel_handle_dependency,
+        test_ariel_handle_mandatory,
+        test_ariel_confidence_range,
+        # NYX
+        test_nyx_can_handle_high,
+        test_nyx_can_handle_lower,
+        test_nyx_detect_sensitive,
+        test_nyx_pattern_matching,
+        test_nyx_audit_spec,
+        test_nyx_security_report,
+        test_nyx_surface_scan,
+        test_nyx_handle_basic,
+        test_nyx_handle_audit,
+        test_nyx_handle_sensitive,
+        test_nyx_handle_surface_scan,
+        test_nyx_confidence_range,
+        # AgentRouter
+        test_agent_router_loads,
+        test_agent_router_score_business,
+        test_agent_router_score_security,
+        test_agent_router_dispatch,
+        # Controller + agents
+        test_controller_agent_ariel_routing,
+        test_controller_agent_nyx_routing,
+        test_controller_routed_to_agent_field,
+        test_controller_agent_results_in_dict,
     ]
 
     for t in tests:
