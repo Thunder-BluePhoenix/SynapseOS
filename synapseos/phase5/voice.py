@@ -357,15 +357,29 @@ class VoicePipeline:
         whisper_model: str = "tiny",
         tts_output_dir: str = "data/voice/output",
         enable_agents: bool = True,
+        prefer_macos_tts: bool = True,
     ):
         self.transcriber = WhisperTranscriber(model_size=whisper_model)
-        self.synthesizer = TTSSynthesizer(output_dir=tts_output_dir)
+        # Prefer real macOS `say` TTS when available (produces real audio, no GPU);
+        # fall back to the pyttsx3/stub TTSSynthesizer otherwise.
+        self.synthesizer = self._select_tts(tts_output_dir, prefer_macos_tts)
         self.vad         = VoiceActivityDetector()
         self._controller = None
         self._kg_path    = kg_path
         self._rules_path = rules_path
         self._enable_agents = enable_agents
         self._session_log: list[VoiceRoundTrip] = []
+
+    def _select_tts(self, output_dir: str, prefer_macos: bool):
+        """Use real macOS `say` TTS if available, else the stub/pyttsx3 synthesizer."""
+        if prefer_macos:
+            try:
+                from synapseos.local.tts_macos import MacTTS, say_available
+                if say_available():
+                    return MacTTS(output_dir=output_dir)
+            except Exception:
+                pass
+        return TTSSynthesizer(output_dir=output_dir)
 
     def _get_controller(self):
         if self._controller is None:
