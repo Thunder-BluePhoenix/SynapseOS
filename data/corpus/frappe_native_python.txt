@@ -1,0 +1,2051 @@
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/frappe_native/api/build.py
+import frappe
+
+
+@frappe.whitelist()
+def trigger_build(app: str, build_type: str = "source_zip"):
+    """Create a Native Build Job and enqueue it."""
+    if not frappe.db.exists("Native App Config", app):
+        frappe.throw(f"App '{app}' not found")
+    doc = frappe.new_doc("Native Build Job")
+    doc.app = app
+    doc.build_type = build_type
+    doc.insert(ignore_permissions=True)
+    frappe.db.commit()
+    return {"job": doc.name, "status": doc.status}
+
+
+@frappe.whitelist()
+def get_build_status(job_name: str):
+    doc = frappe.get_doc("Native Build Job", job_name)
+    return {
+        "job": doc.name,
+        "status": doc.status,
+        "output_zip_url": doc.output_zip_url,
+        "apk_url": doc.apk_url,
+        "build_log": doc.build_log,
+        "completed_at": str(doc.completed_at or ""),
+    }
+
+
+@frappe.whitelist()
+def list_builds(app: str, limit: int = 10):
+    jobs = frappe.get_all(
+        "Native Build Job",
+        filters={"app": app},
+        fields=["name", "build_type", "status", "triggered_at", "completed_at",
+                "output_zip_url", "apk_url"],
+        order_by="triggered_at desc",
+        limit_page_length=int(limit),
+    )
+    return jobs
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/frappe_native/api/layout.py
+import json
+
+import frappe
+
+
+@frappe.whitelist()
+def get_layout(screen_key: str, current_hash: str = ""):
+    """Hot-reload endpoint. Returns DSL only if hash changed."""
+    from frappe_native.dsl.loader import get_layout as _get_layout
+    if not screen_key:
+        frappe.throw("screen_key is required")
+    return _get_layout(screen_key, current_hash)
+
+
+@frappe.whitelist()
+def get_all_layouts(app: str, hashes: str = "{}"):
+    """
+    Batch hot-reload for all screens.
+    hashes: JSON string of {screen_key: hash} from Flutter.
+    """
+    from frappe_native.dsl.loader import get_all_layouts as _get_all_layouts
+    if not app:
+        frappe.throw("app is required")
+    try:
+        hash_map = json.loads(hashes)
+    except json.JSONDecodeError:
+        hash_map = {}
+    return _get_all_layouts(app, hash_map)
+
+
+@frappe.whitelist()
+def validate_dsl(dsl_json: str):
+    """Desk-side validator — returns {valid: true} or {valid: false, error: ...}."""
+    from frappe_native.dsl.schema import validate, DSLValidationError
+    try:
+        validate(dsl_json)
+        return {"valid": True}
+    except DSLValidationError as e:
+        return {"valid": False, "error": str(e)}
+
+
+@frappe.whitelist()
+def publish_layout(screen_key: str, dsl_json: str):
+    """Save + publish a new layout version for a screen."""
+    from frappe_native.dsl.schema import validate, DSLValidationError
+    try:
+        validate(dsl_json)
+    except DSLValidationError as e:
+        frappe.throw(f"DSL validation failed: {e}")
+
+    existing = frappe.db.get_value(
+        "Native Screen Layout",
+        {"screen": screen_key},
+        "name",
+    )
+    if existing:
+        doc = frappe.get_doc("Native Screen Layout", existing)
+    else:
+        doc = frappe.new_doc("Native Screen Layout")
+        doc.screen = screen_key
+
+    doc.dsl_json = dsl_json
+    doc.enabled = 1
+    doc.save(ignore_permissions=True)
+    frappe.db.commit()
+    return {"name": doc.name, "version": doc.version, "hash": doc.layout_hash}
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/frappe_native/api/print.py
+import frappe
+
+
+@frappe.whitelist()
+def render_escpos(template: str, doctype: str, docname: str):
+    """
+    Render a Native Print Template for a document and return ESC/POS hex commands.
+    Uses Jinja2 templating on header + footer, wraps line items.
+    """
+    tmpl_doc = frappe.get_doc("Native Print Template", template)
+    if not tmpl_doc.enabled:
+        frappe.throw("Print template is disabled")
+
+    doc = frappe.get_doc(doctype, docname)
+    context = {"doc": doc.as_dict()}
+
+    header = _render(tmpl_doc.header_text or "", context)
+    footer = _render(tmpl_doc.footer_text or "", context)
+
+    line_items = []
+    if tmpl_doc.line_items_field and hasattr(doc, tmpl_doc.line_items_field):
+        items = getattr(doc, tmpl_doc.line_items_field) or []
+        line_items = [row.as_dict() if hasattr(row, "as_dict") else dict(row) for row in items]
+
+    # Build minimal ESC/POS command sequence
+    ESC = "\x1b"
+    LF = "\n"
+    INIT = f"{ESC}@"
+    BOLD_ON = f"{ESC}E\x01"
+    BOLD_OFF = f"{ESC}E\x00"
+    CUT = f"{ESC}i"
+
+    body = INIT
+    if header:
+        body += BOLD_ON + header.strip() + BOLD_OFF + LF
+    body += "-" * 32 + LF
+    for item in line_items:
+        desc = str(item.get("item_name") or item.get("description") or "")
+        qty = str(item.get("qty") or "")
+        rate = str(item.get("rate") or "")
+        body += f"{desc[:20]:<20} {qty:>4} {rate:>7}" + LF
+    body += "-" * 32 + LF
+    if footer:
+        body += footer.strip() + LF
+    body += LF + LF + CUT
+
+    hex_output = " ".join(f"{ord(c):02X}" for c in body)
+
+    return {
+        "escpos_hex": hex_output,
+        "paper_width": tmpl_doc.paper_width,
+        "print_mode": tmpl_doc.print_mode,
+    }
+
+
+def _render(template_str: str, context: dict) -> str:
+    if not template_str:
+        return ""
+    from jinja2 import Environment
+    env = Environment(autoescape=False)
+    try:
+        return env.from_string(template_str).render(**context)
+    except Exception:
+        return template_str
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/frappe_native/api/schema.py
+import frappe
+
+
+@frappe.whitelist()
+def get_contract(doctype: str, app: str = "", screen_key: str = ""):
+    """
+    Return the mobile contract for a DocType.
+    Used by Flutter app at boot and on schema_version change.
+    """
+    from frappe_native.schema.reader import get_contract as _get_contract
+    if not doctype:
+        frappe.throw("doctype is required")
+    return _get_contract(doctype, app=app, screen_key=screen_key)
+
+
+@frappe.whitelist()
+def get_app_contracts(app: str):
+    """
+    Return contracts for all enabled screens of an app in one call.
+    Flutter uses this at first boot to prime the local schema cache.
+    """
+    from frappe_native.schema.reader import get_contract as _get_contract
+
+    if not app:
+        frappe.throw("app is required")
+
+    screens = frappe.get_all(
+        "Native Screen",
+        filters={"app": app, "enabled": 1},
+        fields=["screen_key", "doctype_name", "screen_type", "title",
+                "list_title_field", "list_subtitle_field", "list_badge_field",
+                "sort_field", "sort_order", "nav_label", "nav_icon", "nav_position"],
+        order_by="nav_position asc",
+    )
+
+    app_doc = frappe.get_doc("Native App Config", app)
+
+    result = {
+        "app": app,
+        "schema_version": app_doc.schema_version,
+        "screens": [],
+    }
+
+    for s in screens:
+        contract = _get_contract(s.doctype_name, app=app, screen_key=s.screen_key)
+        result["screens"].append({
+            "screen_key": s.screen_key,
+            "screen_type": s.screen_type,
+            "title": s.title or s.screen_key,
+            "list_title_field": s.list_title_field,
+            "list_subtitle_field": s.list_subtitle_field,
+            "list_badge_field": s.list_badge_field,
+            "sort_field": s.sort_field,
+            "sort_order": s.sort_order,
+            "nav_label": s.nav_label,
+            "nav_icon": s.nav_icon,
+            "nav_position": s.nav_position,
+            "contract": contract,
+        })
+
+    return result
+
+
+@frappe.whitelist()
+def get_sqlite_schema(doctype: str):
+    """Return SQLite column definitions for a DocType (used by Flutter code generator)."""
+    from frappe_native.schema.reader import get_sqlite_schema as _get_sqlite_schema
+    if not doctype:
+        frappe.throw("doctype is required")
+    return _get_sqlite_schema(doctype)
+
+
+@frappe.whitelist()
+def get_sync_rules(app: str):
+    """Return all sync rules for an app (offline engine bootstrap)."""
+    from frappe_native.schema.reader import get_sync_rules as _get_sync_rules
+    if not app:
+        frappe.throw("app is required")
+    return _get_sync_rules(app)
+
+
+@frappe.whitelist()
+def get_schema_version(app: str) -> int:
+    """Lightweight poll endpoint — Flutter checks this before re-fetching full contracts."""
+    version = frappe.db.get_value("Native App Config", app, "schema_version")
+    return int(version or 1)
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/frappe_native/api/templates.py
+"""
+Template export/import system for frappe-native.
+A template is a JSON bundle: app config + screens + layouts.
+Can be installed from disk (bundled templates) or from a GitHub-hosted URL.
+"""
+import json
+import os
+
+import frappe
+
+
+_BUNDLED_DIR = os.path.join(os.path.dirname(__file__), "..", "templates")
+
+
+@frappe.whitelist()
+def list_bundled_templates() -> list[dict]:
+    """Return metadata for all bundled templates."""
+    templates = []
+    for fname in os.listdir(_BUNDLED_DIR):
+        if not fname.endswith(".json"):
+            continue
+        path = os.path.join(_BUNDLED_DIR, fname)
+        with open(path) as f:
+            data = json.load(f)
+        templates.append({
+            "template_name": data.get("template_name", fname),
+            "description": data.get("description", ""),
+            "version": data.get("version", "1.0.0"),
+            "file": fname,
+        })
+    return templates
+
+
+@frappe.whitelist()
+def install_bundled_template(file: str, app_name_override: str = ""):
+    """Install a bundled template by filename."""
+    path = os.path.join(_BUNDLED_DIR, file)
+    if not os.path.exists(path):
+        frappe.throw(f"Template file '{file}' not found")
+    with open(path) as f:
+        data = json.load(f)
+    return _install_template(data, app_name_override)
+
+
+@frappe.whitelist()
+def install_from_json(template_json: str, app_name_override: str = ""):
+    """Install a template from a JSON string (desk paste or URL fetch)."""
+    try:
+        data = json.loads(template_json)
+    except json.JSONDecodeError as e:
+        frappe.throw(f"Invalid JSON: {e}")
+    return _install_template(data, app_name_override)
+
+
+@frappe.whitelist()
+def export_app_template(app_name: str) -> dict:
+    """Export a Native App Config + its screens + latest layouts as a template JSON."""
+    app = frappe.get_doc("Native App Config", app_name)
+    screens = frappe.get_all(
+        "Native Screen",
+        filters={"app": app_name, "enabled": 1},
+        fields=["*"],
+        order_by="nav_position asc",
+    )
+    layouts = {}
+    for s in screens:
+        layout = frappe.db.get_value(
+            "Native Screen Layout",
+            {"screen": s.name, "enabled": 1},
+            ["dsl_json"],
+            as_dict=True,
+            order_by="version desc",
+        )
+        if layout and layout.dsl_json:
+            layouts[s.screen_key] = json.loads(layout.dsl_json)
+
+    return {
+        "template_name": app.app_title,
+        "description": f"Exported from {app_name}",
+        "version": "1.0.0",
+        "app": {
+            "app_name": app.app_name,
+            "app_title": app.app_title,
+            "primary_color": app.primary_color or "#1565C0",
+            "secondary_color": app.secondary_color or "#0D47A1",
+            "font_family": app.font_family or "Inter",
+            "app_mode": app.app_mode,
+            "sync_enabled": app.sync_enabled,
+            "offline_days": app.offline_days,
+            "push_enabled": app.push_enabled,
+        },
+        "screens": [
+            {
+                "screen_key": s.screen_key,
+                "doctype_name": s.doctype_name,
+                "screen_type": s.screen_type,
+                "title": s.title,
+                "list_title_field": s.list_title_field,
+                "list_subtitle_field": s.list_subtitle_field,
+                "list_badge_field": s.list_badge_field,
+                "sort_field": s.sort_field,
+                "sort_order": s.sort_order,
+                "offline_enabled": s.offline_enabled,
+                "max_offline_records": s.max_offline_records,
+                "allow_create": s.allow_create,
+                "allow_edit": s.allow_edit,
+                "allow_delete": s.allow_delete,
+                "nav_label": s.nav_label,
+                "nav_icon": s.nav_icon,
+                "nav_position": s.nav_position,
+            }
+            for s in screens
+        ],
+        "layouts": layouts,
+    }
+
+
+# ── Internal ────────────────────────────────────────────────────────────────
+
+def _install_template(data: dict, app_name_override: str) -> dict:
+    app_data = data.get("app", {})
+    app_name = app_name_override or app_data.get("app_name", "")
+    if not app_name:
+        frappe.throw("Template missing app.app_name")
+
+    # Create or update Native App Config
+    if frappe.db.exists("Native App Config", app_name):
+        app_doc = frappe.get_doc("Native App Config", app_name)
+    else:
+        app_doc = frappe.new_doc("Native App Config")
+        app_doc.app_name = app_name
+
+    app_doc.update({k: v for k, v in app_data.items() if k != "app_name"})
+    app_doc.save(ignore_permissions=True)
+
+    screens_created = 0
+    layouts_created = 0
+
+    for screen_data in data.get("screens", []):
+        screen_key = screen_data.get("screen_key", "")
+        existing_name = f"{app_name}-{screen_key}"
+        if frappe.db.exists("Native Screen", existing_name):
+            screen_doc = frappe.get_doc("Native Screen", existing_name)
+        else:
+            screen_doc = frappe.new_doc("Native Screen")
+        screen_doc.update({**screen_data, "app": app_name})
+        screen_doc.save(ignore_permissions=True)
+        screens_created += 1
+
+        # Install layout if present
+        layout_dsl = data.get("layouts", {}).get(screen_key)
+        if layout_dsl:
+            existing_layout = frappe.db.get_value(
+                "Native Screen Layout", {"screen": screen_doc.name}, "name"
+            )
+            if existing_layout:
+                layout_doc = frappe.get_doc("Native Screen Layout", existing_layout)
+            else:
+                layout_doc = frappe.new_doc("Native Screen Layout")
+                layout_doc.screen = screen_doc.name
+            layout_doc.dsl_json = json.dumps(layout_dsl)
+            layout_doc.enabled = 1
+            layout_doc.save(ignore_permissions=True)
+            layouts_created += 1
+
+    frappe.db.commit()
+    return {
+        "app": app_name,
+        "screens_created": screens_created,
+        "layouts_created": layouts_created,
+        "status": "installed",
+    }
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/frappe_native/doctype/native_app_config/native_app_config.py
+import frappe
+from frappe.model.document import Document
+
+
+class NativeAppConfig(Document):
+    def before_save(self):
+        if not self.created_by:
+            self.created_by = frappe.session.user
+
+    def on_update(self):
+        self.schema_version = (self.schema_version or 1) + 1
+        frappe.db.set_value("Native App Config", self.name, "schema_version", self.schema_version)
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/frappe_native/doctype/native_build_job/native_build_job.py
+import frappe
+from frappe.model.document import Document
+
+
+class NativeBuildJob(Document):
+    def before_insert(self):
+        self.triggered_by = frappe.session.user
+        self.triggered_at = frappe.utils.now_datetime()
+
+    def after_insert(self):
+        frappe.enqueue(
+            "frappe_native.generator.build.run_build_job",
+            job_name=self.name,
+            queue="long",
+            timeout=600,
+        )
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/frappe_native/doctype/native_screen_layout/native_screen_layout.py
+import hashlib
+
+import frappe
+from frappe.model.document import Document
+
+
+class NativeScreenLayout(Document):
+    def validate(self):
+        if self.dsl_json:
+            from frappe_native.dsl.schema import validate, DSLValidationError
+            try:
+                validate(self.dsl_json)
+            except DSLValidationError as e:
+                frappe.throw(f"Layout DSL validation error: {e}")
+
+    def before_save(self):
+        if self.dsl_json:
+            self.layout_hash = hashlib.sha256(self.dsl_json.encode()).hexdigest()
+        if self.enabled:
+            self.last_published_at = frappe.utils.now_datetime()
+            self.version = (self.version or 1) + 1
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/frappe_native/dsl/loader.py
+"""
+Hot-reload DSL loader.
+
+Flutter polls `get_layout` with the current layout_hash.
+If the hash matches, returns {"changed": false} — no payload.
+If changed (or hash absent), returns the full DSL + new hash.
+"""
+import frappe
+
+
+def get_layout(screen_key: str, current_hash: str = "") -> dict:
+    layout = frappe.db.get_value(
+        "Native Screen Layout",
+        {"screen": screen_key, "enabled": 1},
+        ["dsl_json", "layout_hash", "version"],
+        as_dict=True,
+        order_by="version desc",
+    )
+    if not layout:
+        return {"changed": False, "screen_key": screen_key}
+
+    if current_hash and current_hash == layout.layout_hash:
+        return {"changed": False, "screen_key": screen_key, "hash": layout.layout_hash}
+
+    import json
+    return {
+        "changed": True,
+        "screen_key": screen_key,
+        "hash": layout.layout_hash,
+        "version": layout.version,
+        "dsl": json.loads(layout.dsl_json),
+    }
+
+
+def get_all_layouts(app: str, hashes: dict[str, str] | None = None) -> list[dict]:
+    """
+    Return changed layouts for all screens of app.
+    hashes: {screen_key: current_hash} from Flutter local cache.
+    Returns only entries where changed=True to minimise payload.
+    """
+    screens = frappe.get_all(
+        "Native Screen",
+        filters={"app": app, "enabled": 1},
+        fields=["screen_key"],
+        order_by="nav_position asc",
+    )
+    hashes = hashes or {}
+    results = []
+    for s in screens:
+        entry = get_layout(s.screen_key, hashes.get(s.screen_key, ""))
+        if entry.get("changed"):
+            results.append(entry)
+    return results
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/frappe_native/dsl/schema.py
+"""
+Layout DSL schema definition and validator.
+
+A Native Screen Layout is a JSON document with this top-level structure:
+{
+  "version": 1,
+  "sections": [ <Section>, ... ],
+  "actions": [ <Action>, ... ],       // optional bottom action bar
+  "gestures": { <GestureMap> }        // optional swipe/long-press handlers
+}
+
+Section types:
+  header_card     — title + subtitle + status badge + optional avatar field
+  field_group     — labeled group of field rows
+  child_table     — inline child table (fieldname → child screen_key)
+  summary_row     — key-value summary strip
+  action_bar      — row of icon buttons (also usable inline, not just bottom)
+  image_grid      — photo grid from an Attach Image field
+  map_view        — map centered on a Geolocation field
+  timeline        — comment / activity feed
+  barcode_field   — barcode scan + display widget
+"""
+
+from __future__ import annotations
+import json
+from typing import Any
+
+# ── Section type registry ──────────────────────────────────────────────────
+
+_SECTION_TYPES = frozenset([
+    "header_card",
+    "field_group",
+    "child_table",
+    "summary_row",
+    "action_bar",
+    "image_grid",
+    "map_view",
+    "timeline",
+    "barcode_field",
+])
+
+_ACTION_TYPES = frozenset([
+    "submit", "cancel", "save", "delete",
+    "navigate", "custom", "frappe_method",
+])
+
+_GESTURE_KEYS = frozenset(["swipe_right", "swipe_left", "long_press"])
+
+_GESTURE_ACTIONS = frozenset(["navigate", "custom", "frappe_method", "delete"])
+
+
+class DSLValidationError(Exception):
+    pass
+
+
+# ── Public API ─────────────────────────────────────────────────────────────
+
+def validate(dsl_json: str | dict) -> dict:
+    """
+    Parse and validate a Layout DSL document. Returns the parsed dict if valid.
+    Raises DSLValidationError with a descriptive message on any violation.
+    """
+    if isinstance(dsl_json, str):
+        try:
+            doc = json.loads(dsl_json)
+        except json.JSONDecodeError as e:
+            raise DSLValidationError(f"Invalid JSON: {e}")
+    else:
+        doc = dsl_json
+
+    if not isinstance(doc, dict):
+        raise DSLValidationError("DSL root must be a JSON object")
+
+    _require(doc, "version", int)
+    _require(doc, "sections", list)
+
+    for i, section in enumerate(doc["sections"]):
+        _validate_section(section, path=f"sections[{i}]")
+
+    for i, action in enumerate(doc.get("actions", [])):
+        _validate_action(action, path=f"actions[{i}]")
+
+    gestures = doc.get("gestures", {})
+    if not isinstance(gestures, dict):
+        raise DSLValidationError("gestures must be an object")
+    for key, handler in gestures.items():
+        if key not in _GESTURE_KEYS:
+            raise DSLValidationError(
+                f"Unknown gesture key '{key}'. Allowed: {sorted(_GESTURE_KEYS)}"
+            )
+        _validate_gesture_handler(handler, path=f"gestures.{key}")
+
+    return doc
+
+
+def validate_section(section: dict) -> None:
+    """Validate a single section dict in isolation (used by desk preview)."""
+    _validate_section(section, path="section")
+
+
+# ── Internal validators ────────────────────────────────────────────────────
+
+def _validate_section(s: Any, path: str):
+    if not isinstance(s, dict):
+        raise DSLValidationError(f"{path}: section must be an object")
+
+    stype = s.get("type")
+    if stype not in _SECTION_TYPES:
+        raise DSLValidationError(
+            f"{path}: unknown section type '{stype}'. Allowed: {sorted(_SECTION_TYPES)}"
+        )
+
+    if stype == "header_card":
+        _require(s, "title_field", str, path)
+
+    elif stype == "field_group":
+        _require(s, "fields", list, path)
+        for i, f in enumerate(s["fields"]):
+            if not isinstance(f, (str, dict)):
+                raise DSLValidationError(
+                    f"{path}.fields[{i}]: must be a fieldname string or {{fieldname, ...}} object"
+                )
+
+    elif stype == "child_table":
+        _require(s, "fieldname", str, path)
+
+    elif stype == "summary_row":
+        _require(s, "fields", list, path)
+
+    elif stype == "action_bar":
+        _require(s, "buttons", list, path)
+        for i, btn in enumerate(s["buttons"]):
+            _validate_action(btn, path=f"{path}.buttons[{i}]")
+
+    elif stype == "image_grid":
+        _require(s, "fieldname", str, path)
+
+    elif stype == "map_view":
+        _require(s, "fieldname", str, path)
+
+    elif stype == "barcode_field":
+        _require(s, "fieldname", str, path)
+
+    # timeline — no required sub-fields beyond type
+
+
+def _validate_action(a: Any, path: str):
+    if not isinstance(a, dict):
+        raise DSLValidationError(f"{path}: action must be an object")
+    atype = a.get("type")
+    if atype not in _ACTION_TYPES:
+        raise DSLValidationError(
+            f"{path}: unknown action type '{atype}'. Allowed: {sorted(_ACTION_TYPES)}"
+        )
+    if atype == "navigate":
+        _require(a, "target", str, path)
+    elif atype in ("custom", "frappe_method"):
+        _require(a, "method", str, path)
+
+
+def _validate_gesture_handler(h: Any, path: str):
+    if not isinstance(h, dict):
+        raise DSLValidationError(f"{path}: gesture handler must be an object")
+    action = h.get("action")
+    if action not in _GESTURE_ACTIONS:
+        raise DSLValidationError(
+            f"{path}: unknown gesture action '{action}'. Allowed: {sorted(_GESTURE_ACTIONS)}"
+        )
+    if action == "navigate":
+        _require(h, "target", str, path)
+    elif action in ("custom", "frappe_method"):
+        _require(h, "method", str, path)
+
+
+def _require(obj: dict, key: str, expected_type: type, path: str = ""):
+    val = obj.get(key)
+    if val is None:
+        raise DSLValidationError(
+            f"{path + '.' if path else ''}{key}: required field missing"
+        )
+    if not isinstance(val, expected_type):
+        raise DSLValidationError(
+            f"{path + '.' if path else ''}{key}: expected {expected_type.__name__}, got {type(val).__name__}"
+        )
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/frappe_native/generator/build.py
+"""
+RQ worker that runs a Native Build Job.
+Generates source ZIP; if Docker + Flutter SDK available, also compiles APK.
+"""
+import os
+import shutil
+import subprocess
+import tempfile
+
+import frappe
+
+
+def run_build_job(job_name: str):
+    doc = frappe.get_doc("Native Build Job", job_name)
+    _set_status(doc, "RUNNING")
+
+    log_lines = []
+
+    try:
+        from frappe_native.generator.codegen import generate_project_zip
+
+        log_lines.append(f"Generating source for app: {doc.app}")
+        zip_bytes = generate_project_zip(doc.app)
+
+        # Save source ZIP as attachment
+        zip_filename = f"native_{doc.app}_{job_name}.zip"
+        zip_url = _save_attachment(zip_filename, zip_bytes, doc)
+        doc.output_zip_url = zip_url
+        log_lines.append(f"Source ZIP saved: {zip_filename}")
+
+        if doc.build_type in ("android_apk", "all"):
+            apk_url = _build_apk(doc.app, zip_bytes, log_lines)
+            if apk_url:
+                doc.apk_url = apk_url
+
+        log_lines.append("Build completed successfully.")
+        _set_status(doc, "DONE", log_lines)
+
+    except Exception as e:
+        log_lines.append(f"ERROR: {e}")
+        _set_status(doc, "FAILED", log_lines)
+        raise
+
+
+def _set_status(doc, status: str, log_lines: list | None = None):
+    doc.status = status
+    if status in ("DONE", "FAILED"):
+        doc.completed_at = frappe.utils.now_datetime()
+    if log_lines:
+        doc.build_log = "\n".join(log_lines)
+    doc.save(ignore_permissions=True)
+    frappe.db.commit()
+
+    frappe.publish_realtime(
+        "native_build_update",
+        {"job": doc.name, "status": status, "app": doc.app},
+        user=doc.triggered_by,
+    )
+
+
+def _save_attachment(filename: str, data: bytes, doc) -> str:
+    file_doc = frappe.get_doc({
+        "doctype": "File",
+        "file_name": filename,
+        "attached_to_doctype": doc.doctype,
+        "attached_to_name": doc.name,
+        "is_private": 1,
+        "content": data,
+    })
+    file_doc.save(ignore_permissions=True)
+    return file_doc.file_url
+
+
+def _build_apk(app_name: str, zip_bytes: bytes, log_lines: list) -> str | None:
+    """
+    Extract ZIP into a temp dir, run `flutter build apk --release` inside Docker.
+    Requires Docker with image `ghcr.io/bluephoenix/flutter-build:latest`.
+    Returns the APK file URL or None if build not available.
+    """
+    if not shutil.which("docker"):
+        log_lines.append("Docker not found — skipping APK build. Source ZIP only.")
+        return None
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        import io, zipfile
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            zf.extractall(tmpdir)
+
+        log_lines.append("Running flutter build apk in Docker…")
+        result = subprocess.run(
+            [
+                "docker", "run", "--rm",
+                "-v", f"{tmpdir}:/workspace",
+                "-w", "/workspace",
+                "ghcr.io/bluephoenix/flutter-build:latest",
+                "flutter", "build", "apk", "--release",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=480,
+        )
+        log_lines.extend(result.stdout.splitlines())
+        if result.returncode != 0:
+            log_lines.extend(result.stderr.splitlines())
+            log_lines.append("APK build failed.")
+            return None
+
+        apk_path = os.path.join(tmpdir, "build", "app", "outputs", "flutter-apk", "app-release.apk")
+        if not os.path.exists(apk_path):
+            log_lines.append("APK output not found after build.")
+            return None
+
+        with open(apk_path, "rb") as f:
+            apk_data = f.read()
+
+        apk_filename = f"native_{app_name}.apk"
+        file_doc = frappe.get_doc({
+            "doctype": "File",
+            "file_name": apk_filename,
+            "is_private": 1,
+            "content": apk_data,
+        })
+        file_doc.save(ignore_permissions=True)
+        log_lines.append(f"APK saved: {apk_filename}")
+        return file_doc.file_url
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/frappe_native/generator/codegen.py
+"""
+Generates a Flutter project from a Native App Config + its screens + layouts.
+Produces a ZIP of all source files ready to build with `flutter build apk`.
+"""
+import io
+import json
+import os
+import zipfile
+
+import frappe
+
+
+def generate_project_zip(app_name: str) -> bytes:
+    """
+    Build a complete Flutter project as an in-memory ZIP.
+    Returns raw bytes of the ZIP file.
+    """
+    app = frappe.get_doc("Native App Config", app_name)
+    screens = frappe.get_all(
+        "Native Screen",
+        filters={"app": app_name, "enabled": 1},
+        fields=["*"],
+        order_by="nav_position asc",
+    )
+    layouts: dict[str, dict] = {}
+    for s in screens:
+        layout = frappe.db.get_value(
+            "Native Screen Layout",
+            {"screen": s.name, "enabled": 1},
+            ["dsl_json"],
+            as_dict=True,
+            order_by="version desc",
+        )
+        if layout and layout.dsl_json:
+            layouts[s.screen_key] = json.loads(layout.dsl_json)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        _add(zf, "pubspec.yaml", _pubspec(app))
+        _add(zf, "lib/main.dart", _main_dart(app))
+        _add(zf, "lib/app_config.dart", _app_config_dart(app, screens))
+        _add(zf, "lib/screens/screens.dart", _screens_barrel(screens))
+        for s in screens:
+            dsl = layouts.get(s.screen_key, {})
+            _add(zf, f"lib/screens/{s.screen_key}_screen.dart", _screen_dart(app, s, dsl))
+        _add(zf, "android/app/build.gradle", _android_build_gradle(app))
+        _add(zf, "android/local.properties", "flutter.sdk=/opt/flutter\n")
+        _add(zf, "lib/generated/screens_registry.dart", _registry_dart(screens))
+
+    return buf.getvalue()
+
+
+# ── File generators ────────────────────────────────────────────────────────
+
+def _pubspec(app) -> str:
+    bundle = app.bundle_id or f"com.example.{app.app_name.replace('-', '_')}"
+    return f"""name: {app.app_name.replace('-', '_').replace(' ', '_')}
+description: {app.app_title} — generated by frappe-native.
+version: 1.0.0+1
+publish_to: 'none'
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.1
+  dio: ^5.4.3
+  flutter_secure_storage: ^9.2.2
+  jwt_decoder: ^2.0.1
+  messagepack: ^0.2.2
+  sqflite: ^2.3.3+1
+  path: ^1.9.0
+  firebase_core: ^3.1.0
+  firebase_messaging: ^15.0.2
+  flutter_local_notifications: ^17.1.2
+  provider: ^6.1.2
+  go_router: ^14.2.0
+  uuid: ^4.4.2
+
+flutter:
+  uses-material-design: true
+"""
+
+
+def _main_dart(app) -> str:
+    primary = app.primary_color or "#1565C0"
+    font = app.font_family or "Roboto"
+    return f"""import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'app_config.dart';
+
+void main() async {{
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  runApp(const GeneratedApp());
+}}
+
+class GeneratedApp extends StatelessWidget {{
+  const GeneratedApp({{super.key}});
+
+  @override
+  Widget build(BuildContext context) {{
+    return MaterialApp(
+      title: '{app.app_title}',
+      theme: ThemeData(
+        colorSchemeSeed: const Color(0xFF{primary.lstrip('#')}),
+        useMaterial3: true,
+        fontFamily: '{font}',
+      ),
+      home: const AppHome(),
+    );
+  }}
+}}
+"""
+
+
+def _app_config_dart(app, screens) -> str:
+    base_url = "https://your-frappe-server.com"  # placeholder
+    screen_list = "\n    ".join(
+        f"ScreenConfig(key: '{s.screen_key}', title: '{s.title or s.screen_key}', "
+        f"doctype: '{s.doctype_name}'),"
+        for s in screens
+    )
+    return f"""// Auto-generated by frappe-native. Do not edit manually.
+
+const String kBaseUrl = '{base_url}';
+const String kAppName = '{app.app_name}';
+
+class ScreenConfig {{
+  final String key;
+  final String title;
+  final String doctype;
+  const ScreenConfig({{required this.key, required this.title, required this.doctype}});
+}}
+
+const List<ScreenConfig> kScreens = [
+    {screen_list}
+];
+
+class AppHome extends StatelessWidget {{
+  const AppHome({{super.key}});
+
+  @override
+  Widget build(BuildContext context) {{
+    return Scaffold(
+      appBar: AppBar(title: const Text('{app.app_title}')),
+      body: ListView(
+        children: kScreens.map((s) => ListTile(
+          title: Text(s.title),
+          onTap: () {{/* navigate to s.key */}},
+        )).toList(),
+      ),
+    );
+  }}
+}}
+"""
+
+
+def _screens_barrel(screens) -> str:
+    exports = "\n".join(
+        f"export '{s.screen_key}_screen.dart';" for s in screens
+    )
+    return f"// Auto-generated barrel\n{exports}\n"
+
+
+def _screen_dart(app, screen, dsl: dict) -> str:
+    class_name = _to_class_name(screen.screen_key)
+    sections_code = _dsl_to_widgets(dsl)
+    return f"""// Auto-generated screen for {screen.doctype_name}
+import 'package:flutter/material.dart';
+
+class {class_name}Screen extends StatelessWidget {{
+  const {class_name}Screen({{super.key}});
+
+  @override
+  Widget build(BuildContext context) {{
+    return Scaffold(
+      appBar: AppBar(title: const Text('{screen.title or screen.screen_key}')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+{sections_code}
+        ],
+      ),
+    );
+  }}
+}}
+"""
+
+
+def _dsl_to_widgets(dsl: dict) -> str:
+    if not dsl or not dsl.get("sections"):
+        return "          const Text('No layout defined'),"
+
+    lines = []
+    for section in dsl.get("sections", []):
+        stype = section.get("type", "")
+        if stype == "header_card":
+            lines.append(
+                f"          Card(child: ListTile(title: Text('{section.get('title_field', '')}'))),")
+        elif stype == "field_group":
+            for f in section.get("fields", []):
+                fn = f if isinstance(f, str) else f.get("fieldname", "")
+                lines.append(
+                    f"          ListTile(title: const Text('{fn}'), subtitle: const Text('—')),")
+        elif stype == "action_bar":
+            btns = " ".join(
+                f"ElevatedButton(onPressed: () {{}}, child: const Text('{b.get('label', b.get('type', ''))}')),\n"
+                for b in section.get("buttons", [])
+            )
+            lines.append(f"          Row(children: [{btns}]),")
+        else:
+            lines.append(f"          const Chip(label: Text('{stype}')),")
+    return "\n".join(lines) or "          const SizedBox.shrink(),"
+
+
+def _android_build_gradle(app) -> str:
+    bundle = app.bundle_id or f"com.example.{app.app_name.replace('-', '_')}"
+    return f"""apply plugin: 'com.android.application'
+apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
+
+android {{
+    compileSdkVersion 34
+    defaultConfig {{
+        applicationId "{bundle}"
+        minSdkVersion 21
+        targetSdkVersion 34
+        versionCode 1
+        versionName "1.0"
+    }}
+    buildTypes {{
+        release {{
+            signingConfig signingConfigs.debug
+        }}
+    }}
+}}
+
+flutter {{
+    source '../..'
+}}
+"""
+
+
+def _registry_dart(screens) -> str:
+    entries = "\n  ".join(
+        f"'{s.screen_key}': {_to_class_name(s.screen_key)}Screen.new," for s in screens
+    )
+    imports = "\n".join(
+        f"import '../screens/{s.screen_key}_screen.dart';" for s in screens
+    )
+    return f"""// Auto-generated screen registry.
+{imports}
+
+final Map<String, WidgetBuilder> kScreenRegistry = {{
+  {entries}
+}};
+"""
+
+
+def _to_class_name(key: str) -> str:
+    return "".join(part.capitalize() for part in key.replace("-", "_").split("_"))
+
+
+def _add(zf: zipfile.ZipFile, path: str, content: str):
+    zf.writestr(path, content.encode("utf-8"))
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/frappe_native/hooks.py
+app_name = "frappe_native"
+app_title = "Frappe Native"
+app_publisher = "BluePhoenix"
+app_description = "Native mobile app generator for Frappe — offline-first, sync-ready, no wrapper."
+app_email = "bluephoenix00995@gmail.com"
+app_license = "gpl-3.0"
+
+# Apps
+# ------------------
+
+# required_apps = []
+
+# Each item in the list will be shown as an app in the apps page
+# add_to_apps_screen = [
+# 	{
+# 		"name": "frappe_native",
+# 		"logo": "/assets/frappe_native/logo.png",
+# 		"title": "Frappe Native",
+# 		"route": "/frappe_native",
+# 		"has_permission": "frappe_native.api.permission.has_app_permission"
+# 	}
+# ]
+
+# Includes in <head>
+# ------------------
+
+# include js, css files in header of desk.html
+# app_include_css = "/assets/frappe_native/css/frappe_native.css"
+# app_include_js = "/assets/frappe_native/js/frappe_native.js"
+
+# include js, css files in header of web template
+# web_include_css = "/assets/frappe_native/css/frappe_native.css"
+# web_include_js = "/assets/frappe_native/js/frappe_native.js"
+
+# include custom scss in every website theme (without file extension ".scss")
+# website_theme_scss = "frappe_native/public/scss/website"
+
+# include js, css files in header of web form
+# webform_include_js = {"doctype": "public/js/doctype.js"}
+# webform_include_css = {"doctype": "public/css/doctype.css"}
+
+# include js in page
+# page_js = {"page" : "public/js/file.js"}
+
+# include js in doctype views
+# doctype_js = {"doctype" : "public/js/doctype.js"}
+# doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
+# doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
+# doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
+
+# Svg Icons
+# ------------------
+# include app icons in desk
+# app_include_icons = "frappe_native/public/icons.svg"
+
+# Home Pages
+# ----------
+
+# application home page (will override Website Settings)
+# home_page = "login"
+
+# website user home page (by Role)
+# role_home_page = {
+# 	"Role": "home_page"
+# }
+
+# Generators
+# ----------
+
+# automatically create page for each record of this doctype
+# website_generators = ["Web Page"]
+
+# automatically load and sync documents of this doctype from downstream apps
+# importable_doctypes = [doctype_1]
+
+# Jinja
+# ----------
+
+# add methods and filters to jinja environment
+# jinja = {
+# 	"methods": "frappe_native.utils.jinja_methods",
+# 	"filters": "frappe_native.utils.jinja_filters"
+# }
+
+# Installation
+# ------------
+
+# before_install = "frappe_native.install.before_install"
+after_install = "frappe_native.install.setup.after_install"
+after_migrate = "frappe_native.install.setup.after_install"
+
+# When Native Screen or Field Mapping changes, bump parent app schema_version
+doc_events = {
+    "Native Screen": {
+        "on_update": "frappe_native.schema.hooks.on_screen_change",
+        "on_trash": "frappe_native.schema.hooks.on_screen_change",
+    },
+    "Native Field Mapping": {
+        "on_update": "frappe_native.schema.hooks.on_field_mapping_change",
+        "on_trash": "frappe_native.schema.hooks.on_field_mapping_change",
+    },
+    "Native Screen Layout": {
+        "on_update": "frappe_native.schema.hooks.on_layout_change",
+    },
+}
+
+# Uninstallation
+# ------------
+
+# before_uninstall = "frappe_native.uninstall.before_uninstall"
+# after_uninstall = "frappe_native.uninstall.after_uninstall"
+
+# Integration Setup
+# ------------------
+# To set up dependencies/integrations with other apps
+# Name of the app being installed is passed as an argument
+
+# before_app_install = "frappe_native.utils.before_app_install"
+# after_app_install = "frappe_native.utils.after_app_install"
+
+# Integration Cleanup
+# -------------------
+# To clean up dependencies/integrations with other apps
+# Name of the app being uninstalled is passed as an argument
+
+# before_app_uninstall = "frappe_native.utils.before_app_uninstall"
+# after_app_uninstall = "frappe_native.utils.after_app_uninstall"
+
+# Desk Notifications
+# ------------------
+# See frappe.core.notifications.get_notification_config
+
+# notification_config = "frappe_native.notifications.get_notification_config"
+
+# Permissions
+# -----------
+# Permissions evaluated in scripted ways
+
+# permission_query_conditions = {
+# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
+# }
+#
+# has_permission = {
+# 	"Event": "frappe.desk.doctype.event.event.has_permission",
+# }
+
+# Document Events
+# ---------------
+# Hook on document methods and events
+
+# doc_events = {
+# 	"*": {
+# 		"on_update": "method",
+# 		"on_cancel": "method",
+# 		"on_trash": "method"
+# 	}
+# }
+
+# Scheduled Tasks
+# ---------------
+
+# scheduler_events = {
+# 	"all": [
+# 		"frappe_native.tasks.all"
+# 	],
+# 	"daily": [
+# 		"frappe_native.tasks.daily"
+# 	],
+# 	"hourly": [
+# 		"frappe_native.tasks.hourly"
+# 	],
+# 	"weekly": [
+# 		"frappe_native.tasks.weekly"
+# 	],
+# 	"monthly": [
+# 		"frappe_native.tasks.monthly"
+# 	],
+# }
+
+# Testing
+# -------
+
+# before_tests = "frappe_native.install.before_tests"
+
+# Extend DocType Class
+# ------------------------------
+#
+# Specify custom mixins to extend the standard doctype controller.
+# extend_doctype_class = {
+# 	"Task": "frappe_native.custom.task.CustomTaskMixin"
+# }
+
+# Overriding Methods
+# ------------------------------
+#
+# override_whitelisted_methods = {
+# 	"frappe.desk.doctype.event.event.get_events": "frappe_native.event.get_events"
+# }
+#
+# each overriding function accepts a `data` argument;
+# generated from the base implementation of the doctype dashboard,
+# along with any modifications made in other Frappe apps
+# override_doctype_dashboards = {
+# 	"Task": "frappe_native.task.get_dashboard_data"
+# }
+
+# exempt linked doctypes from being automatically cancelled
+#
+# auto_cancel_exempted_doctypes = ["Auto Repeat"]
+
+# Ignore links to specified DocTypes when deleting documents
+# -----------------------------------------------------------
+
+# ignore_links_on_delete = ["Communication", "ToDo"]
+
+# Request Events
+# ----------------
+# before_request = ["frappe_native.utils.before_request"]
+# after_request = ["frappe_native.utils.after_request"]
+
+# Job Events
+# ----------
+# before_job = ["frappe_native.utils.before_job"]
+# after_job = ["frappe_native.utils.after_job"]
+
+# User Data Protection
+# --------------------
+
+# user_data_fields = [
+# 	{
+# 		"doctype": "{doctype_1}",
+# 		"filter_by": "{filter_by}",
+# 		"redact_fields": ["{field_1}", "{field_2}"],
+# 		"partial": 1,
+# 	},
+# 	{
+# 		"doctype": "{doctype_2}",
+# 		"filter_by": "{filter_by}",
+# 		"partial": 1,
+# 	},
+# 	{
+# 		"doctype": "{doctype_3}",
+# 		"strict": False,
+# 	},
+# 	{
+# 		"doctype": "{doctype_4}"
+# 	}
+# ]
+
+# Authentication and authorization
+# --------------------------------
+
+# auth_hooks = [
+# 	"frappe_native.auth.validate"
+# ]
+
+# Automatically update python controller files with type annotations for this app.
+# export_python_type_annotations = True
+
+# default_log_clearing_doctypes = {
+# 	"Logging DocType Name": 30  # days to retain logs
+# }
+
+# Translation
+# ------------
+# List of apps whose translatable strings should be excluded from this app's translations.
+# ignore_translatable_strings_from = []
+
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/frappe_native/page/native_mobile_builder/native_mobile_builder.js
+frappe.pages["native-mobile-builder"].on_page_load = function (wrapper) {
+	const page = frappe.ui.make_app_page({
+		parent: wrapper,
+		title: "Mobile Builder",
+		single_column: false,
+	});
+
+	// ── Page actions ─────────────────────────────────────────────────────
+	page.add_action_item("Browse Templates", showTemplateMarketplace);
+	page.add_action_item("Export App", exportCurrentApp);
+	page.add_action_item("Trigger Build", triggerBuild);
+
+	function showTemplateMarketplace() {
+		frappe.call({
+			method: "frappe_native.api.templates.list_bundled_templates",
+			callback(r) {
+				const templates = r.message || [];
+				const d = new frappe.ui.Dialog({
+					title: "App Templates",
+					fields: [{
+						fieldname: "template_html",
+						fieldtype: "HTML",
+						options: templates.map(t => `
+							<div style="border:1px solid #eee;border-radius:6px;padding:12px;
+							            margin-bottom:8px;display:flex;justify-content:space-between;
+							            align-items:center">
+								<div>
+									<strong>${frappe.utils.escape_html(t.template_name)}</strong>
+									<div style="font-size:12px;color:#888">${frappe.utils.escape_html(t.description)}</div>
+								</div>
+								<button class="btn btn-sm btn-primary install-tmpl-btn"
+								        data-file="${t.file}">Install</button>
+							</div>
+						`).join("") || "<div class='text-muted text-center'>No templates found</div>",
+					}],
+				});
+				d.show();
+				$(d.wrapper).on("click", ".install-tmpl-btn", function() {
+					const file = $(this).data("file");
+					frappe.prompt(
+						{ fieldname: "app_name", fieldtype: "Data", label: "App Name (leave blank to use default)" },
+						(vals) => {
+							frappe.call({
+								method: "frappe_native.api.templates.install_bundled_template",
+								args: { file, app_name_override: vals.app_name || "" },
+								callback(r) {
+									d.hide();
+									frappe.show_alert({ message: `Installed: ${r.message.app} (${r.message.screens_created} screens)`, indicator: "green" });
+									$("#nb-app-select").trigger("change");
+								},
+							});
+						},
+						"Install Template",
+						"Install",
+					);
+				});
+			},
+		});
+	}
+
+	function exportCurrentApp() {
+		if (!currentApp) { frappe.msgprint("Select an app first."); return; }
+		frappe.call({
+			method: "frappe_native.api.templates.export_app_template",
+			args: { app_name: currentApp },
+			callback(r) {
+				const json = JSON.stringify(r.message, null, 2);
+				const blob = new Blob([json], { type: "application/json" });
+				const url = URL.createObjectURL(blob);
+				const a = document.createElement("a");
+				a.href = url; a.download = `${currentApp}_template.json`; a.click();
+				URL.revokeObjectURL(url);
+			},
+		});
+	}
+
+	function triggerBuild() {
+		if (!currentApp) { frappe.msgprint("Select an app first."); return; }
+		const d = new frappe.ui.Dialog({
+			title: "Trigger Build",
+			fields: [{
+				fieldname: "build_type",
+				fieldtype: "Select",
+				label: "Build Type",
+				options: ["source_zip", "android_apk", "all"],
+				default: "source_zip",
+			}],
+			primary_action_label: "Build",
+			primary_action(vals) {
+				frappe.call({
+					method: "frappe_native.api.build.trigger_build",
+					args: { app: currentApp, build_type: vals.build_type },
+					callback(r) {
+						d.hide();
+						frappe.show_alert({ message: `Build queued: ${r.message.job}`, indicator: "green" });
+					},
+				});
+			},
+		});
+		d.show();
+	}
+
+	// ── App selector ─────────────────────────────────────────────────────
+	const $body = $(wrapper).find(".layout-main-section");
+	const $sidebar = $(wrapper).find(".layout-side-section");
+
+	let currentApp = null;
+	let currentScreen = null;
+
+	const $appSelect = $(`
+		<div style="margin-bottom:16px">
+			<label class="control-label">App</label>
+			<select id="nb-app-select" class="form-control"></select>
+		</div>
+	`).appendTo($sidebar);
+
+	frappe.call({
+		method: "frappe.client.get_list",
+		args: { doctype: "Native App Config", fields: ["name", "app_title"], filters: { enabled: 1 } },
+		callback(r) {
+			const opts = (r.message || []).map(a => `<option value="${a.name}">${a.app_title || a.name}</option>`).join("");
+			$("#nb-app-select").html(`<option value="">— Select App —</option>${opts}`);
+		},
+	});
+
+	// ── Screen list ───────────────────────────────────────────────────────
+	const $screenList = $(`<div id="nb-screen-list" style="margin-top:8px"></div>`).appendTo($sidebar);
+
+	function loadScreens(app) {
+		frappe.call({
+			method: "frappe.client.get_list",
+			args: {
+				doctype: "Native Screen",
+				filters: { app },
+				fields: ["name", "screen_key", "screen_type", "title", "doctype_name", "nav_position"],
+				order_by: "nav_position asc",
+			},
+			callback(r) {
+				const screens = r.message || [];
+				$screenList.html(
+					screens.map(s => `
+						<div class="nb-screen-item" data-key="${s.name}"
+						     style="padding:6px 8px;cursor:pointer;border-radius:4px;margin-bottom:2px;
+						            background:${currentScreen === s.name ? '#f0f4ff' : 'transparent'}">
+							<div style="font-weight:500">${s.title || s.screen_key}</div>
+							<div style="font-size:11px;color:#888">${s.doctype_name} · ${s.screen_type}</div>
+						</div>
+					`).join("") +
+					`<button class="btn btn-xs btn-default" id="nb-add-screen" style="margin-top:8px;width:100%">
+						+ Add Screen</button>`
+				);
+				$(".nb-screen-item").on("click", function() {
+					currentScreen = $(this).data("key");
+					loadEditor(currentApp, currentScreen);
+					$(".nb-screen-item").css("background", "transparent");
+					$(this).css("background", "#f0f4ff");
+				});
+				$("#nb-add-screen").on("click", () => addScreen(app));
+			},
+		});
+	}
+
+	$("#nb-app-select").on("change", function() {
+		currentApp = $(this).val();
+		currentScreen = null;
+		if (currentApp) loadScreens(currentApp);
+		$body.empty();
+	});
+
+	// ── Editor area ────────────────────────────────────────────────────────
+	function loadEditor(app, screenName) {
+		$body.html(`<div class="text-center text-muted" style="padding:40px">
+			<div class="spinner-border" role="status"></div>
+		</div>`);
+
+		// Load screen doc + field mappings + layout DSL
+		Promise.all([
+			frappe.db.get_doc("Native Screen", screenName),
+			frappe.call({ method: "frappe.client.get_list", args: {
+				doctype: "Native Field Mapping",
+				filters: { screen: screenName },
+				fields: ["*"],
+				order_by: "position asc",
+				limit_page_length: 200,
+			}}),
+			frappe.call({ method: "frappe.client.get_list", args: {
+				doctype: "Native Screen Layout",
+				filters: { screen: screenName },
+				fields: ["name", "dsl_json", "layout_hash", "version"],
+				order_by: "version desc",
+				limit_page_length: 1,
+			}}),
+		]).then(([screenDoc, fieldsResp, layoutResp]) => {
+			const fields = (fieldsResp.message || []);
+			const layout = (layoutResp.message || [])[0] || null;
+			renderEditor(app, screenDoc, fields, layout);
+		});
+	}
+
+	function renderEditor(app, screenDoc, fields, layout) {
+		const dslJson = layout ? layout.dsl_json : JSON.stringify({
+			version: 1,
+			sections: [{ type: "field_group", fields: fields.map(f => f.fieldname) }],
+			actions: [],
+			gestures: {},
+		}, null, 2);
+
+		$body.html(`
+			<div style="display:flex;gap:16px;height:calc(100vh - 200px)">
+				<!-- Field panel -->
+				<div style="width:240px;overflow-y:auto;background:#fafafa;border-radius:8px;padding:12px">
+					<div style="font-weight:600;margin-bottom:8px">Fields</div>
+					<div id="nb-field-list">
+						${fields.map(f => `
+							<div class="nb-field-row" style="display:flex;justify-content:space-between;
+							     align-items:center;padding:4px 0;border-bottom:1px solid #f0f0f0">
+								<span style="font-size:12px">${frappe.utils.escape_html(f.fieldname)}</span>
+								<span class="indicator ${f.enabled ? 'green' : 'grey'}" style="font-size:10px">
+									${f.mobile_fieldtype || 'Auto'}</span>
+							</div>
+						`).join("")}
+					</div>
+					<button class="btn btn-xs btn-default" id="nb-add-field" style="margin-top:8px;width:100%">
+						+ Add Field</button>
+				</div>
+
+				<!-- DSL editor -->
+				<div style="flex:1;display:flex;flex-direction:column">
+					<div style="display:flex;justify-content:space-between;margin-bottom:8px">
+						<strong>Layout DSL</strong>
+						<div>
+							<button class="btn btn-xs btn-default" id="nb-validate-dsl">Validate</button>
+							<button class="btn btn-xs btn-primary" id="nb-publish-dsl" style="margin-left:4px">
+								Publish</button>
+						</div>
+					</div>
+					<div id="nb-dsl-validation" style="margin-bottom:8px"></div>
+					<textarea id="nb-dsl-editor" class="form-control" spellcheck="false"
+					          style="flex:1;font-family:monospace;font-size:12px;resize:none"
+					>${frappe.utils.escape_html(dslJson)}</textarea>
+				</div>
+
+				<!-- Mobile preview -->
+				<div style="width:280px">
+					<div style="font-weight:600;margin-bottom:8px">Preview</div>
+					<div id="nb-preview" style="border:2px solid #ddd;border-radius:16px;
+					     height:540px;overflow-y:auto;padding:12px;background:#fff">
+						${renderPreview(JSON.parse(dslJson), fields)}
+					</div>
+				</div>
+			</div>
+		`);
+
+		$("#nb-validate-dsl").on("click", function() {
+			const dsl = $("#nb-dsl-editor").val();
+			frappe.call({
+				method: "frappe_native.api.layout.validate_dsl",
+				args: { dsl_json: dsl },
+				callback(r) {
+					const $v = $("#nb-dsl-validation");
+					if (r.message.valid) {
+						$v.html('<span class="indicator green">Valid DSL ✓</span>');
+					} else {
+						$v.html(`<span class="indicator red">Error: ${frappe.utils.escape_html(r.message.error)}</span>`);
+					}
+				},
+			});
+		});
+
+		$("#nb-publish-dsl").on("click", function() {
+			const dsl = $("#nb-dsl-editor").val();
+			frappe.call({
+				method: "frappe_native.api.layout.publish_layout",
+				args: { screen_key: screenDoc.name, dsl_json: dsl },
+				callback(r) {
+					if (r.message) {
+						frappe.show_alert({ message: `Published v${r.message.version}`, indicator: "green" });
+						$("#nb-dsl-validation").html(
+							`<span class="indicator green">Published — hash ${r.message.hash.slice(0,8)}…</span>`);
+					}
+				},
+			});
+		});
+
+		// Live preview update on DSL change
+		let previewTimer;
+		$("#nb-dsl-editor").on("input", function() {
+			clearTimeout(previewTimer);
+			previewTimer = setTimeout(() => {
+				try {
+					const dsl = JSON.parse($("#nb-dsl-editor").val());
+					$("#nb-preview").html(renderPreview(dsl, fields));
+				} catch (_) {}
+			}, 600);
+		});
+
+		$("#nb-add-field").on("click", () => addFieldMapping(app, screenDoc.name));
+	}
+
+	function renderPreview(dsl, fields) {
+		const fieldMap = {};
+		fields.forEach(f => { fieldMap[f.fieldname] = f; });
+
+		if (!dsl || !dsl.sections) return '<div class="text-muted text-center">No sections</div>';
+
+		return dsl.sections.map(s => {
+			if (s.type === "header_card") {
+				return `<div style="background:#e8eaf6;border-radius:8px;padding:12px;margin-bottom:8px">
+					<div style="font-size:14px;font-weight:600">[${s.title_field}]</div>
+					${s.subtitle_field ? `<div style="font-size:11px;color:#666">[${s.subtitle_field}]</div>` : ""}
+				</div>`;
+			}
+			if (s.type === "field_group") {
+				const rows = (s.fields || []).map(f => {
+					const fn = typeof f === "string" ? f : f.fieldname;
+					return `<div style="padding:4px 0;border-bottom:1px solid #f0f0f0;font-size:12px">
+						<span style="color:#888;min-width:100px;display:inline-block">
+							${fieldMap[fn]?.fieldname || fn}</span>
+						<span style="color:#bbb">___</span>
+					</div>`;
+				}).join("");
+				return `<div style="background:#fff;border-radius:6px;padding:8px;margin-bottom:8px;
+				              box-shadow:0 1px 3px rgba(0,0,0,0.1)">${rows}</div>`;
+			}
+			if (s.type === "action_bar") {
+				const btns = (s.buttons || []).map(b =>
+					`<button class="btn btn-xs btn-default">${b.label || b.type}</button>`
+				).join(" ");
+				return `<div style="margin-bottom:8px">${btns}</div>`;
+			}
+			return `<div style="background:#f5f5f5;border-radius:6px;padding:8px;
+			              margin-bottom:8px;font-size:11px;color:#888">[${s.type}]</div>`;
+		}).join("");
+	}
+
+	function addScreen(app) {
+		const d = new frappe.ui.Dialog({
+			title: "Add Screen",
+			fields: [
+				{ fieldname: "screen_key", fieldtype: "Data", label: "Screen Key", reqd: 1 },
+				{ fieldname: "doctype_name", fieldtype: "Link", options: "DocType", label: "DocType", reqd: 1 },
+				{ fieldname: "screen_type", fieldtype: "Select", label: "Screen Type",
+				  options: ["List", "Detail", "Form", "Dashboard", "Custom"], default: "List" },
+				{ fieldname: "title", fieldtype: "Data", label: "Title" },
+			],
+			primary_action_label: "Create",
+			primary_action(vals) {
+				frappe.call({
+					method: "frappe.client.insert",
+					args: { doc: { doctype: "Native Screen", app, ...vals } },
+					callback() {
+						d.hide();
+						loadScreens(app);
+						frappe.show_alert({ message: "Screen created", indicator: "green" });
+					},
+				});
+			},
+		});
+		d.show();
+	}
+
+	function addFieldMapping(app, screenName) {
+		const d = new frappe.ui.Dialog({
+			title: "Add Field Mapping",
+			fields: [
+				{ fieldname: "fieldname", fieldtype: "Data", label: "Fieldname", reqd: 1 },
+				{ fieldname: "label_override", fieldtype: "Data", label: "Label Override" },
+				{ fieldname: "mobile_fieldtype", fieldtype: "Select", label: "Mobile Type",
+				  options: ["Auto", "Text", "Number", "Date", "Select", "Checkbox", "Textarea",
+				             "Link", "Attach", "Signature", "Barcode", "GPS", "Password"],
+				  default: "Auto" },
+				{ fieldname: "required", fieldtype: "Check", label: "Required" },
+			],
+			primary_action_label: "Add",
+			primary_action(vals) {
+				frappe.call({
+					method: "frappe.client.insert",
+					args: { doc: { doctype: "Native Field Mapping", screen: screenName, ...vals, enabled: 1 } },
+					callback() {
+						d.hide();
+						loadEditor(app, screenName);
+						frappe.show_alert({ message: "Field added", indicator: "green" });
+					},
+				});
+			},
+		});
+		d.show();
+	}
+};
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/frappe_native/schema/hooks.py
+import frappe
+
+
+def _bump_app_schema_version(app_name: str):
+    if not app_name or not frappe.db.exists("Native App Config", app_name):
+        return
+    current = frappe.db.get_value("Native App Config", app_name, "schema_version") or 1
+    frappe.db.set_value("Native App Config", app_name, "schema_version", int(current) + 1)
+    frappe.db.commit()
+
+
+def on_screen_change(doc, method=None):
+    _bump_app_schema_version(doc.app)
+
+
+def on_field_mapping_change(doc, method=None):
+    screen_app = frappe.db.get_value("Native Screen", doc.screen, "app")
+    if screen_app:
+        _bump_app_schema_version(screen_app)
+
+
+def on_layout_change(doc, method=None):
+    screen_app = frappe.db.get_value("Native Screen", doc.screen, "app")
+    if screen_app:
+        _bump_app_schema_version(screen_app)
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/frappe_native/schema/reader.py
+"""
+Reads Frappe DocType metadata and converts it into a mobile contract —
+a stable, serialisable description of fields, child tables, and sync rules
+suitable for code-generation or runtime interpretation in the Flutter app.
+"""
+import frappe
+
+# Frappe fieldtypes → mobile semantic type
+_FIELDTYPE_MAP = {
+    "Data": "text",
+    "Small Text": "textarea",
+    "Text": "textarea",
+    "Long Text": "textarea",
+    "Text Editor": "textarea",
+    "Int": "number",
+    "Float": "number",
+    "Currency": "currency",
+    "Percent": "number",
+    "Check": "checkbox",
+    "Date": "date",
+    "Datetime": "datetime",
+    "Time": "time",
+    "Select": "select",
+    "Link": "link",
+    "Dynamic Link": "link",
+    "Table": "child_table",
+    "Table MultiSelect": "multiselect",
+    "Attach": "attach",
+    "Attach Image": "image",
+    "Image": "image",
+    "Signature": "signature",
+    "Password": "password",
+    "Color": "text",
+    "Barcode": "barcode",
+    "Geolocation": "gps",
+    "Phone": "text",
+    "Read Only": "text",
+    "HTML": None,
+    "Heading": None,
+    "Section Break": None,
+    "Column Break": None,
+    "Tab Break": None,
+    "Button": None,
+}
+
+# Fields always stripped from mobile contracts (internal Frappe plumbing)
+_STRIP_FIELDS = frozenset([
+    "name", "owner", "creation", "modified", "modified_by",
+    "docstatus", "idx", "parent", "parentfield", "parenttype",
+    "_user_tags", "_comments", "_assign", "_liked_by",
+])
+
+
+def get_contract(doctype: str, app: str = "", screen_key: str = "") -> dict:
+    """
+    Build a mobile contract for doctype.
+
+    Returns a dict with:
+      doctype, title, is_submittable, naming_rule,
+      fields: [{fieldname, label, type, options, required, read_only,
+                hidden, in_list_view, in_detail_view, in_form_view,
+                child_contract (if type==child_table)}],
+      sync: {offline_enabled, max_records, filter, allow_create, allow_edit, allow_delete},
+      child_tables: {fieldname: contract, ...}
+    """
+    meta = frappe.get_meta(doctype)
+
+    # Load field mapping overrides if a screen is specified
+    overrides: dict[str, dict] = {}
+    if screen_key:
+        mappings = frappe.get_all(
+            "Native Field Mapping",
+            filters={"screen": screen_key, "enabled": 1},
+            fields=["fieldname", "label_override", "mobile_fieldtype", "required",
+                    "read_only", "hidden", "show_in_list", "show_in_detail",
+                    "show_in_form", "placeholder", "default_value",
+                    "validation_regex", "options_override"],
+        )
+        for m in mappings:
+            overrides[m["fieldname"]] = m
+
+    fields = []
+    child_tables: dict[str, dict] = {}
+
+    for f in meta.fields:
+        if f.fieldname in _STRIP_FIELDS:
+            continue
+        mobile_type = _FIELDTYPE_MAP.get(f.fieldtype)
+        if mobile_type is None:
+            continue
+
+        ov = overrides.get(f.fieldname, {})
+
+        field_def: dict = {
+            "fieldname": f.fieldname,
+            "label": ov.get("label_override") or f.label or f.fieldname,
+            "type": ov.get("mobile_fieldtype", "Auto") not in ("", "Auto")
+                    and ov["mobile_fieldtype"].lower() or mobile_type,
+            "options": f.options or "",
+            "required": bool(ov.get("required") if "required" in ov else f.reqd),
+            "read_only": bool(ov.get("read_only") if "read_only" in ov else f.read_only),
+            "hidden": bool(ov.get("hidden") if "hidden" in ov else f.hidden),
+            "in_list_view": bool(ov.get("show_in_list", f.in_list_view)),
+            "in_detail_view": bool(ov.get("show_in_detail", 1)),
+            "in_form_view": bool(ov.get("show_in_form", 1)),
+        }
+
+        if ov.get("placeholder"):
+            field_def["placeholder"] = ov["placeholder"]
+        if ov.get("default_value"):
+            field_def["default"] = ov["default_value"]
+        if ov.get("validation_regex"):
+            field_def["validation_regex"] = ov["validation_regex"]
+        if ov.get("options_override"):
+            field_def["options"] = ov["options_override"]
+
+        if mobile_type == "child_table" and f.options:
+            child_contract = get_contract(f.options)
+            field_def["child_contract"] = child_contract
+            child_tables[f.fieldname] = child_contract
+
+        fields.append(field_def)
+
+    # Sync config from Native Screen if available
+    sync_config = {"offline_enabled": True, "max_records": 500, "filter": {},
+                   "allow_create": True, "allow_edit": True, "allow_delete": False}
+    if screen_key:
+        screen = frappe.db.get_value(
+            "Native Screen",
+            screen_key,
+            ["offline_enabled", "max_offline_records", "sync_filter",
+             "allow_create", "allow_edit", "allow_delete"],
+            as_dict=True,
+        )
+        if screen:
+            import json
+            sync_config = {
+                "offline_enabled": bool(screen.offline_enabled),
+                "max_records": int(screen.max_offline_records or 500),
+                "filter": json.loads(screen.sync_filter or "{}"),
+                "allow_create": bool(screen.allow_create),
+                "allow_edit": bool(screen.allow_edit),
+                "allow_delete": bool(screen.allow_delete),
+            }
+
+    return {
+        "doctype": doctype,
+        "title": meta.name,
+        "is_submittable": bool(meta.is_submittable),
+        "naming_rule": meta.autoname or "SERIES",
+        "fields": fields,
+        "sync": sync_config,
+        "child_tables": child_tables,
+    }
+
+
+def get_sqlite_schema(doctype: str) -> list[dict]:
+    """
+    Convert a Frappe DocType contract into a list of SQLite column definitions
+    suitable for generating CREATE TABLE statements in Flutter's sqflite.
+
+    Returns [{"column": name, "type": sqlite_type, "nullable": bool}, ...]
+    """
+    _SQLITE_TYPE = {
+        "text": "TEXT",
+        "textarea": "TEXT",
+        "number": "REAL",
+        "currency": "REAL",
+        "checkbox": "INTEGER",
+        "date": "TEXT",
+        "datetime": "TEXT",
+        "time": "TEXT",
+        "select": "TEXT",
+        "link": "TEXT",
+        "attach": "TEXT",
+        "image": "TEXT",
+        "signature": "TEXT",
+        "password": "TEXT",
+        "barcode": "TEXT",
+        "gps": "TEXT",
+        "multiselect": "TEXT",
+        "child_table": None,
+    }
+
+    contract = get_contract(doctype)
+    columns = [
+        {"column": "name", "type": "TEXT", "nullable": False, "primary_key": True},
+        {"column": "_sync_state", "type": "TEXT", "nullable": False, "default": "SYNCED"},
+        {"column": "_local_seq", "type": "INTEGER", "nullable": True},
+        {"column": "_modified", "type": "TEXT", "nullable": True},
+    ]
+
+    for f in contract["fields"]:
+        sqlite_type = _SQLITE_TYPE.get(f["type"])
+        if sqlite_type is None:
+            continue
+        columns.append({
+            "column": f["fieldname"],
+            "type": sqlite_type,
+            "nullable": not f["required"],
+        })
+
+    return columns
+
+
+def get_sync_rules(app: str) -> list[dict]:
+    """
+    Return sync rules for all enabled screens in app.
+    Used by the Flutter offline engine to know what to pull/push.
+    """
+    screens = frappe.get_all(
+        "Native Screen",
+        filters={"app": app, "enabled": 1, "offline_enabled": 1},
+        fields=["screen_key", "doctype_name", "sync_filter",
+                "max_offline_records", "allow_create", "allow_edit", "allow_delete"],
+    )
+    rules = []
+    for s in screens:
+        import json
+        rules.append({
+            "screen_key": s.screen_key,
+            "doctype": s.doctype_name,
+            "filter": json.loads(s.sync_filter or "{}"),
+            "max_records": int(s.max_offline_records or 500),
+            "allow_create": bool(s.allow_create),
+            "allow_edit": bool(s.allow_edit),
+            "allow_delete": bool(s.allow_delete),
+        })
+    return rules
+

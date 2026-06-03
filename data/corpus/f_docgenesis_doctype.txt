@@ -1,0 +1,66 @@
+# DOCTYPE: Data Snapshot
+# Module: Main  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  snapshot_name (Data): Snapshot Name [required]
+  timestamp (Datetime): Timestamp
+  record_count (Int): Record Count
+  snapshot_file (Attach): Snapshot File
+  is_restored (Check): Is Restored
+  description (Small Text): Description
+  included_doctypes (Table): Included DocTypes → Data Snapshot Doctype
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: F-DocGenesis AI Config
+# Module: Main  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  enabled (Check): Enable AI Generation
+  default_provider (Select): Default Provider → 
+Auto
+OpenAI
+Anthropic
+Local LLM
+  openai_enabled (Check): Enable OpenAI
+  openai_api_key (Password): OpenAI API Key
+  openai_model (Select): OpenAI Model → gpt-4-turbo-preview
+gpt-4
+gpt-3.5-turbo
+  anthropic_enabled (Check): Enable Anthropic Claude
+  anthropic_api_key (Password): Anthropic API Key
+  anthropic_model (Select): Anthropic Model → claude-3-5-sonnet-20241022
+claude-3-opus-20240229
+claude-3-sonnet-20240229
+  local_llm_enabled (Check): Enable Local LLM
+  ollama_url (Data): Ollama URL
+  local_llm_model (Data): Local LLM Model
+  max_tokens (Int): Max Tokens
+  temperature (Float): Temperature
+  rate_limit_per_hour (Int): Rate Limit (per hour)
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: Generation Scenario
+# Module: Main  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  scenario_name (Data): Scenario Name [required, unique]
+  is_standard (Check): Is Standard
+  description (Small Text): Description
+  steps (Table): Steps → Generation Scenario Step
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: Generation Scenario Step
+# Module: Main  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  sequence (Int): Sequence
+  doctype_name (Link): DocType → DocType [required]
+  count (Int): Count [required]
+  config (Code): Configuration (JSON) → JSON
+

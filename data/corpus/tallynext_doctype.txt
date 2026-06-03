@@ -1,0 +1,594 @@
+# DOCTYPE: TN Audit Log
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  voucher_type (Data): Voucher Type
+  voucher_no (Dynamic Link): Voucher No → voucher_type
+  company (Link): Company → Company
+  posting_date (Date): Posting Date
+  action (Select): Action → Created
+Amended
+Cancelled
+Deleted
+  changed_by (Link): Changed By → User
+  changed_on (Datetime): Changed On
+  field_changes (Long Text): Changes (JSON)
+
+## Permissions
+  Accounts Manager: read
+  System Manager: read, write, create
+  TN Accountant: read
+  Accounts User: read
+
+# DOCTYPE: TN Auditor Access
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  company (Link): Company → Company [required]
+  auditor_email (Data): Auditor Email → Email [required]
+  auditor_name (Data): Auditor Name [required]
+  access_from (Date): Access From [required]
+  access_to (Date): Access To [required]
+  is_active (Check): Active
+  can_view_gl (Check): View GL Entries
+  can_view_vouchers (Check): View Vouchers
+  can_download_reports (Check): Download Reports
+  can_view_payroll (Check): View Payroll
+  can_view_banking (Check): View Banking
+  last_pack_generated (Datetime): Last Pack Generated
+  last_pack_url (Data): Last Pack URL
+
+## Permissions
+  Accounts Manager: read, write, create, delete
+  System Manager: read, write, create, delete
+
+# DOCTYPE: TN Bank Recon Line
+# Module: TallyNext  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  txn_date (Date): Date
+  description (Data): Description
+  ref_no (Data): Ref / Cheque No
+  debit (Currency): Debit (Dr)
+  credit (Currency): Credit (Cr)
+  balance (Currency): Balance
+  match_status (Select): Match Status → Unmatched
+Auto-Matched
+Manually Matched
+Split
+Ignored
+  confidence (Select): Confidence → 
+High
+Medium
+Low
+  matched_voucher_type (Data): Matched Voucher Type
+  matched_voucher_no (Data): Matched Voucher No
+  match_note (Small Text): Note
+
+# DOCTYPE: TN Bank Statement Upload
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  company (Link): Company → Company [required]
+  bank_account (Link): Bank Account → Bank Account [required]
+  statement_date (Date): Statement Date [required]
+  statement_format (Select): Format → Auto-Detect
+CSV
+Excel
+OFX
+  currency (Link): Currency → Currency
+  statement_file (Attach): Upload File [required]
+  lines (Table): Statement Lines → TN Bank Recon Line
+  total_credits (Currency): Total Credits
+  total_debits (Currency): Total Debits
+  opening_balance (Currency): Opening Balance
+  closing_balance (Currency): Closing Balance
+  status (Select): Status → Draft
+Parsed
+Reconciling
+Reconciled
+  reconciliation_note (Small Text): Note
+
+## Permissions
+  Accounts User: read, write, create
+  Accounts Manager: read, write, create, delete
+  TN Accountant: read, write, create
+
+# DOCTYPE: TN Budget
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  company (Link): Company → Company [required]
+  fiscal_year (Link): Fiscal Year → Fiscal Year [required]
+  budget_name (Data): Budget Name [required]
+  alert_threshold_pct (Percent): Alert Threshold %
+  is_active (Check): Active
+  budget_details (Table): Budget Details → TN Budget Detail
+  total_budget (Currency): Total Budget
+  total_actual (Currency): Total Actual
+  total_variance (Currency): Total Variance
+
+## Permissions
+  Accounts Manager: read, write, create, delete
+  TN Accountant: read, write, create
+  TN Auditor: read
+
+# DOCTYPE: TN Budget Detail
+# Module: TallyNext  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  account (Link): Account → Account [required]
+  cost_center (Link): Cost Center → Cost Center
+  budget_amount (Currency): Budget Amount [required]
+  actual_amount (Currency): Actual Amount
+  variance (Currency): Variance
+  variance_pct (Percent): Variance %
+  alert_sent (Check): Alert Sent
+
+# DOCTYPE: TN Cheque Format
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  format_name (Data): Format Name [required, unique]
+  bank_name (Data): Bank Name [required]
+  paper_width_mm (Float): Paper Width (mm)
+  paper_height_mm (Float): Paper Height (mm)
+  payee_x (Float): X (mm)
+  payee_y (Float): Y (mm)
+  payee_font_size (Int): Font Size (pt)
+  amount_words_x (Float): X (mm)
+  amount_words_y (Float): Y (mm)
+  amount_words_font_size (Int): Font Size (pt)
+  amount_num_x (Float): X (mm)
+  amount_num_y (Float): Y (mm)
+  amount_num_font_size (Int): Font Size (pt)
+  date_x (Float): X (mm)
+  date_y (Float): Y (mm)
+  date_font_size (Int): Font Size (pt)
+  next_cheque_no (Int): Next Cheque Number
+  validate_sequence (Check): Validate Sequence (no gaps)
+
+## Permissions
+  Accounts Manager: read, write, create, delete
+  System Manager: read, write, create, delete
+
+# DOCTYPE: TN Collection Log
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  party_type (Select): Party Type → Customer
+Supplier [required]
+  party (Dynamic Link): Party → party_type [required]
+  party_name (Data): Party Name
+  contact_date (Date): Contact Date [required]
+  contacted_person (Data): Contacted Person
+  next_followup_date (Date): Next Follow-up Date
+  outcome (Select): Outcome → 
+Promised Payment
+Disputed
+No Answer
+Paid
+Will Call Back
+Escalated
+  promise_amount (Currency): Promise Amount
+  promise_date (Date): Promise Date
+  reference_invoice (Link): Reference Invoice → Sales Invoice
+  outstanding_amount (Currency): Outstanding Amount
+  notes (Text Editor): Notes
+
+## Permissions
+  Accounts Manager: read, write, create, delete
+  TN Accountant: read, write, create
+
+# DOCTYPE: TN Compliance Item
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  company (Link): Company → Company [required]
+  compliance_name (Data): Compliance Item [required]
+  source_module (Data): Module
+  frequency (Select): Frequency → One-Time
+Monthly
+Quarterly
+Half-Yearly
+Annual [required]
+  due_date (Date): Due Date [required]
+  status (Select): Status → Pending
+Filed
+Overdue
+Not Applicable
+  filed_on (Date): Filed On
+  filing_reference (Data): Filing Reference / ARN
+  filed_by (Link): Filed By → User
+  alert_days_before (Int): Alert N Days Before Due
+  alert_sent (Check): Alert Sent
+  notes (Small Text): Notes
+
+## Permissions
+  Accounts User: read, write, create
+  Accounts Manager: read, write, create, delete
+  TN Accountant: read, write, create
+  System Manager: read, write, create, delete
+
+# DOCTYPE: TN Currency Revaluation
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  company (Link): Company → Company [required]
+  revaluation_date (Date): Revaluation Date [required]
+  status (Select): Status → Draft
+Posted
+Reversed
+  journal_entry (Link): Journal Entry → Journal Entry
+  revaluation_gain_loss_account (Link): Gain/Loss Account → Account [required]
+  cost_center (Link): Cost Center → Cost Center
+
+## Permissions
+  Accounts Manager: read, write, create, delete
+  TN Accountant: read, write
+
+# DOCTYPE: TN Import Log
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  import_job (Link): Import Job → TN Tally Import Job [required]
+  tally_voucher_no (Data): Tally Voucher No
+  tally_date (Date): Tally Date
+  voucher_type (Data): Voucher Type
+  status (Select): Status → Success
+Skipped
+Failed
+  erpnext_voucher (Data): ERPNext Voucher
+  error_message (Small Text): Error
+
+## Permissions
+  Accounts Manager: read
+  System Manager: read
+  TN Accountant: read
+
+# DOCTYPE: TN Ledger Mapping
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  import_job (Link): Import Job → TN Tally Import Job [required]
+  company (Link): Company → Company [required]
+  tally_ledger_name (Data): Tally Ledger [required]
+  tally_group (Data): Tally Group
+  tally_opening_balance (Currency): Opening Balance
+  erpnext_account (Link): ERPNext Account → Account
+  create_new (Check): Create New Account
+  new_account_name (Data): New Account Name
+  new_account_type (Select): Account Type → 
+Receivable
+Payable
+Bank
+Cash
+Fixed Asset
+Stock
+Income Account
+Expense Account
+Tax
+Chargeable
+  mapped_by (Select): Mapped By → Auto
+Manual
+  confidence (Percent): Match Confidence
+
+## Permissions
+  Accounts Manager: read, write, create, delete
+  System Manager: read, write, create, delete
+  TN Accountant: read, write, create
+
+# DOCTYPE: TN Loan
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  company (Link): Company → Company [required]
+  loan_name (Data): Loan Name [required]
+  bank_name (Data): Lender / Bank
+  status (Select): Status → Active
+Closed
+Default
+  loan_account (Link): Loan Liability Account → Account [required]
+  interest_account (Link): Interest Expense Account → Account [required]
+  sanction_amount (Currency): Sanction Amount [required]
+  annual_interest_rate (Percent): Annual Interest Rate % [required]
+  tenure_months (Int): Tenure (Months) [required]
+  emi_start_date (Date): First EMI Date [required]
+  emi_day (Int): EMI Day of Month
+  emi_amount (Currency): Monthly EMI
+  outstanding_principal (Currency): Outstanding Principal
+  total_interest_paid (Currency): Total Interest Paid
+  loan_schedule (Table): Schedule → TN Loan Schedule
+  closure_date (Date): Closure Date
+  foreclosure_charges (Currency): Foreclosure Charges
+  closure_journal_entry (Link): Closure JE → Journal Entry
+
+## Permissions
+  Accounts Manager: read, write, create, delete
+  TN Accountant: read, write, create
+  TN Auditor: read
+
+# DOCTYPE: TN Loan Schedule
+# Module: TallyNext  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  emi_no (Int): EMI #
+  due_date (Date): Due Date [required]
+  emi_amount (Currency): EMI Amount
+  principal (Currency): Principal
+  interest (Currency): Interest
+  closing_balance (Currency): Closing Balance
+  status (Select): Status → Pending
+Booked
+Skipped
+  journal_entry (Link): Journal Entry → Journal Entry
+
+# DOCTYPE: TN PDC Entry
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  pdc_type (Select): Type → Received
+Issued [required]
+  company (Link): Company → Company [required]
+  party_type (Select): Party Type → Customer
+Supplier [required]
+  party (Dynamic Link): Party → party_type [required]
+  cheque_no (Data): Cheque No [required]
+  cheque_date (Date): Cheque Date [required]
+  amount (Currency): Amount [required]
+  currency (Link): Currency → Currency
+  bank_name (Data): Bank Name
+  bank_branch (Data): Branch
+  our_bank_account (Link): Our Bank Account → Bank Account
+  status (Select): Status → Pending
+Sent for Clearing
+Cleared
+Bounced
+Cancelled
+Issued
+Presented
+Stop Payment
+  payment_entry (Link): Payment Entry → Payment Entry
+  alert_days_before (Int): Alert N Days Before
+  bounce_charges (Currency): Bounce Charges
+  bounce_reason (Data): Bounce Reason
+  legal_notice_sent (Check): Legal Notice Sent
+  notes (Small Text): Notes
+
+## Permissions
+  Accounts User: read, write, create
+  Accounts Manager: read, write, create, delete
+  TN Accountant: read, write, create
+
+# DOCTYPE: TN Recurring Queue
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  template (Link): Template → TN Recurring Template [required]
+  company (Link): Company → Company [required]
+  scheduled_date (Date): Scheduled Date [required]
+  status (Select): Status → Pending
+Submitted
+Skipped
+Failed
+  voucher_type (Data): Voucher Type
+  voucher_no (Dynamic Link): Voucher No → voucher_type
+  amount (Currency): Amount
+  narration (Small Text): Narration
+  skip_reason (Data): Skip Reason
+  actioned_by (Link): Actioned By → User
+  actioned_on (Datetime): Actioned On
+
+## Permissions
+  Accounts User: read, write
+  Accounts Manager: read, write, create, delete
+  TN Accountant: read, write
+
+# DOCTYPE: TN Recurring Template
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  template_name (Data): Template Name [required]
+  company (Link): Company → Company [required]
+  voucher_type (Select): Voucher Type → Journal Entry
+Payment Entry
+Receipt Entry [required]
+  frequency (Select): Frequency → Daily
+Weekly
+Monthly
+Quarterly
+Annual [required]
+  start_date (Date): Start Date [required]
+  end_date (Date): End Date (optional)
+  max_occurrences (Int): Max Occurrences (0 = unlimited)
+  auto_submit (Check): Auto Submit
+  is_active (Check): Active
+  debit_account (Link): Debit Account → Account
+  credit_account (Link): Credit Account → Account
+  amount (Currency): Amount [required]
+  currency (Link): Currency → Currency
+  narration (Small Text): Narration
+  cost_center (Link): Cost Centre → Cost Center
+  party_type (Select): Party Type → 
+Customer
+Supplier
+Employee
+  party (Dynamic Link): Party → party_type
+  last_generated_on (Date): Last Generated On
+  times_generated (Int): Times Generated
+
+## Permissions
+  Accounts User: read, write, create
+  Accounts Manager: read, write, create, delete
+  TN Accountant: read, write, create
+
+# DOCTYPE: TN Reminder Config
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  company (Link): Company → Company [required]
+  is_active (Check): Active
+  send_whatsapp (Check): Send via WhatsApp
+  send_email (Check): Send via Email
+  level_1_days (Int): Level 1 — Days Overdue
+  level_1_template (Data): Level 1 Email Subject
+  level_2_days (Int): Level 2 — Days Overdue
+  level_2_template (Data): Level 2 Email Subject
+  level_3_days (Int): Level 3 — Days Overdue
+  level_3_template (Data): Level 3 Email Subject
+  level_4_days (Int): Level 4 — Days Overdue
+  level_4_template (Data): Level 4 Email Subject
+  send_monthly_statement (Check): Send Monthly Outstanding Statement
+  monthly_statement_day (Int): Day of Month to Send
+
+## Permissions
+  Accounts Manager: read, write, create, delete
+  System Manager: read, write, create, delete
+
+# DOCTYPE: TN Settings
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  default_voucher_type (Select): Default Voucher Type → Journal
+Payment
+Receipt
+Contra
+Sales Invoice
+Purchase Invoice
+  keyboard_shortcut_profile (Select): Keyboard Shortcut Profile → Tally
+Custom
+  default_company (Link): Default Company → Company
+  bank_statement_format (Select): Default Bank Statement Format → Generic CSV
+Generic Excel
+OFX
+  show_cash_balance (Check): Show Cash Balance
+  show_bank_balance (Check): Show Bank Balance
+  show_receivables_due (Check): Show Receivables Due Today
+  show_payables_due (Check): Show Payables Due Today
+  active_compliance_modules (Small Text): Active Compliance Modules
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: TN Tally Import Job
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  company (Link): Company → Company [required]
+  import_name (Data): Import Name [required]
+  tally_xml_file (Attach): Tally XML File [required]
+  date_range_from (Date): Date From
+  date_range_to (Date): Date To
+  total_ledgers (Int): Total Ledgers
+  total_vouchers (Int): Total Vouchers
+  mapped_ledgers (Int): Mapped Ledgers
+  status (Select): Status → Draft
+Parsed
+Mapped
+Validated
+Importing
+Complete
+Failed
+  progress_pct (Percent): Progress
+  import_log (Long Text): Import Log
+  error_summary (Small Text): Error Summary
+  create_missing_accounts (Check): Create Missing Accounts
+  create_missing_parties (Check): Create Missing Parties
+  skip_duplicate_vouchers (Check): Skip Duplicate Vouchers
+
+## Permissions
+  Accounts Manager: read, write, create, delete
+  System Manager: read, write, create, delete
+  TN Accountant: read, write, create
+
+# DOCTYPE: TN Transfer Pricing Log
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  transaction_date (Date): Transaction Date [required]
+  from_company (Link): From Company → Company [required]
+  to_company (Link): To Company → Company [required]
+  transaction_type (Select): Transaction Type → Services
+Goods
+Royalty
+Loan
+Other [required]
+  amount (Currency): Transaction Amount [required]
+  currency (Link): Currency → Currency
+  arm_length_price (Currency): Arm's Length Price
+  variance (Currency): Variance
+  flagged (Check): Flagged for Review
+  reference_doctype (Data): Reference DocType
+  reference_name (Dynamic Link): Reference → reference_doctype
+  notes (Text): Notes
+
+## Permissions
+  Accounts Manager: read, write, create
+  TN Auditor: read
+  System Manager: read, write, create, delete
+
+# DOCTYPE: TN Voucher Lock
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  company (Link): Company → Company [required]
+  lock_name (Data): Period Name [required]
+  from_date (Date): From Date [required]
+  to_date (Date): To Date [required]
+  is_active (Check): Active (Locked)
+  reason (Small Text): Reason for Locking
+  locked_by (Link): Locked By → User
+  locked_on (Datetime): Locked On
+
+## Permissions
+  Accounts Manager: read, write, create, delete
+  System Manager: read, write, create, delete
+  Accounts User: read
+
+# DOCTYPE: TN WhatsApp Config
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  company (Link): Company → Company [required]
+  provider (Select): Provider → WATI
+Interakt
+Meta Cloud API [required]
+  is_active (Check): Active
+  api_key (Password): API Key / Token [required]
+  api_secret (Password): API Secret
+  waba_id (Data): WABA ID (Meta)
+  phone_number_id (Data): Phone Number ID (Meta)
+  invoice_template (Data): Invoice Template Name
+  payment_template (Data): Payment Reminder Template
+  reminder_template (Data): Custom Reminder Template
+
+## Permissions
+  System Manager: read, write, create, delete
+  Accounts Manager: read
+
+# DOCTYPE: TN WhatsApp Log
+# Module: TallyNext  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  company (Link): Company → Company
+  recipient_mobile (Data): Recipient Mobile [required]
+  message_type (Select): Message Type → Invoice
+Payment Reminder
+Receipt
+Custom
+  status (Select): Status → Queued
+Sent
+Delivered
+Failed
+  sent_at (Datetime): Sent At
+  reference_doctype (Data): Reference DocType
+  reference_name (Dynamic Link): Reference → reference_doctype
+  template_name (Data): Template Name
+  message_body (Text): Message Body
+  response_json (Code): API Response → JSON
+  error_message (Text): Error
+
+## Permissions
+  Accounts Manager: read
+  System Manager: read, write
+

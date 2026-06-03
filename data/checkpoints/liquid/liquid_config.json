@@ -1,0 +1,12 @@
+{
+  "input_dim": 5,
+  "num_neurons": 32,
+  "num_outputs": 5,
+  "data_path": "data/liquid/timeseries.json",
+  "output_dir": "data/checkpoints/liquid",
+  "num_epochs": 10,
+  "batch_size": 64,
+  "learning_rate": 0.0005,
+  "val_split": 0.1,
+  "ode_method": "rk4"
+}

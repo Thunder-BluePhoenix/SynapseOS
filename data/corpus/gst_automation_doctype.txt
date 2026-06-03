@@ -1,0 +1,86 @@
+# DOCTYPE: API Request Log
+# Module: Gst Automation  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  api_method (Data): API Method [required]
+  status (Select): Status → Success
+Error [required]
+  duration_seconds (Float): Duration (s)
+  user (Link): User → User
+  request_data (Code): Request Data
+  response_data (Code): Response Data
+  error_exception (Code): Error / Exception
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: GST Settings
+# Module: Gst Automation  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  enable_apiclub (Check): Enable APIClub Integration
+  apiclub_api_key (Password): APIClub API Key
+  cin_lookup_source (Select): CIN Lookup Source → MCA Website
+APIClub
+Both (Fallback)
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: PAN Company Data
+# Module: Gst Automation  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  pan (Data): PAN [required, unique]
+  gst_number (Data): GST Number
+  company_name (Data): Company Name (from GST)
+  business_type (Data): Business Type
+  cin (Data): CIN
+  company_llp_name (Data): Company / LLP Name
+  class_of_company (Data): Class of Company
+  company_status (Data): Company Status (efiling)
+  mca_company_status (Data): MCA Company Status
+  mca_registration_date (Data): Registration Date
+  mca_category (Data): Company Category
+  mca_sub_category (Data): Company Sub-Category
+  mca_roc (Data): Registrar of Companies (ROC)
+  mca_authorized_capital (Data): Authorized Capital
+  mca_paidup_capital (Data): Paid-up Capital
+  lookup_status (Select): Lookup Status → Pending
+Done
+GST Found
+GST Found/CIN Not Found
+GST Not Found
+PAN Not Found
+Business Type Not Found
+Error
+  error_message (Small Text): Error Message
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: PAN Upload Batch
+# Module: Gst Automation  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  upload_file (Attach): Upload File [required]
+  status (Select): Status → Pending
+Processing
+Completed
+Failed
+  total_records (Int): Total Records
+  processed_records (Int): Processed Records
+  result_file (Attach): Result File
+  pan_details (Table): PAN Details → PAN Upload Detail
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: PAN Upload Detail
+# Module: Gst Automation  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  pan (Data): PAN [required]
+  pan_company_data (Link): PAN Company Data → PAN Company Data
+  row_status (Data): Status
+

@@ -1,0 +1,993 @@
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/frappe_gate/api/audit.py
+import frappe
+from frappe import _
+
+
+@frappe.whitelist(allow_guest=False)
+def receive_batch():
+	"""
+	POST /api/method/frappe_gate.api.audit.receive_batch
+	Called by the Go gate process to flush audit entries into Frappe DB.
+	"""
+	import json
+	data = frappe.local.form_dict
+	entries = data.get("entries") or []
+	if isinstance(entries, str):
+		try:
+			entries = json.loads(entries)
+		except Exception:
+			frappe.throw(_("Invalid entries payload"))
+
+	for e in entries:
+		try:
+			log = frappe.new_doc("Gate Audit Log")
+			log.timestamp = e.get("ts", "")
+			log.device_id = e.get("device_id", "")
+			log.role = e.get("role", "")
+			log.method = e.get("method", "")
+			log.path = e.get("path", "")
+			log.status_code = int(e.get("status", 0))
+			log.ip_address = e.get("ip", "")
+			log.outcome = e.get("outcome", "")
+			log.duration_ms = int(e.get("duration_ms", 0))
+			log.anomaly = e.get("anomaly", "")
+			log.insert(ignore_permissions=True)
+		except Exception:
+			pass
+	frappe.db.commit()
+	return {"inserted": len(entries)}
+
+
+@frappe.whitelist()
+def get_recent(limit: int = 100, outcome: str = ""):
+	filters = {}
+	if outcome:
+		filters["outcome"] = outcome
+	return frappe.get_all(
+		"Gate Audit Log",
+		filters=filters,
+		fields=["timestamp", "device_id", "method", "path", "status_code",
+		        "ip_address", "outcome", "duration_ms", "anomaly"],
+		order_by="timestamp desc",
+		limit=int(limit),
+	)
+
+
+@frappe.whitelist()
+def get_stats():
+	total = frappe.db.count("Gate Audit Log")
+	denied = frappe.db.count("Gate Audit Log", {"outcome": "denied"})
+	errors = frappe.db.count("Gate Audit Log", {"outcome": "error"})
+	anomalies = frappe.db.count("Gate Audit Log", {"anomaly": ("!=", "")})
+	return {
+		"total": total,
+		"denied": denied,
+		"errors": errors,
+		"anomalies": anomalies,
+	}
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/frappe_gate/api/device.py
+import frappe
+from frappe import _
+
+
+@frappe.whitelist()
+def get_devices(status: str = ""):
+	filters = {}
+	if status:
+		filters["status"] = status
+	return frappe.get_all(
+		"Gate Device",
+		filters=filters,
+		fields=["name", "device_id", "device_name", "status", "platform",
+		        "assigned_user", "ip_binding_mode", "registered_at", "last_seen_at"],
+		order_by="registered_at desc",
+	)
+
+
+@frappe.whitelist()
+def approve_device(device_id: str):
+	name = frappe.db.get_value("Gate Device", {"device_id": device_id}, "name")
+	if not name:
+		frappe.throw(_("Device not found"), frappe.DoesNotExistError)
+	doc = frappe.get_doc("Gate Device", name)
+	doc.approve()
+	return {"status": "approved", "device_id": device_id}
+
+
+@frappe.whitelist()
+def revoke_device(device_id: str, reason: str = ""):
+	name = frappe.db.get_value("Gate Device", {"device_id": device_id}, "name")
+	if not name:
+		frappe.throw(_("Device not found"), frappe.DoesNotExistError)
+	doc = frappe.get_doc("Gate Device", name)
+	doc.revoke(reason)
+	return {"status": "revoked", "device_id": device_id}
+
+
+@frappe.whitelist()
+def activate_lockdown(reason: str = ""):
+	doc = frappe.get_single("Gate Settings")
+	doc.activate_lockdown(reason)
+	return {"status": "lockdown_active", "reason": reason}
+
+
+@frappe.whitelist()
+def lift_lockdown():
+	doc = frappe.get_single("Gate Settings")
+	doc.lift_lockdown()
+	return {"status": "lockdown_lifted"}
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/frappe_gate/api/policy.py
+import frappe
+
+
+@frappe.whitelist()
+def check_policy(role: str = "", path: str = "", method: str = "GET"):
+	"""Test whether a given role/path/method would be allowed."""
+	from frappe_gate.api.policy import _eval_policies
+	allowed = _eval_policies(role, path, method)
+	return {"role": role, "path": path, "method": method, "allowed": allowed}
+
+
+def _eval_policies(role: str, path: str, method: str) -> bool:
+	import fnmatch
+	policies = frappe.get_all(
+		"Gate Policy",
+		filters={"enabled": 1},
+		fields=["role", "path_glob", "methods", "action"],
+		order_by="action desc",
+	)
+	for p in policies:
+		r = p.role
+		if r != "*" and r.lower() != role.lower():
+			continue
+		if not fnmatch.fnmatch(path, p.path_glob):
+			continue
+		if p.methods != "*" and method.upper() not in [m.strip().upper() for m in p.methods.split(",")]:
+			continue
+		return p.action == "allow"
+	return False
+
+
+@frappe.whitelist(allow_guest=False)
+def get_policies():
+	"""Called by the Go gate process every reload_seconds to fetch current rules."""
+	policies = frappe.get_all(
+		"Gate Policy",
+		filters={"enabled": 1},
+		fields=["role", "path_glob", "methods", "action", "rate_limit"],
+		order_by="action desc",  # deny rules first for safety
+	)
+	return policies
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/frappe_gate/api/security.py
+import frappe
+from frappe_gate.doctype.gate_security_event.gate_security_event import log_event
+
+
+@frappe.whitelist(allow_guest=False)
+def receive_security_event(
+    event_type: str,
+    severity: str,
+    device_id: str = "",
+    ip_address: str = "",
+    detail: str = "",
+    raw_context: str = "{}",
+):
+    """Called by the Go gate process to persist a security event into Frappe."""
+    import json
+    try:
+        ctx = json.loads(raw_context)
+    except Exception:
+        ctx = {}
+    log_event(event_type, severity, device_id, ip_address, detail, ctx)
+    return {"status": "ok"}
+
+
+@frappe.whitelist(allow_guest=False)
+def get_security_events(limit: int = 100, severity: str = "", event_type: str = ""):
+    filters = {}
+    if severity:
+        filters["severity"] = severity
+    if event_type:
+        filters["event_type"] = event_type
+    events = frappe.get_all(
+        "Gate Security Event",
+        filters=filters,
+        fields=["name", "event_type", "severity", "device_id", "ip_address",
+                "timestamp", "resolved", "detail"],
+        order_by="timestamp desc",
+        limit_page_length=int(limit),
+    )
+    return events
+
+
+@frappe.whitelist(allow_guest=False)
+def resolve_event(name: str):
+    doc = frappe.get_doc("Gate Security Event", name)
+    doc.resolved = 1
+    doc.resolved_at = frappe.utils.now_datetime()
+    doc.save(ignore_permissions=True)
+    frappe.db.commit()
+    return {"status": "resolved"}
+
+
+@frappe.whitelist(allow_guest=False)
+def unblock_ip(ip_address: str):
+    """Admin action: tell the gate process to unblock an IP (via Gate Settings admin URL)."""
+    import requests
+    settings = frappe.get_single("Gate Settings")
+    if not settings.gate_admin_url:
+        return {"status": "error", "detail": "Gate admin URL not configured"}
+    try:
+        resp = requests.post(
+            f"{settings.gate_admin_url}/gate/hardening/unblock",
+            json={"ip": ip_address},
+            headers={"X-Gate-Admin-Key": settings.gate_admin_key or ""},
+            timeout=5,
+        )
+        return {"status": "ok", "code": resp.status_code}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/frappe_gate/doctype/gate_device/gate_device.py
+import frappe
+from frappe.model.document import Document
+
+
+class GateDevice(Document):
+	def on_update(self):
+		# When admin revokes from desk, push revocation to in-memory gate cache via API
+		if self.status == "REVOKED" and not self.revoke_reason:
+			self.db_set("revoke_reason", f"Revoked by {frappe.session.user}")
+		_notify_gate(self.device_id, self.status)
+
+	def approve(self):
+		self.db_set("status", "APPROVED")
+		_notify_gate(self.device_id, "APPROVED")
+
+	def revoke(self, reason: str = ""):
+		self.db_set("status", "REVOKED")
+		self.db_set("revoke_reason", reason or f"Revoked by {frappe.session.user}")
+		_notify_gate(self.device_id, "REVOKED")
+
+
+def _notify_gate(device_id: str, status: str) -> None:
+	"""Push device status change to the running gate process via its admin API."""
+	try:
+		gate_url = frappe.db.get_single_value("Gate Settings", "gate_admin_url") or ""
+		gate_key = frappe.db.get_single_value("Gate Settings", "gate_admin_key") or ""
+		if not gate_url:
+			return
+		import requests
+		endpoint = f"{gate_url}/gate/device/{'revoke' if status == 'REVOKED' else 'unrevoke'}"
+		requests.post(
+			endpoint,
+			json={"device_id": device_id},
+			headers={"X-Gate-Admin-Key": gate_key},
+			timeout=3,
+		)
+	except Exception:
+		pass  # Gate may not be running — revocation persists in DB on next restart
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/frappe_gate/doctype/gate_security_event/gate_security_event.py
+import frappe
+from frappe.model.document import Document
+
+
+class GateSecurityEvent(Document):
+    def after_insert(self):
+        if self.severity in ("HIGH", "CRITICAL"):
+            _send_notification(self)
+
+
+def _send_notification(event):
+    try:
+        admins = frappe.get_all("Has Role", filters={"role": "System Manager"}, fields=["parent"])
+        for row in admins:
+            frappe.publish_realtime(
+                "gate_security_alert",
+                {
+                    "event_type": event.event_type,
+                    "severity": event.severity,
+                    "ip_address": event.ip_address,
+                    "device_id": event.device_id,
+                    "detail": event.detail,
+                    "name": event.name,
+                },
+                user=row.parent,
+            )
+    except Exception:
+        pass
+
+
+def log_event(
+    event_type: str,
+    severity: str,
+    device_id: str = "",
+    ip_address: str = "",
+    detail: str = "",
+    raw_context: dict | None = None,
+):
+    import json
+    doc = frappe.new_doc("Gate Security Event")
+    doc.event_type = event_type
+    doc.severity = severity
+    doc.device_id = device_id
+    doc.ip_address = ip_address
+    doc.detail = detail
+    doc.timestamp = frappe.utils.now_datetime()
+    doc.raw_context = json.dumps(raw_context or {})
+    doc.insert(ignore_permissions=True)
+    frappe.db.commit()
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/frappe_gate/doctype/gate_settings/gate_settings.py
+import frappe
+from frappe.model.document import Document
+
+
+class GateSettings(Document):
+	def on_update(self):
+		if self.auto_policy_for_pulse:
+			_ensure_pulse_policies(self.pulse_sync_role or "System Manager")
+
+	def activate_lockdown(self, reason: str = "") -> None:
+		self.db_set("lockdown_active", 1)
+		self.db_set("lockdown_reason", reason)
+		self.db_set("lockdown_activated_by", frappe.session.user)
+		self.db_set("lockdown_activated_at", frappe.utils.now())
+		_push_lockdown_to_gate(True)
+
+	def lift_lockdown(self) -> None:
+		self.db_set("lockdown_active", 0)
+		self.db_set("lockdown_reason", "")
+		_push_lockdown_to_gate(False)
+
+
+def _ensure_pulse_policies(role: str) -> None:
+	"""Auto-create Gate Policy records for frappe-pulse sync endpoints."""
+	pulse_paths = [
+		"/api/method/frappe_pulse.api.sync.pull",
+		"/api/method/frappe_pulse.api.sync.receive",
+		"/api/method/frappe_pulse.api.sync.status",
+	]
+	for path in pulse_paths:
+		if not frappe.db.exists("Gate Policy", {"path_glob": path, "role": role}):
+			doc = frappe.new_doc("Gate Policy")
+			doc.role = role
+			doc.path_glob = path
+			doc.methods = "*"
+			doc.action = "allow"
+			doc.description = "Auto-created for frappe-pulse sync"
+			doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+
+
+def _push_lockdown_to_gate(active: bool) -> None:
+	try:
+		gate_url = frappe.db.get_single_value("Gate Settings", "gate_admin_url") or ""
+		gate_key = frappe.db.get_single_value("Gate Settings", "gate_admin_key") or ""
+		if not gate_url:
+			return
+		import requests
+		endpoint = f"{gate_url}/gate/lockdown/{'activate' if active else 'lift'}"
+		requests.post(endpoint, headers={"X-Gate-Admin-Key": gate_key}, timeout=3)
+	except Exception:
+		pass
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/frappe_gate/hooks.py
+app_name = "frappe_gate"
+app_title = "Frappe Gate"
+app_publisher = "BluePhoenix"
+app_description = "Zero-Trust access proxy for self-hosted Frappe deployments."
+app_email = "bluephoenix00995@gmail.com"
+app_license = "gpl-3.0"
+
+# Apps
+# ------------------
+
+# required_apps = []
+
+# Each item in the list will be shown as an app in the apps page
+# add_to_apps_screen = [
+# 	{
+# 		"name": "frappe_gate",
+# 		"logo": "/assets/frappe_gate/logo.png",
+# 		"title": "Frappe Gate",
+# 		"route": "/frappe_gate",
+# 		"has_permission": "frappe_gate.api.permission.has_app_permission"
+# 	}
+# ]
+
+# Includes in <head>
+# ------------------
+
+# include js, css files in header of desk.html
+# app_include_css = "/assets/frappe_gate/css/frappe_gate.css"
+# app_include_js = "/assets/frappe_gate/js/frappe_gate.js"
+
+# include js, css files in header of web template
+# web_include_css = "/assets/frappe_gate/css/frappe_gate.css"
+# web_include_js = "/assets/frappe_gate/js/frappe_gate.js"
+
+# include custom scss in every website theme (without file extension ".scss")
+# website_theme_scss = "frappe_gate/public/scss/website"
+
+# include js, css files in header of web form
+# webform_include_js = {"doctype": "public/js/doctype.js"}
+# webform_include_css = {"doctype": "public/css/doctype.css"}
+
+# include js in page
+# page_js = {"page" : "public/js/file.js"}
+
+# include js in doctype views
+# doctype_js = {"doctype" : "public/js/doctype.js"}
+# doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
+# doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
+# doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
+
+# Svg Icons
+# ------------------
+# include app icons in desk
+# app_include_icons = "frappe_gate/public/icons.svg"
+
+# Home Pages
+# ----------
+
+# application home page (will override Website Settings)
+# home_page = "login"
+
+# website user home page (by Role)
+# role_home_page = {
+# 	"Role": "home_page"
+# }
+
+# Generators
+# ----------
+
+# automatically create page for each record of this doctype
+# website_generators = ["Web Page"]
+
+# automatically load and sync documents of this doctype from downstream apps
+# importable_doctypes = [doctype_1]
+
+# Jinja
+# ----------
+
+# add methods and filters to jinja environment
+# jinja = {
+# 	"methods": "frappe_gate.utils.jinja_methods",
+# 	"filters": "frappe_gate.utils.jinja_filters"
+# }
+
+# Installation
+# ------------
+
+# before_install = "frappe_gate.install.before_install"
+after_install = "frappe_gate.install.setup.after_install"
+after_migrate = "frappe_gate.install.setup.after_install"
+
+# Uninstallation
+# ------------
+
+# before_uninstall = "frappe_gate.uninstall.before_uninstall"
+# after_uninstall = "frappe_gate.uninstall.after_uninstall"
+
+# Integration Setup
+# ------------------
+# To set up dependencies/integrations with other apps
+# Name of the app being installed is passed as an argument
+
+# before_app_install = "frappe_gate.utils.before_app_install"
+# after_app_install = "frappe_gate.utils.after_app_install"
+
+# Integration Cleanup
+# -------------------
+# To clean up dependencies/integrations with other apps
+# Name of the app being uninstalled is passed as an argument
+
+# before_app_uninstall = "frappe_gate.utils.before_app_uninstall"
+# after_app_uninstall = "frappe_gate.utils.after_app_uninstall"
+
+# Desk Notifications
+# ------------------
+# See frappe.core.notifications.get_notification_config
+
+# notification_config = "frappe_gate.notifications.get_notification_config"
+
+# Permissions
+# -----------
+# Permissions evaluated in scripted ways
+
+# permission_query_conditions = {
+# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
+# }
+#
+# has_permission = {
+# 	"Event": "frappe.desk.doctype.event.event.has_permission",
+# }
+
+# Document Events
+# ---------------
+# Hook on document methods and events
+
+# doc_events = {
+# 	"*": {
+# 		"on_update": "method",
+# 		"on_cancel": "method",
+# 		"on_trash": "method"
+# 	}
+# }
+
+# Scheduled Tasks
+# ---------------
+
+# scheduler_events = {
+# 	"all": [
+# 		"frappe_gate.tasks.all"
+# 	],
+# 	"daily": [
+# 		"frappe_gate.tasks.daily"
+# 	],
+# 	"hourly": [
+# 		"frappe_gate.tasks.hourly"
+# 	],
+# 	"weekly": [
+# 		"frappe_gate.tasks.weekly"
+# 	],
+# 	"monthly": [
+# 		"frappe_gate.tasks.monthly"
+# 	],
+# }
+
+# Testing
+# -------
+
+# before_tests = "frappe_gate.install.before_tests"
+
+# Extend DocType Class
+# ------------------------------
+#
+# Specify custom mixins to extend the standard doctype controller.
+# extend_doctype_class = {
+# 	"Task": "frappe_gate.custom.task.CustomTaskMixin"
+# }
+
+# Overriding Methods
+# ------------------------------
+#
+# override_whitelisted_methods = {
+# 	"frappe.desk.doctype.event.event.get_events": "frappe_gate.event.get_events"
+# }
+#
+# each overriding function accepts a `data` argument;
+# generated from the base implementation of the doctype dashboard,
+# along with any modifications made in other Frappe apps
+# override_doctype_dashboards = {
+# 	"Task": "frappe_gate.task.get_dashboard_data"
+# }
+
+# exempt linked doctypes from being automatically cancelled
+#
+# auto_cancel_exempted_doctypes = ["Auto Repeat"]
+
+# Ignore links to specified DocTypes when deleting documents
+# -----------------------------------------------------------
+
+# ignore_links_on_delete = ["Communication", "ToDo"]
+
+# Request Events
+# ----------------
+# before_request = ["frappe_gate.utils.before_request"]
+# after_request = ["frappe_gate.utils.after_request"]
+
+# Job Events
+# ----------
+# before_job = ["frappe_gate.utils.before_job"]
+# after_job = ["frappe_gate.utils.after_job"]
+
+# User Data Protection
+# --------------------
+
+# user_data_fields = [
+# 	{
+# 		"doctype": "{doctype_1}",
+# 		"filter_by": "{filter_by}",
+# 		"redact_fields": ["{field_1}", "{field_2}"],
+# 		"partial": 1,
+# 	},
+# 	{
+# 		"doctype": "{doctype_2}",
+# 		"filter_by": "{filter_by}",
+# 		"partial": 1,
+# 	},
+# 	{
+# 		"doctype": "{doctype_3}",
+# 		"strict": False,
+# 	},
+# 	{
+# 		"doctype": "{doctype_4}"
+# 	}
+# ]
+
+# Authentication and authorization
+# --------------------------------
+
+# auth_hooks = [
+# 	"frappe_gate.auth.validate"
+# ]
+
+# Automatically update python controller files with type annotations for this app.
+# export_python_type_annotations = True
+
+default_log_clearing_doctypes = {
+	"Gate Audit Log": 90,
+	"Gate Security Event": 180,
+}
+
+# Translation
+# ------------
+# List of apps whose translatable strings should be excluded from this app's translations.
+# ignore_translatable_strings_from = []
+
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/frappe_gate/page/gate_audit_dashboard/gate_audit_dashboard.js
+frappe.pages["gate-audit-dashboard"].on_page_load = function (wrapper) {
+	const page = frappe.ui.make_app_page({
+		parent: wrapper,
+		title: "Gate Audit Dashboard",
+		single_column: true,
+	});
+	const $body = $(wrapper).find(".layout-main-section");
+
+	const $stats = $('<div class="row" style="margin-bottom:16px"></div>').appendTo($body);
+
+	const $filters = $(`
+		<div style="margin-bottom:12px">
+			<select id="audit-outcome-filter" class="form-control" style="width:180px;display:inline-block">
+				<option value="">All Outcomes</option>
+				<option value="allowed">Allowed</option>
+				<option value="denied">Denied</option>
+				<option value="error">Error</option>
+			</select>
+			<button class="btn btn-default btn-sm" id="audit-refresh" style="margin-left:8px">Refresh</button>
+			<button class="btn btn-default btn-sm" id="audit-export" style="margin-left:8px">Export CSV</button>
+		</div>
+	`).appendTo($body);
+
+	const $table = $(`
+		<table class="table table-bordered table-hover" style="font-size:12px">
+			<thead>
+				<tr><th>Timestamp</th><th>Device</th><th>Method</th><th>Path</th>
+				    <th>Status</th><th>Outcome</th><th>IP</th><th>Duration</th><th>Anomaly</th></tr>
+			</thead>
+			<tbody id="audit-rows"></tbody>
+		</table>
+	`).appendTo($body);
+
+	function outcomeBadge(o) {
+		const c = { allowed: "green", denied: "red", error: "orange" };
+		return `<span class="indicator ${c[o]||"gray"}">${o}</span>`;
+	}
+
+	function statCard(label, val, color) {
+		return `<div class="col-sm-3"><div class="card text-center p-3" style="border-left:4px solid ${color}">
+			<div style="font-size:28px;font-weight:700;color:${color}">${val}</div>
+			<div style="color:#888;font-size:12px">${label}</div></div></div>`;
+	}
+
+	function load() {
+		frappe.call({ method: "frappe_gate.api.audit.get_stats", callback(r) {
+			const s = r.message || {};
+			$stats.html(
+				statCard("Total Requests", s.total||0, "#607d8b") +
+				statCard("Denied", s.denied||0, "#f44336") +
+				statCard("Errors", s.errors||0, "#ff9800") +
+				statCard("Anomalies", s.anomalies||0, "#9c27b0")
+			);
+		}});
+
+		const outcome = $("#audit-outcome-filter").val();
+		frappe.call({
+			method: "frappe_gate.api.audit.get_recent",
+			args: { limit: 200, outcome },
+			callback(r) {
+				const rows = (r.message||[]).map(e => `
+					<tr ${e.anomaly ? 'style="background:#fff3e0"' : ''}>
+						<td>${frappe.utils.escape_html(e.timestamp||"")}</td>
+						<td><code style="font-size:11px">${frappe.utils.escape_html((e.device_id||"").slice(0,12))}…</code></td>
+						<td><span class="badge">${frappe.utils.escape_html(e.method||"")}</span></td>
+						<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${frappe.utils.escape_html(e.path||"")}</td>
+						<td>${e.status_code||""}</td>
+						<td>${outcomeBadge(e.outcome||"")}</td>
+						<td>${frappe.utils.escape_html(e.ip_address||"")}</td>
+						<td>${e.duration_ms||0}ms</td>
+						<td style="color:#e65100">${frappe.utils.escape_html(e.anomaly||"")}</td>
+					</tr>`).join("");
+				$("#audit-rows").html(rows || '<tr><td colspan="9" class="text-center text-muted">No entries</td></tr>');
+			},
+		});
+	}
+
+	// CSV export
+	$("#audit-export").on("click", function () {
+		const rows = [];
+		$("#audit-rows tr").each(function () {
+			rows.push(Array.from($(this).find("td")).map(td => `"${$(td).text().trim()}"`).join(","));
+		});
+		const csv = "Timestamp,Device,Method,Path,Status,Outcome,IP,Duration,Anomaly\n" + rows.join("\n");
+		const blob = new Blob([csv], { type: "text/csv" });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement("a"); a.href = url;
+		a.download = `gate_audit_${frappe.datetime.now_date()}.csv`;
+		a.click();
+		URL.revokeObjectURL(url);
+	});
+
+	$("#audit-outcome-filter, #audit-refresh").on("change click", load);
+
+	load();
+	const timer = setInterval(load, 15000);
+	$(wrapper).on("hide", () => clearInterval(timer));
+};
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/frappe_gate/page/gate_device_manager/gate_device_manager.js
+frappe.pages["gate-device-manager"].on_page_load = function (wrapper) {
+	const page = frappe.ui.make_app_page({
+		parent: wrapper,
+		title: "Gate Device Manager",
+		single_column: true,
+	});
+	const $body = $(wrapper).find(".layout-main-section");
+
+	// ── Lockdown banner ──────────────────────────────────────────────────
+	const $lockdown = $(`
+		<div id="gate-lockdown-banner" style="display:none;background:#f8d7da;
+			border:1px solid #f5c2c7;border-radius:4px;padding:10px 16px;margin-bottom:12px;">
+			🔒 <strong>EMERGENCY LOCKDOWN ACTIVE</strong> — All device access is blocked.
+			<button class="btn btn-sm btn-success" id="lift-lockdown" style="margin-left:12px">Lift Lockdown</button>
+		</div>
+	`).appendTo($body);
+
+	// ── Stats row ────────────────────────────────────────────────────────
+	const $stats = $('<div class="row" style="margin-bottom:16px"></div>').appendTo($body);
+
+	// ── Filter row ───────────────────────────────────────────────────────
+	const $filters = $(`
+		<div style="margin-bottom:12px">
+			<select id="gate-status-filter" class="form-control" style="width:200px;display:inline-block">
+				<option value="">All Statuses</option>
+				<option value="PENDING">Pending Approval</option>
+				<option value="APPROVED">Approved</option>
+				<option value="REVOKED">Revoked</option>
+				<option value="BLOCKED">Blocked</option>
+			</select>
+			<button class="btn btn-primary btn-sm" id="gate-refresh" style="margin-left:8px">Refresh</button>
+			<button class="btn btn-danger btn-sm" id="activate-lockdown" style="margin-left:8px">🔒 Emergency Lockdown</button>
+		</div>
+	`).appendTo($body);
+
+	// ── Device table ─────────────────────────────────────────────────────
+	const $table = $(`
+		<table class="table table-bordered table-hover" style="font-size:13px">
+			<thead>
+				<tr>
+					<th>Device ID</th><th>Name</th><th>Status</th><th>Platform</th>
+					<th>User</th><th>IP Mode</th><th>Last Seen</th><th>Actions</th>
+				</tr>
+			</thead>
+			<tbody id="gate-device-rows"></tbody>
+		</table>
+	`).appendTo($body);
+
+	function statusBadge(s) {
+		const c = {APPROVED:"green",PENDING:"orange",REVOKED:"red",BLOCKED:"darkred"};
+		return `<span class="indicator ${c[s]||"gray"}">${s}</span>`;
+	}
+
+	function statCard(label, val, color) {
+		return `<div class="col-sm-3"><div class="card text-center p-3" style="border-left:4px solid ${color}">
+			<div style="font-size:28px;font-weight:700;color:${color}">${val}</div>
+			<div style="color:#888;font-size:12px">${label}</div></div></div>`;
+	}
+
+	function load() {
+		const status = $("#gate-status-filter").val();
+		frappe.call({
+			method: "frappe_gate.api.device.get_devices",
+			args: { status },
+			callback(r) {
+				const devices = r.message || [];
+				const pending = devices.filter(d => d.status === "PENDING").length;
+				const approved = devices.filter(d => d.status === "APPROVED").length;
+				const revoked = devices.filter(d => d.status === "REVOKED").length;
+				$stats.html(
+					statCard("Total", devices.length, "#607d8b") +
+					statCard("Pending", pending, "#ff9800") +
+					statCard("Approved", approved, "#4caf50") +
+					statCard("Revoked", revoked, "#f44336")
+				);
+				const rows = devices.map(d => `
+					<tr>
+						<td><code>${frappe.utils.escape_html(d.device_id||"")}</code></td>
+						<td>${frappe.utils.escape_html(d.device_name||"")}</td>
+						<td>${statusBadge(d.status)}</td>
+						<td>${frappe.utils.escape_html(d.platform||"")}</td>
+						<td>${frappe.utils.escape_html(d.assigned_user||"")}</td>
+						<td>${frappe.utils.escape_html(d.ip_binding_mode||"")}</td>
+						<td>${d.last_seen_at ? frappe.datetime.str_to_user(d.last_seen_at) : "—"}</td>
+						<td>
+							${d.status === "PENDING" ? `<button class="btn btn-xs btn-success approve-btn" data-id="${d.device_id}">Approve</button>` : ""}
+							${d.status === "APPROVED" ? `<button class="btn btn-xs btn-danger revoke-btn" data-id="${d.device_id}">Revoke</button>` : ""}
+						</td>
+					</tr>`).join("");
+				$("#gate-device-rows").html(rows || '<tr><td colspan="8" class="text-center text-muted">No devices</td></tr>');
+			},
+		});
+	}
+
+	// Lockdown status check
+	function checkLockdown() {
+		frappe.db.get_single_value("Gate Settings", "lockdown_active").then(val => {
+			$lockdown.toggle(!!val);
+		});
+	}
+
+	$body.on("click", ".approve-btn", function () {
+		const id = $(this).data("id");
+		frappe.call({ method: "frappe_gate.api.device.approve_device", args: { device_id: id }, callback: load });
+	});
+
+	$body.on("click", ".revoke-btn", function () {
+		const id = $(this).data("id");
+		frappe.prompt("Reason for revocation", ({ value }) => {
+			frappe.call({ method: "frappe_gate.api.device.revoke_device", args: { device_id: id, reason: value }, callback: load });
+		}, "Revoke Device", "Revoke");
+	});
+
+	$("#activate-lockdown").on("click", function () {
+		frappe.prompt("Reason for lockdown", ({ value }) => {
+			frappe.call({
+				method: "frappe_gate.api.device.activate_lockdown",
+				args: { reason: value },
+				callback() { frappe.msgprint("🔒 Lockdown activated."); checkLockdown(); },
+			});
+		}, "Emergency Lockdown", "Activate");
+	});
+
+	$("#lift-lockdown").on("click", function () {
+		frappe.confirm("Lift emergency lockdown?", () => {
+			frappe.call({ method: "frappe_gate.api.device.lift_lockdown", callback() { checkLockdown(); load(); } });
+		});
+	});
+
+	$("#gate-status-filter, #gate-refresh").on("change click", load);
+
+	checkLockdown();
+	load();
+	const timer = setInterval(() => { load(); checkLockdown(); }, 30000);
+	$(wrapper).on("hide", () => clearInterval(timer));
+};
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/frappe_gate/page/gate_policy_builder/gate_policy_builder.js
+frappe.pages["gate-policy-builder"].on_page_load = function (wrapper) {
+	const page = frappe.ui.make_app_page({
+		parent: wrapper,
+		title: "Gate Policy Builder",
+		single_column: true,
+	});
+	const $body = $(wrapper).find(".layout-main-section");
+
+	// ── Policy table ─────────────────────────────────────────────────────
+	const $table = $(`
+		<div>
+			<div style="margin-bottom:12px">
+				<button class="btn btn-primary btn-sm" id="add-policy">+ Add Policy</button>
+				<button class="btn btn-default btn-sm" id="test-policy" style="margin-left:8px">Test a Request</button>
+			</div>
+			<table class="table table-bordered" style="font-size:13px">
+				<thead>
+					<tr><th>Role</th><th>Path Glob</th><th>Methods</th><th>Action</th>
+					    <th>Rate Limit</th><th>Enabled</th><th>Actions</th></tr>
+				</thead>
+				<tbody id="policy-rows"></tbody>
+			</table>
+		</div>
+	`).appendTo($body);
+
+	function loadPolicies() {
+		frappe.db.get_list("Gate Policy", {
+			fields: ["name", "role", "path_glob", "methods", "action", "rate_limit", "enabled"],
+			order_by: "action desc, role asc",
+			limit: 200,
+		}).then(rows => {
+			const html = rows.map(p => `
+				<tr>
+					<td>${frappe.utils.escape_html(p.role)}</td>
+					<td><code>${frappe.utils.escape_html(p.path_glob)}</code></td>
+					<td>${frappe.utils.escape_html(p.methods)}</td>
+					<td><span class="badge ${p.action==="allow"?"badge-success":"badge-danger"}">${p.action.toUpperCase()}</span></td>
+					<td>${p.rate_limit || "—"}</td>
+					<td>${p.enabled ? "✓" : "—"}</td>
+					<td>
+						<button class="btn btn-xs btn-default edit-policy" data-name="${p.name}">Edit</button>
+						<button class="btn btn-xs btn-danger del-policy" data-name="${p.name}" style="margin-left:4px">Delete</button>
+					</td>
+				</tr>`).join("");
+			$("#policy-rows").html(html || '<tr><td colspan="7" class="text-center text-muted">No policies</td></tr>');
+		});
+	}
+
+	function openPolicyDialog(name) {
+		const d = new frappe.ui.Dialog({
+			title: name ? "Edit Policy" : "Add Policy",
+			fields: [
+				{ fieldname: "role", fieldtype: "Data", label: "Role", reqd: 1, description: "Frappe role or * for any" },
+				{ fieldname: "path_glob", fieldtype: "Data", label: "Path Glob", reqd: 1 },
+				{ fieldname: "methods", fieldtype: "Data", label: "Methods", default: "*", description: "GET,POST or *" },
+				{ fieldname: "action", fieldtype: "Select", label: "Action", options: "allow\ndeny", default: "allow" },
+				{ fieldname: "rate_limit", fieldtype: "Int", label: "Rate Limit (req/min, 0=unlimited)" },
+				{ fieldname: "enabled", fieldtype: "Check", label: "Enabled", default: 1 },
+				{ fieldname: "description", fieldtype: "Small Text", label: "Description" },
+			],
+			primary_action_label: name ? "Save" : "Create",
+			primary_action(vals) {
+				const method = name
+					? "frappe.client.set_value"
+					: "frappe.client.insert";
+				const args = name
+					? { doctype: "Gate Policy", name, fieldname: vals }
+					: { doc: { doctype: "Gate Policy", ...vals } };
+				frappe.call({ method, args, callback() { d.hide(); loadPolicies(); } });
+			},
+		});
+		if (name) {
+			frappe.db.get_doc("Gate Policy", name).then(doc => { d.set_values(doc); d.show(); });
+		} else {
+			d.show();
+		}
+	}
+
+	$body.on("click", "#add-policy", () => openPolicyDialog(null));
+
+	$body.on("click", ".edit-policy", function () {
+		openPolicyDialog($(this).data("name"));
+	});
+
+	$body.on("click", ".del-policy", function () {
+		const name = $(this).data("name");
+		frappe.confirm("Delete this policy?", () => {
+			frappe.db.delete_doc("Gate Policy", name).then(loadPolicies);
+		});
+	});
+
+	$body.on("click", "#test-policy", function () {
+		const d = new frappe.ui.Dialog({
+			title: "Test Policy Check",
+			fields: [
+				{ fieldname: "role", fieldtype: "Data", label: "Role" },
+				{ fieldname: "path", fieldtype: "Data", label: "Path" },
+				{ fieldname: "method", fieldtype: "Select", label: "Method", options: "GET\nPOST\nPUT\nDELETE\nPATCH", default: "GET" },
+			],
+			primary_action_label: "Check",
+			primary_action(vals) {
+				frappe.call({
+					method: "frappe_gate.api.policy.check_policy",
+					args: vals,
+					callback(r) {
+						const res = r.message || {};
+						const color = res.allowed ? "green" : "red";
+						frappe.msgprint(`<span style="color:${color};font-size:16px;font-weight:bold">
+							${res.allowed ? "✓ ALLOWED" : "✗ DENIED"}
+						</span>`);
+					},
+				});
+			},
+		});
+		d.show();
+	});
+
+	loadPolicies();
+};
+

@@ -1,0 +1,3002 @@
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_watcher/README.md
+# F Watcher
+
+**Production observability for Frappe v16.** Monitors system health, queues, logs, database, security, and developer tools — all from a single Control Center page inside your Frappe desk.
+
+---
+
+## Features
+
+### Control Center (`/f-watcher-control`)
+Live dashboard that auto-refreshes without page reloads.
+
+| Section | What it shows |
+|---------|---------------|
+| **KPI strip** | CPU %, RAM %, Disk % with delta arrows vs. the previous period and disk-full forecast |
+| **Uptime badge** | Site uptime % over the last 24 hours |
+| **Health map** | Per-service status pills (DB, Redis, Scheduler, Workers, Backups, SSL, APM) |
+| **Collector status** | Last-run time for every background collector |
+| **Alert rules** | Threshold rules with cooldown — fires to System Notification, email, or webhook |
+| **Maintenance window** | Schedule a window; alerts are silenced automatically during it |
+| **Redis / Cache** | Memory usage, hit rate, eviction policy, keyspace stats |
+| **Queue inspector** | Per-queue depth and failed-job count; browse queued/failed jobs, view full traceback, retry or cancel |
+| **Scheduler timeline** | Last 100 scheduled-job runs with status and details |
+| **Active Sessions** | Authenticated sessions with IP address and last-active time; force-logout any session |
+| **SSL certificates** | Days-to-expiry for monitored domains |
+| **Installed Apps** | Version, git branch, and commit per installed Frappe app |
+| **Patch history** | Last 40 applied Frappe migration patches |
+| **Customization audit** | Custom fields, Client Scripts, Server Scripts, and Property Setter count |
+| **Error patterns** | Top repeated errors grouped by message prefix |
+| **Charts** | CPU / RAM / Disk / DB size history (Chart.js), with CSV export |
+
+### Log Viewer (`/f-watcher-log-viewer`)
+Live tail of Frappe error and access logs with pause/resume, auto-scroll control, and line-cap safety.
+
+### DB Query Explorer (`/f-watcher-query-explorer`)
+- Slow query analysis from `tabDB Query` with execution count and worst/average duration
+- **Slow HTTP Requests** table from `tabMonitor` — paths taking over 500 ms, grouped by route and method
+
+---
+
+## Background Collectors
+
+Collectors run on Frappe's scheduler and write to dedicated DocTypes.
+
+| Collector | Schedule | DocType written |
+|-----------|----------|-----------------|
+| System metrics (CPU / RAM / Disk) | Every minute | `F Watcher System Metric` |
+| Queue metrics | Every minute | `F Watcher Queue Metric` |
+| Redis metrics | Every 5 minutes | `F Watcher Redis Metric` |
+| DB metrics | Every 5 minutes | `F Watcher DB Metric` |
+| DB storage snapshots | Every 5 minutes | `F Watcher DB Storage Snapshot` |
+| Uptime check (DB + Redis ping) | Every 5 minutes | `F Watcher Uptime Record` |
+| API key audit (stale / new keys) | Every hour | `F Watcher App Metric` |
+| Security (failed logins, brute-force, bulk deletes) | Every 5 minutes | `F Watcher Alert Log`, `F Watcher App Metric` |
+| APM (slow queries, HTTP traces) | Every minute | `F Watcher App Metric` |
+| Infrastructure (SSL expiry) | Every hour | `F Watcher App Metric` |
+| Alert engine | Every minute | `F Watcher Alert Log` |
+| Retention cleanup | Daily | *(deletes old rows)* |
+| Weekly digest email | Monday 08:00 | *(email only)* |
+
+---
+
+## DocTypes
+
+| DocType | Purpose |
+|---------|---------|
+| `F Watcher System Metric` | CPU, RAM, Disk snapshots |
+| `F Watcher Queue Metric` | RQ queue depth and failed-job counts |
+| `F Watcher Redis Metric` | Redis memory and keyspace stats |
+| `F Watcher DB Metric` | MariaDB connection and query stats |
+| `F Watcher DB Storage Snapshot` | Total and table-level DB size over time |
+| `F Watcher DB Table Storage` | Per-table size rows |
+| `F Watcher Alert Rule` | User-defined threshold rules |
+| `F Watcher Alert Log` | Triggered alert history |
+| `F Watcher App Metric` | General key/value metric store for collectors |
+| `F Watcher Maintenance Window` | Scheduled alert-silence windows |
+| `F Watcher Cleanup Rule` | Data retention configuration per DocType |
+| `F Watcher Action Audit` | Audit trail for operator actions (e.g. force logout) |
+| `F Watcher Uptime Record` | DB + Redis uptime probe results |
+
+---
+
+## Roles
+
+| Role | Access |
+|------|--------|
+| `System Manager` | Full access |
+| `F Watcher Operator` | Read + write; can run actions (force logout, retry jobs, etc.) |
+| `F Watcher Viewer` | Read-only; no destructive actions |
+
+---
+
+## Installation
+
+```bash
+cd $PATH_TO_YOUR_BENCH
+bench get-app $URL_OF_THIS_REPO --branch version-16
+bench install-app f_watcher
+```
+
+---
+
+## Development
+
+### Pre-commit
+
+```bash
+cd apps/f_watcher
+pre-commit install
+```
+
+Configured linters: `ruff`, `eslint`, `prettier`, `pyupgrade`.
+
+### Tests
+
+```bash
+cd $PATH_TO_YOUR_BENCH
+bench run-tests --app f_watcher
+```
+
+Tests use `unittest.TestCase` with mocked Frappe internals — no live site required.
+
+### CI
+
+- **CI workflow**: installs the app and runs unit tests on every push to the `version-16` branch.
+- **Linters workflow**: runs [Frappe Semgrep Rules](https://github.com/frappe/semgrep-rules) and `pip-audit` on every pull request.
+
+---
+
+## License
+
+GPL-3.0
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_watcher/docs/phase-1.md
+# Phase 1 — Stability & Correctness
+
+> Goal: Fix known bugs, define missing roles/permissions, add metric data retention, and write basic tests.
+> Without this phase, the app has runtime errors, silently growing DB tables, and unusable admin actions.
+
+---
+
+## 1.1 Bug Fixes
+
+### BUG-01 — `affected_rows` AttributeError — `actions/cleanup.py` ✅ Fixed 2026-04-13
+
+**Root cause:** `frappe.db.affected_rows()` does not exist on `MariaDBDatabase`.
+
+**Fix:** Run `SELECT COUNT(*)` before the `DELETE` using the same `WHERE` clause.
+
+```python
+# Before (broken)
+frappe.db.sql("DELETE FROM `{table}` WHERE ...")
+deleted = frappe.db.affected_rows()   # AttributeError
+
+# After (fixed)
+deleted = frappe.db.sql("SELECT COUNT(*) FROM `{table}` WHERE ...")[0][0]
+frappe.db.sql("DELETE FROM `{table}` WHERE ...")
+frappe.db.commit()
+```
+
+**Files changed:** `f_watcher/actions/cleanup.py`
+
+---
+
+### BUG-02 — Duplicate table rows in "Biggest tables" dashboard — `dashboards/metrics.py` ✅ Fixed 2026-04-13
+
+**Root cause:** `big_tables` query used `ORDER BY total_mb DESC LIMIT 10` with no grouping.
+Every collector run inserts one row per table, so the same table appeared multiple times
+(one per snapshot) — all with identical sizes but different row counts.
+
+**Fix:** Subquery to join only the latest snapshot per unique `table_name`.
+
+```sql
+SELECT t.* FROM `tabF Watcher DB Table Storage` t
+INNER JOIN (
+    SELECT table_name, MAX(`timestamp`) AS latest_ts
+    FROM `tabF Watcher DB Table Storage`
+    GROUP BY table_name
+) latest ON t.table_name = latest.table_name
+       AND t.`timestamp` = latest.latest_ts
+ORDER BY t.total_mb DESC LIMIT 10
+```
+
+**Files changed:** `f_watcher/dashboards/metrics.py`
+
+---
+
+### BUG-03 — MariaDB reserved keyword `timestamp` unquoted in raw SQL — `dashboards/metrics.py` ✅ Fixed 2026-04-13
+
+**Root cause:** `timestamp` is a reserved keyword in MariaDB. Using it unquoted in raw
+`frappe.db.sql()` causes a syntax error, silently returning empty `big_tables` data.
+`frappe.db.get_all()` handles quoting automatically — raw SQL does not.
+
+**Fix:** Backtick all three occurrences: `` `timestamp` `` in the subquery and join condition.
+
+**Files changed:** `f_watcher/dashboards/metrics.py`
+
+---
+
+### BUG-04 — `frappe.only_for("F Watcher Operator")` blocks all users — `actions/cleanup.py` ✅ Fixed 2026-04-13
+
+**Root cause:** `F Watcher Operator` role is referenced in `frappe.only_for()` but never
+defined in fixtures. On a fresh install the role does not exist, so both `preview()` and
+`execute()` throw `PermissionError` for every user including System Manager and Administrator.
+The dialog showed "0 records" or the execute button silently did nothing.
+
+**Fix:** Replaced `frappe.only_for()` with a `_check_permission()` helper that allows
+Administrator, System Manager, or F Watcher Operator.
+
+```python
+def _check_permission():
+    if not (
+        frappe.session.user == "Administrator"
+        or "System Manager" in frappe.get_roles()
+        or "F Watcher Operator" in frappe.get_roles()
+    ):
+        frappe.throw("Not permitted.", frappe.PermissionError)
+```
+
+**Files changed:** `f_watcher/actions/cleanup.py`
+
+---
+
+### BUG-05 — Six cleanup dialog bugs — Control Center page JS ✅ Fixed 2026-04-13
+
+All six bugs caused "Execute cleanup does nothing" symptoms in different ways.
+
+| # | Bug | Fix |
+|---|-----|-----|
+| 5a | `values` captured at Preview-click time — stale days/reason sent to execute | Use `d.get_values()` at both Preview and Execute time |
+| 5b | `#upeo-exec-cleanup` global ID selector — binds to detached elements on re-open | Changed to class `.upeo-exec-cleanup`, scoped with `$previewWrap.find(...)` |
+| 5c | Execute button shown even on 0 records — misleads user | Replace button with green "Nothing to delete" message when count = 0 |
+| 5d | Preview `error()` used page-level `showToast` — hidden behind dialog backdrop | Switched to `frappe.msgprint` which renders above all dialogs |
+| 5e | No freeze on "Preview impact" — double-click fires two concurrent API calls | `$primaryBtn.prop("disabled", true)` before call, restored in callback and error |
+| 5f | No button lock on Execute — `frappe.confirm` stacked on rapid clicks | Disable button inside confirm callback before `frappe.call` fires |
+
+**Files changed:** `f_watcher/f_watcher/page/f_watcher_control/f_watcher_control.js`
+
+---
+
+### BUG-06 — `app_health.py` queries wrong DocType for scheduled job status ✅ Fixed 2026-04-13
+
+**Root cause:** `collect_scheduled_jobs()` queried `Scheduled Job Type` with
+`filters={"status": "Failed"}`. That DocType has no `status` column — it only stores job
+definitions with a `stopped` flag. The `status` field lives in `Scheduled Job Log`
+(execution history). This produced `(1054, "Unknown column 'status' in 'WHERE'")` every
+5 minutes, flooding `tabError Log` and breaking the whole `collect()` call.
+
+**Fix:** Query `Scheduled Job Log` instead, scoped to the last 5 minutes for consistency
+with `collect_error_logs()`.
+
+```python
+# Before (broken)
+frappe.get_all("Scheduled Job Type", filters={"status": "Failed"}, ...)
+
+# After (fixed)
+five_mins_ago = add_to_date(now_datetime(), minutes=-5)
+frappe.get_all(
+    "Scheduled Job Log",
+    filters={"status": "Failed", "creation": [">=", five_mins_ago]},
+    fields=["name", "scheduled_job_type"],
+)
+```
+
+**Files changed:** `f_watcher/collectors/app_health.py`
+
+---
+
+## 1.2 Role & Permission Definitions
+
+**Problem:** `F Watcher Operator` role is referenced in `frappe.only_for()` calls across
+`actions/cleanup.py`, `actions/control.py`, and `actions/queue.py` but is never defined in
+fixtures. Any user without System Manager role gets a cryptic permission error.
+
+**What to do:**
+
+1. Create `f_watcher/f_watcher/role/F Watcher Operator.json`:
+
+```json
+{
+  "doctype": "Role",
+  "role_name": "F Watcher Operator",
+  "desk_access": 1,
+  "is_custom": 0
+}
+```
+
+2. Create `f_watcher/f_watcher/role/F Watcher Viewer.json` (read-only monitoring):
+
+```json
+{
+  "doctype": "Role",
+  "role_name": "F Watcher Viewer",
+  "desk_access": 1,
+  "is_custom": 0
+}
+```
+
+3. Add both roles to `hooks.py` fixtures:
+
+```python
+fixtures = [
+    {"dt": "Role", "filters": [["role_name", "in", ["F Watcher Operator", "F Watcher Viewer"]]]},
+    # ... existing fixtures
+]
+```
+
+4. Add DocType permissions to each DocType JSON — recommended matrix:
+
+| DocType | System Manager | F Watcher Operator | F Watcher Viewer |
+|---|---|---|---|
+| F Watcher System Metric | CRUD | R | R |
+| F Watcher Queue Metric | CRUD | RW | R |
+| F Watcher DB Metric | CRUD | R | R |
+| F Watcher DB Storage Snapshot | CRUD | R | R |
+| F Watcher DB Table Storage | CRUD | R | R |
+| F Watcher Redis Metric | CRUD | R | R |
+| F Watcher App Metric | CRUD | R | R |
+| F Watcher Alert Rule | CRUD | RW | R |
+| F Watcher Alert Log | CRUD | R | R |
+| F Watcher Action Audit | CRUD | R | R |
+
+---
+
+## 1.3 Metric Data Retention (Auto-Cleanup)
+
+**Problem:** Collector data (system metrics, queue metrics, DB metrics, etc.) is written every
+1–60 minutes and never deleted. Over weeks this bloats the database significantly.
+
+**Example growth:**
+- System Metric @ 1/min → ~43,000 rows/month
+- Queue Metric @ 1/min × 3 queues → ~130,000 rows/month
+- DB Metric @ 5/min (top 10 queries) → ~86,000 rows/month
+
+**What to do:**
+
+Create `f_watcher/collectors/retention.py`:
+
+```python
+from __future__ import annotations
+import frappe
+
+RETENTION_DAYS = {
+    "F Watcher System Metric": 30,
+    "F Watcher Queue Metric": 30,
+    "F Watcher DB Metric": 14,
+    "F Watcher DB Storage Snapshot": 90,
+    "F Watcher DB Table Storage": 30,
+    "F Watcher Redis Metric": 30,
+    "F Watcher App Metric": 30,
+    "F Watcher Alert Log": 90,
+    "F Watcher Action Audit": 365,
+}
+
+def collect():
+    for doctype, days in RETENTION_DAYS.items():
+        table = f"tab{doctype}"
+        frappe.db.sql(
+            f"DELETE FROM `{table}` WHERE creation  0:` before inserting.
+
+**Files:** `f_watcher/collectors/security.py`
+
+---
+
+## 1.7 Log Viewer Bugs (Fixed)
+
+### LV-01 through LV-08 ✅ Fixed 2026-04-13
+
+All 8 log viewer bugs were fixed: poll interval not clearing on navigation, global selectors,
+handler accumulation, no error callback, auto-scroll fighting manual scroll, concurrent request
+stacking, invalid CSS font-family, and missing server-side lines cap.
+
+**Files:** `f_watcher/f_watcher/page/f_watcher_log_viewer/f_watcher_log_viewer.js`,
+`f_watcher/f_watcher/page/f_watcher_log_viewer/f_watcher_log_viewer.html`,
+`f_watcher/api/logs.py`
+
+---
+
+## Checklist
+
+**Bug Fixes — Done**
+- [x] BUG-01 — `affected_rows` AttributeError in `actions/cleanup.py`
+- [x] BUG-02 — Duplicate rows in big_tables dashboard query
+- [x] BUG-03 — Unquoted `timestamp` reserved keyword in raw SQL
+- [x] BUG-04 — `frappe.only_for` blocking System Manager in cleanup
+- [x] BUG-05 — 6 cleanup dialog bugs in Control Center JS
+- [x] BUG-06 — `app_health.py` querying wrong DocType for scheduled job status
+- [x] LV-01 through LV-08 — 8 log viewer bugs
+
+**Bug Fixes — Pending**
+- [ ] BUG-07 — `frappe.make_post_request` doesn't exist → webhooks broken (`alerting.py`)
+- [ ] BUG-08 — System Notification channel not implemented (`alerting.py`)
+- [ ] BUG-09 — Missing `frappe.db.commit()` in alerting engine (`alerting.py`)
+- [ ] BUG-10 — `get_latest_metric` missing Backup/Security/Redis types (`alerting.py`)
+- [ ] BUG-11 — `infrastructure.py` writes partial rows to System Metric
+- [ ] BUG-12 — `datetime.utcnow()` deprecated in Python 3.12+ (`infrastructure.py`)
+- [ ] BUG-13 — Missing `frappe.db.commit()` in `database.py`
+- [ ] BUG-14 — `frappe.db.commit()` inside loop in `apm.py`
+- [ ] BUG-15 — Healthy backup state never recorded (`backups.py`)
+- [ ] BUG-16 — Sessions metric inserted even at 0 (`security.py`)
+
+**Role & Permissions**
+- [ ] Define `F Watcher Operator` role in fixtures
+- [ ] Define `F Watcher Viewer` role in fixtures
+- [ ] Add DocType permission rows for all 10 DocTypes
+
+**Metric Data Retention**
+- [ ] Create `collectors/retention.py` with daily cleanup job
+- [ ] Register retention job in `hooks.py`
+
+**Test Suite**
+- [ ] Write smoke tests for `actions/cleanup.py`
+- [ ] Write smoke tests for `actions/control.py`
+- [ ] Write smoke tests for `dashboards/metrics.py`
+- [ ] Write smoke test for `collectors/system.py`
+- [ ] Write smoke tests for `collectors/alerting.py`
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_watcher/docs/phase-2.md
+# Phase 2 — Visibility & Usability
+
+> Goal: Add time-series charts, a dependency health map, navbar alert badge, and WebSocket log streaming.
+> This phase transforms the app from a "numbers dashboard" into a real observability tool.
+
+---
+
+## 2.1 Time-Series Charts (Frappe Charts)
+
+**Problem:** The Control Center shows only the *latest* values for CPU, RAM, Disk, and Queue.
+There is no way to see trends, spikes, or degradation over time.
+
+**What to do:**
+
+Add a `history()` endpoint in `f_watcher/dashboards/metrics.py`:
+
+```python
+@frappe.whitelist()
+def history(hours: int = 6):
+    """Return time-bucketed metric series for charting."""
+    hours = min(int(hours), 72)  # cap at 3 days
+    since = frappe.utils.add_to_date(None, hours=-hours)
+
+    system = frappe.db.sql("""
+        SELECT
+            DATE_FORMAT(timestamp, '%%Y-%%m-%%d %%H:%%i:00') AS bucket,
+            AVG(cpu_percent)  AS cpu,
+            AVG(ram_percent)  AS ram,
+            AVG(disk_percent) AS disk
+        FROM `tabF Watcher System Metric`
+        WHERE timestamp >= %(since)s
+        GROUP BY bucket
+        ORDER BY bucket ASC
+        LIMIT 500
+    """, {"since": since}, as_dict=True)
+
+    queues = frappe.db.sql("""
+        SELECT
+            DATE_FORMAT(timestamp, '%%Y-%%m-%%d %%H:%%i:00') AS bucket,
+            queue_name,
+            AVG(job_count)    AS job_count,
+            SUM(failed_count) AS failed_count
+        FROM `tabF Watcher Queue Metric`
+        WHERE timestamp >= %(since)s
+        GROUP BY bucket, queue_name
+        ORDER BY bucket ASC
+        LIMIT 1000
+    """, {"since": since}, as_dict=True)
+
+    return {"system": system, "queues": queues}
+```
+
+**Frontend implementation in Control Center page:**
+
+```javascript
+// Add after existing KPI render
+function renderCharts(data) {
+    const labels = data.system.map(r => r.bucket.slice(11, 16)); // HH:MM
+    new frappe.Chart("#cpu-chart", {
+        type: "line",
+        data: {
+            labels,
+            datasets: [
+                { name: "CPU %",  values: data.system.map(r => r.cpu)  },
+                { name: "RAM %",  values: data.system.map(r => r.ram)  },
+                { name: "Disk %", values: data.system.map(r => r.disk) },
+            ],
+        },
+        colors: ["#5e64ff", "#f59e0b", "#ef4444"],
+        lineOptions: { regionFill: 1 },
+        axisOptions: { xIsSeries: true },
+    });
+}
+```
+
+Chart containers to add in the page HTML:
+- `#cpu-chart` — CPU / RAM / Disk % over time (line, area fill)
+- `#queue-chart` — job_count per queue over time (bar or line)
+- `#db-size-chart` — DB total_mb trend (line)
+
+Time-range selector: 1h / 6h / 24h / 7d buttons, re-fetches `history(hours=N)`.
+
+---
+
+## 2.2 Dependency Health Map
+
+**Problem:** There is no single view showing the live status of all critical dependencies
+(MySQL, Redis, Scheduler, Workers, Socket.IO).
+
+**What to do:**
+
+Create a new API endpoint `f_watcher/api/health.py`:
+
+```python
+import frappe
+import redis as redis_lib
+from frappe.utils.background_jobs import get_redis_conn
+
+@frappe.whitelist()
+def check():
+    results = {}
+
+    # MySQL
+    try:
+        frappe.db.sql("SELECT 1")
+        results["mysql"] = {"status": "ok"}
+    except Exception as e:
+        results["mysql"] = {"status": "error", "detail": str(e)}
+
+    # Redis cache
+    try:
+        r = redis_lib.from_url(frappe.conf.redis_cache)
+        r.ping()
+        results["redis_cache"] = {"status": "ok"}
+    except Exception as e:
+        results["redis_cache"] = {"status": "error", "detail": str(e)}
+
+    # Redis queue
+    try:
+        conn = get_redis_conn()
+        conn.ping()
+        results["redis_queue"] = {"status": "ok"}
+    except Exception as e:
+        results["redis_queue"] = {"status": "error", "detail": str(e)}
+
+    # Scheduler (last heartbeat within 5 minutes)
+    try:
+        from frappe.utils import now_datetime, get_datetime
+        last = frappe.db.get_value("Scheduled Job Log", {"status": "Complete"},
+                                   "creation", order_by="creation desc")
+        if last and (now_datetime() - get_datetime(last)).seconds  280:  # stop after ~5 min
+            break
+    proc.terminate()
+```
+
+**Frontend:** Replace setInterval polling with:
+
+```javascript
+frappe.realtime.on("fw_log_line", (data) => {
+    appendLine(data.line);
+});
+frappe.call("f_watcher.api.log_stream.start_stream", { filename });
+```
+
+---
+
+## 2.5 Scheduled Health Digest Email
+
+**Problem:** No proactive reporting. Operators only know about issues if they open the dashboard.
+
+**What to do:**
+
+Create `f_watcher/collectors/digest.py`:
+
+```python
+import frappe
+from frappe.utils import now_datetime, add_to_date
+
+def send_daily_digest():
+    """Send a daily health summary email to all F Watcher Operator users."""
+    since = add_to_date(None, days=-1)
+
+    # Gather 24h summary
+    avg = frappe.db.sql("""
+        SELECT AVG(cpu_percent) cpu, MAX(cpu_percent) max_cpu,
+               AVG(ram_percent) ram, MAX(disk_percent) disk
+        FROM `tabF Watcher System Metric`
+        WHERE timestamp >= %(since)s
+    """, {"since": since}, as_dict=True)[0]
+
+    alerts = frappe.db.count("F Watcher Alert Log",
+                              {"status": "Triggered", "timestamp": [">=", since]})
+
+    failed_jobs = frappe.db.sql("""
+        SELECT SUM(failed_count) FROM `tabF Watcher Queue Metric`
+        WHERE timestamp >= %(since)s
+    """, {"since": since})[0][0] or 0
+
+    recipients = frappe.get_all("Has Role",
+                                 filters={"role": "F Watcher Operator"},
+                                 fields=["parent"],
+                                 pluck="parent")
+
+    if not recipients:
+        return
+
+    subject = f"[F Watcher] Daily Health Digest — {now_datetime().strftime('%Y-%m-%d')}"
+    message = f"""
+    System Summary (last 24h)
+    
+      CPU avg: {avg.cpu:.1f}% | peak: {avg.max_cpu:.1f}%
+      RAM avg: {avg.ram:.1f}%
+      Disk peak: {avg.disk:.1f}%
+      Alerts triggered: {alerts}
+      Failed queue jobs: {failed_jobs}
+    
+    """
+
+    frappe.sendmail(recipients=recipients, subject=subject, message=message)
+```
+
+Register in `hooks.py`:
+
+```python
+"0 8 * * *": ["f_watcher.collectors.digest.send_daily_digest"],
+```
+
+---
+
+---
+
+## 2.6 Log Viewer Enhancements
+
+**Problem:** The log viewer shows raw text only. No filtering, no color coding, no way to
+pause or save. Reading through errors requires manually scanning walls of monochrome text.
+
+**What to do:**
+
+### 2.6a — Search / Filter bar
+
+Add a live filter input that hides non-matching lines client-side (no extra API call):
+
+```javascript
+$body.find('#log_search').on('input', function() {
+    const term = $(this).val().toLowerCase();
+    const lines = $output.text().split('\n');
+    const filtered = term
+        ? lines.filter(l => l.toLowerCase().includes(term))
+        : lines;
+    $output.text(filtered.join('\n'));
+});
+```
+
+Add to HTML:
+```html
+
+```
+
+### 2.6b — Line color coding by severity
+
+After setting output text, apply regex-based CSS spans to highlight severity:
+
+```javascript
+function colorize(raw) {
+    return raw
+        .replace(/^(.*\bERROR\b.*)$/gm, '$1')
+        .replace(/^(.*\bWARNING\b.*)$/gm, '$1')
+        .replace(/^(.*\bCRITICAL\b.*)$/gm, '$1')
+        .replace(/^(.*\bINFO\b.*)$/gm, '$1');
+}
+// Use $output.html(colorize(text)) instead of $output.text(text)
+// Note: escape HTML first to prevent XSS before applying spans
+```
+
+### 2.6c — Pause / Resume button
+
+Stop the poll while reading without leaving the page:
+
+```javascript
+let paused = false;
+$body.find('#log_pause_btn').on('click', function() {
+    paused = !paused;
+    $(this).text(paused ? '▶ Resume' : '⏸ Pause');
+    if (!paused) fetch_logs();
+});
+// In schedulePoll(): if (paused) return;
+```
+
+### 2.6d — Copy to clipboard & Download
+
+```javascript
+$body.find('#log_copy_btn').on('click', () => {
+    navigator.clipboard.writeText($output.text())
+        .then(() => frappe.show_alert({ message: 'Copied to clipboard', indicator: 'green' }));
+});
+
+$body.find('#log_download_btn').on('click', () => {
+    const blob = new Blob([$output.text()], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = $selector.val() + '_' + frappe.datetime.now_datetime() + '.log';
+    a.click();
+});
+```
+
+---
+
+## 2.7 Control Center Enhancements
+
+### 2.7a — Collector Health Panel
+
+**Problem:** No way to know if a collector is silently failing. You only discover broken
+collectors by noticing stale data or checking `tabError Log` manually.
+
+**What to do:**
+
+Add a `collector_status()` API endpoint in `dashboards/metrics.py`:
+
+```python
+@frappe.whitelist()
+def collector_status():
+    collectors = [
+        ("System",       "F Watcher System Metric",       5),
+        ("Queue",        "F Watcher Queue Metric",         5),
+        ("DB Storage",   "F Watcher DB Storage Snapshot", 10),
+        ("DB Queries",   "F Watcher DB Metric",           10),
+        ("Redis",        "F Watcher Redis Metric",        10),
+        ("App Health",   "F Watcher App Metric",          10),
+    ]
+    result = []
+    for label, doctype, max_minutes in collectors:
+        last = frappe.db.get_value(doctype, {}, "creation", order_by="creation desc")
+        if not last:
+            status = "never"
+        else:
+            minutes_ago = (frappe.utils.now_datetime() - frappe.utils.get_datetime(last)).seconds // 60
+            status = "ok" if minutes_ago  90)  score -= 30;
+    else if (sys.cpu_percent > 70) score -= 15;
+    if (sys.ram_percent > 90)  score -= 25;
+    else if (sys.ram_percent > 75) score -= 10;
+    if (sys.disk_percent > 90) score -= 20;
+    else if (sys.disk_percent > 80) score -= 10;
+    const totalFailed = (queues || []).reduce((s, q) => s + (q.failed_count || 0), 0);
+    if (totalFailed > 10) score -= 15;
+    else if (totalFailed > 0) score -= 5;
+    return Math.max(0, score);
+}
+```
+
+Display as colored badge: ≥80 green, 60–79 yellow, <60 red.
+
+### 2.7d — Retry Failed Jobs Button in UI
+
+`actions/queue.py` already has `retry_failed_jobs(queue_name)` but there is no UI button
+to call it. Add per-queue retry buttons in the Queue section of the Control Center.
+
+---
+
+## Checklist
+
+**Original items**
+- [ ] Add `history()` endpoint to `dashboards/metrics.py`
+- [ ] Add time-range selector + Frappe Charts rendering to Control Center page
+- [ ] Create `api/health.py` with dependency status checks
+- [ ] Add dependency health map row to Control Center page header
+- [ ] Add `notification_config` hook + `notifications.py` for navbar badge
+- [ ] Create `api/log_stream.py` for WebSocket-based log tailing
+- [ ] Replace Log Viewer polling with `frappe.realtime` listener
+- [ ] Create `collectors/digest.py` for daily email digest
+- [ ] Register digest job in `hooks.py` at 08:00 daily
+
+**Log Viewer enhancements**
+- [ ] 2.6a — Search/filter bar (client-side, no API)
+- [ ] 2.6b — Line color coding by severity (ERROR/WARNING/CRITICAL/INFO)
+- [ ] 2.6c — Pause / Resume button for auto-poll
+- [ ] 2.6d — Copy to clipboard + Download as file buttons
+
+**Control Center enhancements**
+- [ ] 2.7a — Collector health panel with last-run status dots
+- [ ] 2.7b — Active alert rules panel with live current values
+- [ ] 2.7c — System health score (0–100) badge in page header
+- [ ] 2.7d — Retry failed jobs button per queue in UI
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_watcher/docs/phase-3.md
+# Phase 3 — Intelligence & Advanced Monitoring
+
+> Goal: Add anomaly detection, DB query explorer, backup validation, multi-site support,
+> threshold recommendations, and API rate limiting.
+> This phase makes F Watcher proactive and self-improving rather than just reactive.
+
+---
+
+## 3.1 Anomaly Detection (Baseline Deviation Alerts)
+
+**Problem:** Alert rules require the user to manually set thresholds like "CPU > 80%".
+New sites have no historical baseline to reference. The first week of usage produces zero alerts.
+Meanwhile, a subtle memory leak (RAM drifting from 30% to 65% over 48h) goes unnoticed.
+
+**What to do:**
+
+Create `f_watcher/collectors/anomaly.py`:
+
+```python
+from __future__ import annotations
+import frappe
+from frappe.utils import add_to_date
+
+CHECKS = [
+    {
+        "label": "CPU spike",
+        "doctype": "F Watcher System Metric",
+        "field": "cpu_percent",
+        "window_hours": 24,
+        "sigma_threshold": 2.5,
+    },
+    {
+        "label": "RAM spike",
+        "doctype": "F Watcher System Metric",
+        "field": "ram_percent",
+        "window_hours": 48,
+        "sigma_threshold": 2.0,
+    },
+    {
+        "label": "Queue depth spike",
+        "doctype": "F Watcher Queue Metric",
+        "field": "job_count",
+        "window_hours": 24,
+        "sigma_threshold": 3.0,
+    },
+]
+
+def collect():
+    for check in CHECKS:
+        _evaluate(check)
+
+def _evaluate(check: dict):
+    since = add_to_date(None, hours=-(check["window_hours"]))
+
+    stats = frappe.db.sql(f"""
+        SELECT AVG(`{check['field']}`) AS mean,
+               STDDEV(`{check['field']}`) AS stddev,
+               MAX(`{check['field']}`) AS latest_max
+        FROM `tab{check['doctype']}`
+        WHERE timestamp >= %(since)s
+    """, {"since": since}, as_dict=True)
+
+    if not stats or stats[0].stddev is None or float(stats[0].stddev) == 0:
+        return
+
+    row = stats[0]
+    mean, stddev, latest_max = float(row.mean), float(row.stddev), float(row.latest_max)
+    z_score = (latest_max - mean) / stddev
+
+    if z_score >= check["sigma_threshold"]:
+        _log_anomaly(check, mean, stddev, latest_max, z_score)
+
+def _log_anomaly(check, mean, stddev, latest_max, z_score):
+    msg = (
+        f"Anomaly detected: {check['label']} reached {latest_max:.1f} "
+        f"(mean={mean:.1f}, σ={stddev:.1f}, z={z_score:.2f})"
+    )
+    frappe.get_doc({
+        "doctype": "F Watcher Alert Log",
+        "alert_rule": None,
+        "timestamp": frappe.utils.now_datetime(),
+        "status": "Triggered",
+        "message": msg,
+        "metric_value": latest_max,
+    }).insert(ignore_permissions=True)
+    frappe.db.commit()
+```
+
+Register in `hooks.py` — every 15 minutes:
+
+```python
+"*/15 * * * *": [
+    # ... existing
+    "f_watcher.collectors.anomaly.collect",
+],
+```
+
+---
+
+## 3.2 DB Query Explorer Page
+
+**Problem:** The `F Watcher DB Metric` DocType stores slow query signatures but there is no
+UI to search, filter, or group them. Operators have to go into the list view and manually browse.
+
+**What to do:**
+
+Create a new page `f_watcher/f_watcher/page/f-watcher-query-explorer/`:
+
+```
+f-watcher-query-explorer/
+  f_watcher_query_explorer.json   (page definition)
+  f_watcher_query_explorer.py     (Python controller — empty, data via API)
+  f_watcher_query_explorer.js     (UI logic)
+```
+
+Add a `query_stats()` API endpoint in `dashboards/metrics.py`:
+
+```python
+@frappe.whitelist()
+def query_stats(hours: int = 24, min_executions: int = 1, limit: int = 50):
+    since = frappe.utils.add_to_date(None, hours=-int(hours))
+    return frappe.db.sql("""
+        SELECT
+            query_signature,
+            SUM(executions)   AS total_executions,
+            MAX(max_time_ms)  AS worst_ms,
+            AVG(avg_time_ms)  AS avg_ms,
+            MAX(timestamp)    AS last_seen
+        FROM `tabF Watcher DB Metric`
+        WHERE timestamp >= %(since)s
+        GROUP BY query_signature
+        HAVING total_executions >= %(min_exec)s
+        ORDER BY worst_ms DESC
+        LIMIT %(limit)s
+    """, {"since": since, "min_exec": int(min_executions), "limit": int(limit)},
+    as_dict=True)
+```
+
+**Page features:**
+- Filter bar: time range (1h/6h/24h/7d), min executions, sort by (worst/avg/count)
+- Table with columns: query hash, total executions, worst ms, avg ms, last seen
+- Click a row to expand full query details stored in the record
+
+---
+
+## 3.3 Backup File Integrity Validation
+
+**Problem:** `collectors/backups.py` checks that a `.sql.gz` file exists and is recent
+(` bool:
+    try:
+        with gzip.open(path, "rb") as f:
+            f.read(512)  # read first 512 bytes to verify header
+        return True
+    except Exception:
+        return False
+```
+
+Call it after the age check:
+
+```python
+if not _is_valid_gzip(latest_backup):
+    _alert(f"Latest backup {os.path.basename(latest_backup)} is corrupt or unreadable.")
+    return
+```
+
+---
+
+## 3.4 Threshold Recommendation Engine
+
+**Problem:** New users don't know what alert thresholds to set. After a few days of data
+collection, F Watcher has enough history to suggest sensible defaults.
+
+**What to do:**
+
+Add a `recommend_thresholds()` API endpoint:
+
+```python
+@frappe.whitelist()
+def recommend_thresholds():
+    """
+    After >= 3 days of data, suggest alert thresholds as P95 of observed values.
+    """
+    since = frappe.utils.add_to_date(None, days=-7)
+
+    rows = frappe.db.sql("""
+        SELECT
+            cpu_percent, ram_percent, disk_percent
+        FROM `tabF Watcher System Metric`
+        WHERE timestamp >= %(since)s
+        ORDER BY timestamp ASC
+    """, {"since": since})
+
+    if len(rows)  95%)
+need immediate re-alerting; others (CPU > 70%) should wait an hour.
+
+**What to do:** Add a `cooldown_minutes` Int field to the `F Watcher Alert Rule` DocType
+with a default of 15. Use `rule.cooldown_minutes or 15` in the evaluator.
+
+---
+
+### 3.8b — Alert Auto-Resolve Detection
+
+**Problem:** When a metric drops below threshold after an alert, nothing happens. There is
+no "Resolved" entry — the alert stays in the log forever as "Triggered".
+
+**What to do:**
+
+Track which rules were last fired. On subsequent evaluations, if the condition is no longer
+true and the last log entry for that rule was "Triggered", insert a "Resolved" record:
+
+```python
+if not evaluate_condition(value, rule.condition, rule.threshold_value):
+    last_log = frappe.db.get_value(
+        "F Watcher Alert Log",
+        {"alert_rule": rule.name},
+        ["status", "name"],
+        order_by="timestamp desc",
+        as_dict=True,
+    )
+    if last_log and last_log.status == "Triggered":
+        frappe.get_doc({
+            "doctype": "F Watcher Alert Log",
+            "alert_rule": rule.name,
+            "timestamp": now_datetime(),
+            "status": "Resolved",
+            "message": f"Alert resolved: {rule.property_name} is now {value}",
+            "metric_value": str(value),
+        }).insert(ignore_permissions=True)
+```
+
+**Files:** `f_watcher/collectors/alerting.py`
+
+---
+
+### 3.8c — Test Alert Button on Alert Rule Form
+
+**Problem:** After creating an Alert Rule the user has no way to verify it works without
+waiting for the next collector run.
+
+**What to do:**
+
+Add a `test_rule()` whitelisted function:
+
+```python
+@frappe.whitelist()
+def test_rule(rule_name: str):
+    rule = frappe.get_doc("F Watcher Alert Rule", rule_name)
+    metric = get_latest_metric(rule.metric_type)
+    if not metric:
+        return {"status": "no_data", "message": "No metric data available yet."}
+    value = metric.get(rule.property_name)
+    would_fire = evaluate_condition(value, rule.condition, rule.threshold_value)
+    return {
+        "status": "would_fire" if would_fire else "ok",
+        "current_value": value,
+        "threshold": rule.threshold_value,
+        "condition": rule.condition,
+    }
+```
+
+Wire to a "Test now" button via a Client Script on the Alert Rule form.
+
+---
+
+## 3.9 Collector Improvements
+
+### 3.9a — Queue Collector: Use Dynamic Queue Names
+
+**Problem:** `collectors/queue.py` has the queue names `["short", "default", "long"]`
+hardcoded. In Frappe bench the actual queue names are prefixed with the bench path
+(e.g. `Users-bluephoenix-frappe-bench:default`). The collector may be reading wrong queues.
+
+**What to do:**
+```python
+from frappe.utils.background_jobs import get_queue_names
+queues = get_queue_names()  # returns the actual site-prefixed queue names
+```
+
+**Files:** `f_watcher/collectors/queue.py`
+
+---
+
+### 3.9b — DB Storage: Flag Index Bloat
+
+**Problem:** `db_storage.py` already collects `data_mb` and `index_mb` per table but
+never raises an alert when indexes are larger than the actual data — a known performance
+smell indicating stale or duplicate indexes.
+
+**What to do:** In `db_storage.py`, after inserting the table record, check if
+`index_mb > data_mb * 1.5` and write to `F Watcher Alert Log`:
+
+```python
+if r.index_mb > (r.data_mb or 0) * 1.5 and r.total_mb > 50:
+    frappe.get_doc({
+        "doctype": "F Watcher Alert Log",
+        "timestamp": ts,
+        "status": "Triggered",
+        "message": f"Index bloat: {r.table_name} indexes ({r.index_mb:.0f} MB) > data ({r.data_mb:.0f} MB). Consider ANALYZE TABLE.",
+        "metric_value": f"{r.index_mb:.1f} MB indexes",
+    }).insert(ignore_permissions=True)
+```
+
+**Files:** `f_watcher/collectors/db_storage.py`
+
+---
+
+## Checklist
+
+**Original items**
+- [ ] Create `collectors/anomaly.py` with Z-score detection
+- [ ] Register anomaly collector in `hooks.py` (every 15 min)
+- [ ] Create `f-watcher-query-explorer` page + `query_stats()` API
+- [ ] Add gzip integrity check to `collectors/backups.py`
+- [ ] Create `recommend_thresholds()` API + Alert Rule "Get Recommendations" button
+- [ ] Add `site` filter param to `latest()` + `history()` in `dashboards/metrics.py`
+- [ ] Add site-selector dropdown to Control Center
+- [ ] Create `compare()` multi-site endpoint
+- [ ] Add Redis-based rate limiting to `api/logs.py`
+- [ ] Cap `lines` parameter at 500 in `api/logs.py`
+- [ ] Add `validate()` webhook URL check to F Watcher Alert Rule controller
+
+**Alerting intelligence**
+- [ ] 3.8a — `cooldown_minutes` field on Alert Rule (configurable per rule)
+- [ ] 3.8b — Auto-resolve detection in alerting engine
+- [ ] 3.8c — `test_rule()` API + "Test now" button on Alert Rule form
+
+**Collector improvements**
+- [ ] 3.9a — Queue collector: use `get_queue_names()` instead of hardcoded strings
+- [ ] 3.9b — DB storage: flag index bloat when `index_mb > data_mb * 1.5`
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_watcher/docs/phase-4.md
+# Phase 4 — Operational Control & Automation
+
+> Goal: Turn F Watcher from a passive observer into an active operator.
+> Give admins direct control over queues, cache, processes, and maintenance windows
+> without needing terminal access.
+
+---
+
+## 4.1 Maintenance Window Support
+
+**Problem:** During deployments, migrations, or planned downtime, collectors keep running
+and generate false alerts (backup stale, scheduler down, high error count). There is no
+way to say "ignore alerts for the next 30 minutes".
+
+**What to do:**
+
+Create a `F Watcher Maintenance Window` DocType:
+```
+Fields: title, starts_at (Datetime), ends_at (Datetime), reason, created_by
+```
+
+Update `alerting.py` to check for an active window before sending any alert:
+```python
+def is_maintenance_active():
+    now = now_datetime()
+    return frappe.db.exists("F Watcher Maintenance Window", {
+        "starts_at": ["=", now],
+    })
+
+# In evaluate_and_alert():
+if is_maintenance_active():
+    return  # silently skip all alerts during maintenance
+```
+
+Add a "Start maintenance window" button to the Control Center with a duration picker
+(15 min / 30 min / 1 hour / custom). Show a banner on the Control Center while a window
+is active.
+
+---
+
+## 4.2 Auto-Remediation Rules
+
+**Problem:** When a known recoverable condition is detected (e.g. failed queue jobs > 10,
+Redis memory > 90%), the operator has to manually open the Control Center and take action.
+For well-understood conditions, this can be automated.
+
+**What to do:**
+
+Add an `auto_remediate` checkbox and `remediation_action` Select field to `F Watcher Alert Rule`:
+
+```
+remediation_action options:
+  - retry_failed_jobs_default
+  - retry_failed_jobs_short
+  - retry_failed_jobs_long
+  - clear_cache
+  - (extensible)
+```
+
+In the alerting engine, after triggering an alert:
+```python
+if rule.auto_remediate and rule.remediation_action:
+    _run_remediation(rule.remediation_action, rule)
+```
+
+```python
+def _run_remediation(action: str, rule):
+    try:
+        if action.startswith("retry_failed_jobs_"):
+            queue = action.replace("retry_failed_jobs_", "")
+            from f_watcher.actions.queue import retry_failed_jobs
+            retry_failed_jobs(queue_name=queue)
+        elif action == "clear_cache":
+            frappe.cache().flushdb()
+        _audit_remediation(rule, action, "Success")
+    except Exception as e:
+        _audit_remediation(rule, action, f"Failed: {e}")
+```
+
+Every auto-remediation is recorded in `F Watcher Action Audit`.
+
+---
+
+## 4.3 Queue Job Inspector
+
+**Problem:** The Control Center shows queue *counts* but not what's actually in the queue.
+When a job is stuck, the operator has to use the terminal to inspect it.
+
+**What to do:**
+
+Create a `queue_jobs()` API endpoint:
+```python
+@frappe.whitelist()
+def queue_jobs(queue_name="default", status="queued", limit=50):
+    from rq import Queue
+    from frappe.utils.background_jobs import get_redis_conn
+    conn = get_redis_conn()
+    q = Queue(queue_name, connection=conn)
+
+    if status == "failed":
+        registry = q.failed_job_registry
+        job_ids = registry.get_job_ids()[:int(limit)]
+    else:
+        job_ids = q.job_ids[:int(limit)]
+
+    jobs = []
+    for jid in job_ids:
+        try:
+            job = q.fetch_job(jid)
+            if job:
+                jobs.append({
+                    "id": job.id,
+                    "func": job.func_name,
+                    "enqueued_at": str(job.enqueued_at),
+                    "status": job.get_status(),
+                    "description": job.description or "",
+                })
+        except Exception:
+            pass
+    return jobs
+```
+
+Add a "View jobs" expandable section per queue in the Control Center showing the first 20
+jobs with columns: job ID, function name, enqueued at. Include a "Cancel" button per job
+and a "Retry all" button per queue.
+
+---
+
+## 4.4 Redis Cache Manager
+
+**Problem:** When Redis memory is high, the operator has no way to understand what's
+taking space or selectively clear cache without terminal access.
+
+**What to do:**
+
+Create `api/cache.py`:
+```python
+@frappe.whitelist()
+def stats():
+    """Return Redis key pattern breakdown."""
+    _check_permission()
+    conn = frappe.cache()
+    info = conn.info()
+    # Sample top key patterns (scan a subset)
+    patterns = {}
+    cursor = 0
+    sampled = 0
+    while sampled < 500:
+        cursor, keys = conn.scan(cursor, count=100)
+        for k in keys:
+            k_str = k.decode() if isinstance(k, bytes) else k
+            prefix = k_str.split("|")[0] if "|" in k_str else k_str.split(":")[0]
+            patterns[prefix] = patterns.get(prefix, 0) + 1
+            sampled += 1
+        if cursor == 0:
+            break
+
+    return {
+        "used_memory_human": info.get("used_memory_human"),
+        "maxmemory_human": info.get("maxmemory_human", "no limit"),
+        "hit_ratio": _hit_ratio(info),
+        "key_patterns": sorted(patterns.items(), key=lambda x: -x[1])[:20],
+        "total_keys": info.get("db0", {}).get("keys", 0),
+    }
+
+@frappe.whitelist()
+def flush_cache():
+    _check_permission()
+    frappe.cache().flushdb()
+    _audit("flush_cache", "redis", "Manual cache flush", "Success", "Full Redis cache flushed.")
+    return {"status": "ok"}
+```
+
+Add a "Cache" card to the Control Center right column showing memory, hit ratio, top key
+patterns, and a "Flush cache" button (with confirmation).
+
+---
+
+## 4.5 Custom Cleanup Rules
+
+**Problem:** `CLEANUP_RULES` in `actions/cleanup.py` is hardcoded to 5 table types.
+Admins with custom apps that have their own log/history tables can't add them.
+
+**What to do:**
+
+Create a `F Watcher Cleanup Rule` DocType:
+```
+Fields: table_name (Data), label (Data), default_days (Int), where_clause (Small Text),
+        is_active (Check), notes (Small Text)
+```
+
+Update `cleanup.py` to merge built-in rules with DocType records:
+```python
+def _get_all_rules():
+    rules = dict(CLEANUP_RULES)  # built-in defaults
+    custom = frappe.get_all("F Watcher Cleanup Rule",
+                            filters={"is_active": 1},
+                            fields=["table_name", "label", "default_days", "where_clause"])
+    for r in custom:
+        rules[r.table_name] = {
+            "label": r.label,
+            "default_days": r.default_days,
+            "where": r.where_clause,
+        }
+    return rules
+```
+
+Show all active cleanup rules (built-in + custom) in the Control Center's table section.
+
+---
+
+## Checklist
+
+- [ ] 4.1 — Create `F Watcher Maintenance Window` DocType
+- [ ] 4.1 — Add `is_maintenance_active()` check to alerting engine
+- [ ] 4.1 — Add "Start maintenance" button + active banner to Control Center
+- [ ] 4.2 — Add `auto_remediate` + `remediation_action` fields to Alert Rule
+- [ ] 4.2 — Implement `_run_remediation()` in alerting engine
+- [ ] 4.3 — Create `queue_jobs()` API endpoint
+- [ ] 4.3 — Add queue job inspector panel to Control Center
+- [ ] 4.3 — Add per-job cancel + per-queue retry-all buttons
+- [ ] 4.4 — Create `api/cache.py` with `stats()` and `flush_cache()`
+- [ ] 4.4 — Add Cache card to Control Center right column
+- [ ] 4.5 — Create `F Watcher Cleanup Rule` DocType
+- [ ] 4.5 — Merge custom rules into `cleanup.py` `_get_all_rules()`
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_watcher/docs/phase-5.md
+# Phase 5 — Reporting & Analytics
+
+> Goal: Turn collected metric data into actionable insights.
+> Exportable reports, trend comparisons, uptime tracking, and error pattern analysis
+> so decisions are data-driven, not gut-feel.
+
+---
+
+## 5.1 Metric Export (CSV / JSON)
+
+**Problem:** All collected data is locked inside Frappe DocTypes. There is no way to
+pull it into Excel, Grafana, a BI tool, or share it with an external team.
+
+**What to do:**
+
+Create `api/export.py`:
+```python
+import frappe
+import csv
+import io
+
+@frappe.whitelist()
+def system_metrics_csv(hours: int = 24):
+    _check_permission()
+    since = frappe.utils.add_to_date(None, hours=-int(hours))
+    rows = frappe.db.sql("""
+        SELECT `timestamp`, hostname, cpu_percent, ram_percent,
+               disk_percent, load_1, load_5, load_15
+        FROM `tabF Watcher System Metric`
+        WHERE `timestamp` >= %(since)s
+        ORDER BY `timestamp` ASC
+    """, {"since": since}, as_dict=True)
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=rows[0].keys() if rows else [])
+    writer.writeheader()
+    writer.writerows([dict(r) for r in rows])
+    frappe.response["content_type"] = "text/csv"
+    frappe.response["headers"] = {
+        "Content-Disposition": f'attachment; filename="system_metrics_{hours}h.csv"'
+    }
+    frappe.response["result"] = output.getvalue()
+```
+
+Add "Export CSV" buttons in the Control Center for:
+- System metrics (last 24h / 7d / 30d)
+- Queue metrics
+- DB table storage snapshot
+
+---
+
+## 5.2 Uptime Tracker
+
+**Problem:** There is no concept of "uptime" in F Watcher. You can't answer "was the
+site up last Tuesday?" or "what % of the last 30 days was healthy?".
+
+**What to do:**
+
+Create a `F Watcher Uptime Record` DocType:
+```
+Fields: timestamp (Datetime), status (Select: up/degraded/down),
+        cpu_percent, ram_percent, disk_percent, queue_failures, reason
+```
+
+Create `collectors/uptime.py` (runs every 5 minutes):
+```python
+def collect():
+    sys = frappe.db.get_all("F Watcher System Metric",
+                             fields=["cpu_percent","ram_percent","disk_percent"],
+                             order_by="timestamp desc", limit=1)
+    if not sys:
+        return
+    s = sys[0]
+    q_fails = frappe.db.sql(
+        "SELECT SUM(failed_count) FROM `tabF Watcher Queue Metric` "
+        "WHERE `timestamp` >= %s", (frappe.utils.add_to_date(None, minutes=-5),)
+    )[0][0] or 0
+
+    if s.cpu_percent > 95 or s.ram_percent > 95 or s.disk_percent > 95 or q_fails > 50:
+        status = "down"
+    elif s.cpu_percent > 80 or s.ram_percent > 80 or q_fails > 10:
+        status = "degraded"
+    else:
+        status = "up"
+
+    frappe.get_doc({
+        "doctype": "F Watcher Uptime Record",
+        "timestamp": frappe.utils.now_datetime(),
+        "status": status,
+        "cpu_percent": s.cpu_percent,
+        "ram_percent": s.ram_percent,
+        "disk_percent": s.disk_percent,
+        "queue_failures": int(q_fails),
+    }).insert(ignore_permissions=True)
+    frappe.db.commit()
+```
+
+Add an `uptime_summary()` API endpoint returning 30-day uptime %:
+```python
+@frappe.whitelist()
+def uptime_summary(days: int = 30):
+    since = frappe.utils.add_to_date(None, days=-int(days))
+    total = frappe.db.count("F Watcher Uptime Record", {"timestamp": [">=", since]})
+    up    = frappe.db.count("F Watcher Uptime Record",
+                             {"timestamp": [">=", since], "status": "up"})
+    degraded = frappe.db.count("F Watcher Uptime Record",
+                                {"timestamp": [">=", since], "status": "degraded"})
+    pct = round((up + degraded * 0.5) / total * 100, 2) if total else None
+    return {"uptime_percent": pct, "up": up, "degraded": degraded,
+            "down": total - up - degraded, "total_checks": total}
+```
+
+Show as a prominent "Uptime: 99.3%" badge in the Control Center header.
+
+---
+
+## 5.3 Period-over-Period Comparison
+
+**Problem:** "CPU is at 65%" means nothing without context. Is that normal? Is it higher
+than last week? F Watcher has the historical data but never compares periods.
+
+**What to do:**
+
+Add a `compare_periods()` endpoint to `dashboards/metrics.py`:
+```python
+@frappe.whitelist()
+def compare_periods(metric: str = "cpu_percent", days: int = 7):
+    """Compare average metric value: this period vs same period prior."""
+    now = frappe.utils.now_datetime()
+    this_start  = frappe.utils.add_to_date(now, days=-int(days))
+    prior_start = frappe.utils.add_to_date(now, days=-int(days) * 2)
+    prior_end   = this_start
+
+    def avg(start, end):
+        r = frappe.db.sql(f"""
+            SELECT AVG(`{metric}`) FROM `tabF Watcher System Metric`
+            WHERE `timestamp` BETWEEN %(s)s AND %(e)s
+        """, {"s": start, "e": end})
+        return round(float(r[0][0] or 0), 2)
+
+    this  = avg(this_start, now)
+    prior = avg(prior_start, prior_end)
+    delta = round(this - prior, 2)
+    pct_change = round(delta / prior * 100, 1) if prior else None
+    return {"metric": metric, "this_period": this, "prior_period": prior,
+            "delta": delta, "pct_change": pct_change, "days": days}
+```
+
+Display as delta arrows (↑ +3.2% vs last week) next to each KPI in the Control Center.
+
+---
+
+## 5.4 Top Error Patterns Report
+
+**Problem:** The app health collector groups errors by method but there is no aggregated
+view showing which errors are most frequent over time, growing, or newly appearing.
+
+**What to do:**
+
+Add an `error_patterns()` API endpoint:
+```python
+@frappe.whitelist()
+def error_patterns(days: int = 7):
+    since = frappe.utils.add_to_date(None, days=-int(days))
+    return frappe.db.sql("""
+        SELECT
+            method,
+            COUNT(name)       AS total,
+            MAX(creation)     AS last_seen,
+            MIN(creation)     AS first_seen
+        FROM `tabError Log`
+        WHERE creation >= %(since)s
+          AND method IS NOT NULL
+        GROUP BY method
+        ORDER BY total DESC
+        LIMIT 20
+    """, {"since": since}, as_dict=True)
+```
+
+Render as a table on the Control Center (or a new "Error Patterns" section) showing:
+method name | occurrence count | first seen | last seen | trend (↑ ↓ →).
+
+---
+
+## 5.5 Scheduled PDF / Email Report
+
+**Problem:** The daily digest email (Phase 2.5) sends plain-text HTML. There is no
+structured weekly report with charts, trends, and a full health summary that a manager
+or stakeholder could read.
+
+**What to do:**
+
+Create `collectors/weekly_report.py`:
+- Runs every Monday at 08:00
+- Queries 7-day averages for CPU, RAM, Disk, queue failures, alert count, uptime %
+- Renders a structured HTML email with a summary table, period-over-period deltas,
+  top 5 error methods, and top 3 biggest tables
+- Sends to all users with `F Watcher Operator` or `F Watcher Viewer` role
+
+```python
+def send_weekly_report():
+    from f_watcher.dashboards.metrics import compare_periods, error_patterns, uptime_summary
+    uptime = uptime_summary(days=7)
+    cpu_cmp = compare_periods("cpu_percent", days=7)
+    ram_cmp = compare_periods("ram_percent", days=7)
+    errors  = error_patterns(days=7)
+    # ... build HTML table and send via frappe.sendmail
+```
+
+Register in `hooks.py`:
+```python
+"0 8 * * 1": ["f_watcher.collectors.weekly_report.send_weekly_report"],
+```
+
+---
+
+## 5.6 Disk Growth Rate Forecast
+
+**Problem:** The DB storage section shows current size but not trajectory. "We have 200GB
+free" is less useful than "at current growth rate we have 23 days before disk is full".
+
+**What to do:**
+
+Add a `disk_forecast()` endpoint:
+```python
+@frappe.whitelist()
+def disk_forecast():
+    rows = frappe.db.sql("""
+        SELECT `timestamp`, disk_percent
+        FROM `tabF Watcher System Metric`
+        WHERE `timestamp` >= %s
+        ORDER BY `timestamp` ASC
+    """, (frappe.utils.add_to_date(None, days=-30),), as_dict=True)
+
+    if len(rows)  0 else None
+
+    return {
+        "current_disk_percent": current,
+        "growth_per_day_pct": round(slope_per_day, 3),
+        "days_to_full": round(days_to_full) if days_to_full else None,
+    }
+```
+
+Show in the Control Center disk KPI card as: "At this rate: full in ~42 days".
+
+---
+
+## Checklist
+
+- [ ] 5.1 — Create `api/export.py` with `system_metrics_csv()`
+- [ ] 5.1 — Add Export CSV buttons to Control Center (system, queue, DB tables)
+- [ ] 5.2 — Create `F Watcher Uptime Record` DocType
+- [ ] 5.2 — Create `collectors/uptime.py` (every 5 min)
+- [ ] 5.2 — Add `uptime_summary()` API + uptime % badge in Control Center header
+- [ ] 5.3 — Add `compare_periods()` to `dashboards/metrics.py`
+- [ ] 5.3 — Show delta arrows (↑/↓) next to KPI values in Control Center
+- [ ] 5.4 — Add `error_patterns()` API + Error Patterns table in Control Center
+- [ ] 5.5 — Create `collectors/weekly_report.py`
+- [ ] 5.5 — Register weekly report at 08:00 Monday in `hooks.py`
+- [ ] 5.6 — Add `disk_forecast()` API + "full in ~N days" note in disk KPI card
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_watcher/docs/phase-6.md
+# Phase 6 — Security & Compliance
+
+> Goal: Harden the site's security posture through deep monitoring,
+> active threat detection, and a full compliance audit trail.
+> F Watcher should be the first place you look after a security incident.
+
+---
+
+## 6.1 IP-Based Brute Force Detection
+
+**Problem:** `security.py` currently tracks failed logins per *user* but not per *IP address*.
+An attacker trying many different usernames from the same IP will not be detected.
+
+**What to do:**
+
+Update `collectors/security.py` — query the `communication_medium` or `ip_address` column
+in `tabActivity Log` (Frappe stores the IP there on newer versions):
+
+```python
+def track_brute_force_by_ip():
+    fifteen_mins_ago = add_to_date(now_datetime(), minutes=-15)
+    anomalies = frappe.db.sql("""
+        SELECT ip_address, COUNT(name) AS attempts
+        FROM `tabActivity Log`
+        WHERE subject = 'Failed Login'
+          AND creation >= %(since)s
+          AND ip_address IS NOT NULL
+          AND ip_address != ''
+        GROUP BY ip_address
+        HAVING attempts > 10
+    """, {"since": fifteen_mins_ago}, as_dict=True)
+
+    for row in anomalies:
+        msg = (f"Brute force detected: {row.attempts} failed login attempts "
+               f"from IP {row.ip_address} in the last 15 minutes.")
+        frappe.get_doc({
+            "doctype": "F Watcher Alert Log",
+            "timestamp": now_datetime(),
+            "status": "Triggered",
+            "message": msg,
+            "metric_value": f"{row.ip_address} ({row.attempts} attempts)",
+        }).insert(ignore_permissions=True)
+    frappe.db.commit()
+```
+
+---
+
+## 6.2 Suspicious Activity Detector
+
+**Problem:** Beyond failed logins, many other suspicious patterns go unmonitored:
+bulk document deletes, mass exports, role changes, API key creation at odd hours.
+
+**What to do:**
+
+Add to `collectors/security.py`:
+
+```python
+SUSPICIOUS_PATTERNS = [
+    {
+        "label": "Bulk delete",
+        "doctype": "Activity Log",
+        "filter": {"operation": "Delete"},
+        "threshold": 50,   # >50 deletes in 15 min by one user
+        "group_by": "user",
+    },
+    {
+        "label": "Permission change",
+        "doctype": "Activity Log",
+        "filter": {"reference_doctype": ["in", ["User", "Role", "Has Role", "User Permission"]]},
+        "threshold": 5,
+        "group_by": "user",
+    },
+]
+
+def track_suspicious_activity():
+    fifteen_mins_ago = add_to_date(now_datetime(), minutes=-15)
+    for pattern in SUSPICIOUS_PATTERNS:
+        results = frappe.db.sql("""
+            SELECT `{group}`, COUNT(name) AS cnt
+            FROM `tabActivity Log`
+            WHERE operation = %(op)s AND creation >= %(since)s
+            GROUP BY `{group}`
+            HAVING cnt > %(threshold)s
+        """.format(group=pattern["group_by"]),
+        {"op": pattern["filter"].get("operation",""), "since": fifteen_mins_ago,
+         "threshold": pattern["threshold"]}, as_dict=True)
+        for r in results:
+            _log_security_event(pattern["label"], r)
+```
+
+---
+
+## 6.3 Active Session Manager
+
+**Problem:** Admins can see how many sessions are active (from `security.py`) but cannot
+see *who* is logged in or force-logout a specific suspicious user from F Watcher.
+
+**What to do:**
+
+Create `api/sessions.py`:
+```python
+@frappe.whitelist()
+def list_sessions():
+    _check_permission()
+    return frappe.db.sql("""
+        SELECT user, device, ip_address, last_active, sid
+        FROM `tabSessions`
+        WHERE user != 'Guest'
+        ORDER BY last_active DESC
+        LIMIT 100
+    """, as_dict=True)
+
+@frappe.whitelist()
+def force_logout(sid: str):
+    _check_permission()
+    session = frappe.db.get_value("Sessions", sid, ["user", "sid"], as_dict=True)
+    if not session:
+        frappe.throw("Session not found.")
+    frappe.db.delete("Sessions", {"sid": sid})
+    frappe.db.commit()
+    _audit("force_logout", session.user, f"Force logout session {sid}", "Success", "")
+    return {"status": "ok", "user": session.user}
+```
+
+Add an "Active Sessions" card to the Control Center showing users, IPs, last active time,
+and a "Force logout" button per session.
+
+---
+
+## 6.4 API Key & Token Monitor
+
+**Problem:** API keys and access tokens created in Frappe are permanent until manually
+revoked. There is no monitoring for unused, old, or newly-created keys.
+
+**What to do:**
+
+Create `collectors/api_keys.py`:
+```python
+def collect():
+    # Flag API keys unused for > 90 days
+    ninety_days_ago = add_to_date(now_datetime(), days=-90)
+    stale_keys = frappe.db.sql("""
+        SELECT ak.api_key, ak.parent AS user, ak.creation
+        FROM `tabUser API Key` ak
+        WHERE ak.creation =", one_hour_ago]})
+    if new_keys:
+        frappe.get_doc({
+            "doctype": "F Watcher App Metric",
+            "timestamp": now_datetime(),
+            "metric_type": "Security",
+            "count": new_keys,
+            "details": f"{new_keys} new API key(s) created in the last hour.",
+        }).insert(ignore_permissions=True)
+
+    frappe.db.commit()
+```
+
+Register hourly in `hooks.py`.
+
+---
+
+## 6.5 Permission Change Audit Trail
+
+**Problem:** Frappe's Activity Log tracks document saves but does not specifically surface
+role/permission changes in a readable format. If someone gains System Manager access, it
+can be hard to find in the audit trail.
+
+**What to do:**
+
+Create a `permission_changes()` API endpoint:
+```python
+@frappe.whitelist()
+def permission_changes(days: int = 30):
+    since = frappe.utils.add_to_date(None, days=-int(days))
+    return frappe.db.sql("""
+        SELECT creation, owner AS changed_by, reference_doctype, reference_name, subject
+        FROM `tabActivity Log`
+        WHERE reference_doctype IN ('User', 'Role', 'Has Role', 'User Permission',
+                                    'Role Profile', 'Module Profile')
+          AND creation >= %(since)s
+        ORDER BY creation DESC
+        LIMIT 200
+    """, {"since": since}, as_dict=True)
+```
+
+Add a "Permission Changes" tab or section in the Control Center Audit area showing this
+timeline. Highlight any changes to System Manager, Administrator, or F Watcher Operator roles.
+
+---
+
+## 6.6 SSL Certificate Dashboard
+
+**Problem:** `infrastructure.py` already checks SSL expiry and fires an alert at 30 days), yellow (14–30),
+red (<14), with the exact expiry date as a tooltip.
+
+---
+
+## Checklist
+
+- [ ] 6.1 — IP-based brute force detection in `collectors/security.py`
+- [ ] 6.2 — Suspicious activity patterns (bulk delete, permission changes)
+- [ ] 6.3 — Create `api/sessions.py` with `list_sessions()` + `force_logout()`
+- [ ] 6.3 — Add Active Sessions card to Control Center
+- [ ] 6.4 — Create `collectors/api_keys.py` (stale + newly created API keys)
+- [ ] 6.4 — Register API key collector hourly in `hooks.py`
+- [ ] 6.5 — Create `permission_changes()` API + audit timeline in Control Center
+- [ ] 6.6 — Always write SSL metric record (not only on alert)
+- [ ] 6.6 — Add SSL expiry KPI card to Control Center
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_watcher/docs/phase-7.md
+# Phase 7 — Developer Tools & Framework Health
+
+> Goal: Give developers deep visibility into the Frappe framework itself —
+> app versions, migration history, patch logs, background job code,
+> and custom field sprawl — so the platform is as observable as the application.
+
+---
+
+## 7.1 Installed Apps Version Monitor
+
+**Problem:** There is no way to see which Frappe apps are installed, what version they're
+on, or whether they're behind their latest Git tag — without using the terminal.
+
+**What to do:**
+
+Create `api/apps.py`:
+```python
+@frappe.whitelist()
+def installed_apps():
+    _check_permission()
+    import subprocess, os
+    from frappe.utils import get_bench_path
+
+    apps = []
+    apps_path = os.path.join(get_bench_path(), "apps")
+
+    for app_name in frappe.get_installed_apps():
+        app_info = {"name": app_name, "version": None, "branch": None,
+                    "last_commit": None, "behind": None}
+        app_path = os.path.join(apps_path, app_name)
+        try:
+            ver = frappe.get_attr(f"{app_name}.__version__", None) \
+                  or frappe.get_attr(f"{app_name}.__version__", None)
+            app_info["version"] = str(ver) if ver else "unknown"
+
+            branch = subprocess.check_output(
+                ["git", "-C", app_path, "rev-parse", "--abbrev-ref", "HEAD"],
+                text=True, stderr=subprocess.DEVNULL).strip()
+            app_info["branch"] = branch
+
+            log = subprocess.check_output(
+                ["git", "-C", app_path, "log", "-1", "--format=%h %s", "--date=short"],
+                text=True, stderr=subprocess.DEVNULL).strip()
+            app_info["last_commit"] = log
+        except Exception:
+            pass
+        apps.append(app_info)
+
+    return apps
+```
+
+Add an "Installed Apps" card to the Control Center showing: app name, version,
+git branch, last commit hash + message. Flag apps not on `main`/`master`/`version-*`
+branch in yellow.
+
+---
+
+## 7.2 Migration & Patch History Viewer
+
+**Problem:** When something breaks after an update, developers need to know which patches
+ran recently. Currently this requires reading `frappe.log` or running `bench migrate`
+output manually.
+
+**What to do:**
+
+Add a `patch_history()` API endpoint:
+```python
+@frappe.whitelist()
+def patch_history(limit: int = 50):
+    _check_permission()
+    return frappe.db.sql("""
+        SELECT patch, creation
+        FROM `tabPatch Log`
+        ORDER BY creation DESC
+        LIMIT %(limit)s
+    """, {"limit": int(limit)}, as_dict=True)
+```
+
+Show in a new "Framework" section of the Control Center: last 20 patches applied with
+timestamps. Highlight patches from the last 24h in yellow so developers can correlate
+issues to recent migrations.
+
+---
+
+## 7.3 Custom Field & DocType Sprawl Auditor
+
+**Problem:** Over time, systems accumulate custom fields, custom scripts, server scripts,
+and custom DocTypes added via the UI. These are invisible in code review, never cleaned up,
+and can cause unexpected behavior or performance issues.
+
+**What to do:**
+
+Create `api/customizations.py`:
+```python
+@frappe.whitelist()
+def audit():
+    _check_permission()
+    custom_fields = frappe.db.count("Custom Field")
+    custom_scripts = frappe.db.count("Client Script")
+    server_scripts = frappe.db.count("Server Script")
+    custom_doctypes = frappe.db.count("DocType", {"custom": 1})
+    property_setters = frappe.db.count("Property Setter")
+
+    top_customized = frappe.db.sql("""
+        SELECT dt AS doctype, COUNT(name) AS custom_field_count
+        FROM `tabCustom Field`
+        GROUP BY dt
+        ORDER BY custom_field_count DESC
+        LIMIT 10
+    """, as_dict=True)
+
+    return {
+        "custom_fields": custom_fields,
+        "client_scripts": custom_scripts,
+        "server_scripts": server_scripts,
+        "custom_doctypes": custom_doctypes,
+        "property_setters": property_setters,
+        "top_customized_doctypes": top_customized,
+    }
+```
+
+Show as a compact "Customization Audit" card in the Control Center.
+
+---
+
+## 7.4 Background Job Code Inspector
+
+**Problem:** When a background job fails, the error log shows the exception but not what
+the job was actually trying to do. Developers have to cross-reference the job function
+name with the codebase manually.
+
+**What to do:**
+
+Extend the Queue Job Inspector (Phase 4.3) — when viewing a failed job, add a "View
+traceback" expandable that shows the full `exc_info` from the RQ job:
+
+```python
+@frappe.whitelist()
+def job_detail(job_id: str, queue_name: str = "default"):
+    _check_permission()
+    from rq import Queue
+    from frappe.utils.background_jobs import get_redis_conn
+    conn = get_redis_conn()
+    q = Queue(queue_name, connection=conn)
+    job = q.fetch_job(job_id)
+    if not job:
+        frappe.throw("Job not found.")
+    return {
+        "id": job.id,
+        "func": job.func_name,
+        "args": str(job.args),
+        "kwargs": str(job.kwargs),
+        "enqueued_at": str(job.enqueued_at),
+        "status": job.get_status(),
+        "exc_info": job.exc_info or "",
+        "description": job.description or "",
+    }
+```
+
+---
+
+## 7.5 Scheduler Health Timeline
+
+**Problem:** `app_health.py` now correctly queries `Scheduled Job Log` for failures,
+but there is no visual timeline showing which scheduled jobs ran, when, and whether
+they succeeded or failed across the last 24 hours.
+
+**What to do:**
+
+Add a `scheduler_timeline()` API endpoint:
+```python
+@frappe.whitelist()
+def scheduler_timeline(hours: int = 24):
+    since = frappe.utils.add_to_date(None, hours=-int(hours))
+    return frappe.db.sql("""
+        SELECT
+            scheduled_job_type,
+            status,
+            creation,
+            details
+        FROM `tabScheduled Job Log`
+        WHERE creation >= %(since)s
+        ORDER BY creation DESC
+        LIMIT 200
+    """, {"since": since}, as_dict=True)
+```
+
+Render as a compact timeline grid (rows = job types, columns = time buckets) in the
+Control Center, with green/red cells per run. This makes it immediately obvious which
+job type is consistently failing.
+
+---
+
+## 7.6 Frappe Monitor Integration (APM Deep Dive)
+
+**Problem:** `collectors/apm.py` collects the top 5 slowest paths from `tabMonitor` but
+discards everything else. Developers have no way to investigate a slow endpoint in depth —
+see its parameters, session user, or stack trace.
+
+**What to do:**
+
+Add a `slow_requests()` detail endpoint:
+```python
+@frappe.whitelist()
+def slow_requests(path: str = None, hours: int = 1, limit: int = 20):
+    since = frappe.utils.add_to_date(None, hours=-int(hours))
+    filters = {"creation": [">=", since], "duration": [">", 1000000]}
+    if path:
+        filters["path"] = path
+    return frappe.get_all(
+        "Monitor",
+        filters=filters,
+        fields=["name", "transaction_type", "request_method", "path",
+                "duration", "creation", "site", "user"],
+        order_by="duration desc",
+        limit=int(limit),
+    )
+```
+
+Add a "Slow Requests" expandable section in the DB Query Explorer page (Phase 3.2)
+or as a standalone tab in the Control Center.
+
+---
+
+## Checklist
+
+- [ ] 7.1 — Create `api/apps.py` with `installed_apps()`
+- [ ] 7.1 — Add Installed Apps card to Control Center
+- [ ] 7.2 — Add `patch_history()` API endpoint
+- [ ] 7.2 — Add patch history section to Control Center (last 20 patches)
+- [ ] 7.3 — Create `api/customizations.py` with `audit()`
+- [ ] 7.3 — Add Customization Audit card to Control Center
+- [ ] 7.4 — Add `job_detail()` API with traceback to Queue Job Inspector
+- [ ] 7.5 — Add `scheduler_timeline()` API
+- [ ] 7.5 — Render scheduler timeline grid in Control Center
+- [ ] 7.6 — Add `slow_requests()` detail endpoint
+- [ ] 7.6 — Add Slow Requests section to DB Query Explorer / Control Center
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_watcher/docs/tracker.md
+# F Watcher — Upgrade Tracker
+
+> Last updated: 2026-04-13
+> Branch: version-16
+
+---
+
+## Legend
+
+| Symbol | Meaning |
+|--------|---------|
+| [x] | Done |
+| [-] | In progress |
+| [ ] | Pending |
+| [!] | Blocked |
+
+---
+
+## Phase 1 — Stability & Correctness
+> Full spec: [phase-1.md](phase-1.md)
+> **Goal:** Fix all known bugs. No collector should silently fail. No action should crash.
+
+### Bug Fixes — Done
+
+| # | Task | File |
+|---|------|------|
+| BUG-01 | [x] `affected_rows` AttributeError on cleanup execute | `actions/cleanup.py` |
+| BUG-02 | [x] Duplicate table rows in "Biggest tables" — missing GROUP BY | `dashboards/metrics.py` |
+| BUG-03 | [x] Unquoted `timestamp` reserved keyword in raw SQL | `dashboards/metrics.py` |
+| BUG-04 | [x] `frappe.only_for` blocking System Manager (role not in fixtures) | `actions/cleanup.py` |
+| BUG-05a | [x] Cleanup dialog uses stale `values` at execute time | `page/f_watcher_control.js` |
+| BUG-05b | [x] Global `#upeo-exec-cleanup` selector binds to detached elements | `page/f_watcher_control.js` |
+| BUG-05c | [x] Execute button shown when preview returns 0 records | `page/f_watcher_control.js` |
+| BUG-05d | [x] Preview error() uses page toast hidden behind dialog backdrop | `page/f_watcher_control.js` |
+| BUG-05e | [x] No freeze on "Preview impact" — double-click fires concurrent calls | `page/f_watcher_control.js` |
+| BUG-05f | [x] No lock on Execute — rapid clicks stack frappe.confirm dialogs | `page/f_watcher_control.js` |
+| BUG-06 | [x] `app_health.py` queries Scheduled Job Type for status (column doesn't exist) | `collectors/app_health.py` |
+| LV-01 | [x] `$(wrapper).on('hide')` never fires — poll never clears on navigation | `page/f_watcher_log_viewer.js` |
+| LV-02 | [x] Global `$('#...')` selectors break on page re-render | `page/f_watcher_log_viewer.js` |
+| LV-03 | [x] Event handlers accumulate on each re-render | `page/f_watcher_log_viewer.js` |
+| LV-04 | [x] No error callback — failures are silent | `page/f_watcher_log_viewer.js` |
+| LV-05 | [x] Auto-scroll fights manual scroll (yanks to bottom every 4s) | `page/f_watcher_log_viewer.js` |
+| LV-06 | [x] setInterval stacks concurrent requests on slow server | `page/f_watcher_log_viewer.js` |
+| LV-07 | [x] `font-family: inherit, monospace` — invalid CSS, breaks page load | `page/f_watcher_log_viewer.html` |
+| LV-08 | [x] No server-side lines cap | `api/logs.py` |
+
+### Bug Fixes — Pending
+
+| # | Task | File |
+|---|------|------|
+| BUG-07 | [x] `frappe.make_post_request` doesn't exist — webhooks never fire | `collectors/alerting.py` |
+| BUG-08 | [x] "System Notification" alert channel not implemented | `collectors/alerting.py` |
+| BUG-09 | [x] Missing `frappe.db.commit()` in alerting engine | `collectors/alerting.py` |
+| BUG-10 | [x] `get_latest_metric` missing Backup/Security/Redis types | `collectors/alerting.py` |
+| BUG-11 | [x] `check_node_memory()` writes partial rows to System Metric | `collectors/infrastructure.py` |
+| BUG-12 | [x] `datetime.utcnow()` deprecated in Python 3.12+ | `collectors/infrastructure.py` |
+| BUG-13 | [x] Missing `frappe.db.commit()` after slow query loop | `collectors/database.py` |
+| BUG-14 | [x] `frappe.db.commit()` called inside loop | `collectors/apm.py` |
+| BUG-15 | [x] Healthy backup state never recorded | `collectors/backups.py` |
+| BUG-16 | [x] Sessions metric inserted even at 0 active sessions | `collectors/security.py` |
+
+### Role & Permissions
+
+| Task | Status |
+|------|--------|
+| Define `F Watcher Operator` role in fixtures | [x] |
+| Define `F Watcher Viewer` role in fixtures | [x] |
+| Add DocType permission rows for all 10 DocTypes | [x] |
+
+### Metric Data Retention
+
+| Task | Status |
+|------|--------|
+| Create `collectors/retention.py` | [x] |
+| Register daily retention job in `hooks.py` (02:00) | [x] |
+
+### Test Suite
+
+| Task | Status |
+|------|--------|
+| Tests for `actions/cleanup.py` | [x] |
+| Tests for `actions/control.py` | [x] |
+| Tests for `dashboards/metrics.py` | [x] |
+| Tests for `collectors/system.py` | [x] |
+| Tests for `collectors/alerting.py` | [x] |
+
+---
+
+## Phase 2 — Visibility & Usability
+> Full spec: [phase-2.md](phase-2.md)
+> **Goal:** Charts, health map, alert badge, log enhancements, control center upgrades.
+
+| Task | Status |
+|------|--------|
+| `history()` endpoint — time-bucketed metrics | [x] |
+| Time-range selector in Control Center (1h/6h/24h/7d) | [x] |
+| CPU/RAM/Disk line chart (Frappe Charts, area fill) | [x] |
+| Queue depth chart per queue | [x] |
+| DB size trend chart | [x] |
+| `api/health.py` — MySQL, Redis, Scheduler, Workers status | [x] |
+| Dependency health map row in Control Center header | [x] |
+| `notification_config` hook + `notifications.py` for navbar badge | [x] |
+| `api/log_stream.py` — WebSocket log tailing | [x] |
+| Replace Log Viewer polling with `frappe.realtime` listener | [x] |
+| `collectors/digest.py` — daily email digest | [x] |
+| Register digest at 08:00 daily in `hooks.py` | [x] |
+| 2.6a — Log Viewer search/filter bar | [x] |
+| 2.6b — Log Viewer line color coding by severity | [x] |
+| 2.6c — Log Viewer pause/resume button | [x] |
+| 2.6d — Log Viewer copy + download buttons | [x] |
+| 2.7a — Collector health panel (last-run status per collector) | [x] |
+| 2.7b — Active alert rules panel with live values | [x] |
+| 2.7c — System health score (0–100) badge in header | [x] |
+| 2.7d — Retry failed jobs button per queue in UI | [x] |
+
+---
+
+## Phase 3 — Intelligence & Advanced Monitoring
+> Full spec: [phase-3.md](phase-3.md)
+> **Goal:** Anomaly detection, query explorer, backup integrity, threshold recommendations.
+
+| Task | Status |
+|------|--------|
+| `collectors/anomaly.py` — Z-score based spike detection | [x] |
+| Register anomaly collector every 15 min | [x] |
+| `f-watcher-query-explorer` page | [x] |
+| `query_stats()` endpoint — grouped slow queries | [x] |
+| Gzip integrity check in `collectors/backups.py` | [x] |
+| `recommend_thresholds()` API — P95 over 7 days | [x] |
+| Alert Rule "Get Recommendations" button | [x] |
+| `site` filter in `latest()` and `history()` | [x] |
+| Site-selector dropdown in Control Center | [x] |
+| `compare()` multi-site endpoint | [x] |
+| Redis-based rate limiting in `api/logs.py` | [x] |
+| Webhook URL validation in Alert Rule `validate()` | [x] |
+| 3.8a — `cooldown_minutes` field on Alert Rule | [x] |
+| 3.8b — Auto-resolve detection in alerting engine | [x] |
+| 3.8c — `test_rule()` API + "Test now" button | [x] |
+| 3.9a — Queue collector: dynamic queue names via `get_queue_names()` | [x] |
+| 3.9b — DB storage: flag index bloat (`index_mb > data_mb * 1.5`) | [x] |
+
+---
+
+## Phase 4 — Operational Control & Automation
+> Full spec: [phase-4.md](phase-4.md)
+> **Goal:** Maintenance windows, auto-remediation, queue inspector, cache manager, custom cleanup rules.
+
+| Task | Status |
+|------|--------|
+| `F Watcher Maintenance Window` DocType | [x] |
+| `is_maintenance_active()` check in alerting engine | [x] |
+| "Start maintenance" button + active banner in Control Center | [x] |
+| `auto_remediate` + `remediation_action` fields on Alert Rule | [x] |
+| `_run_remediation()` in alerting engine | [x] |
+| `queue_jobs()` API endpoint — list/inspect jobs | [x] |
+| Queue job inspector panel in Control Center | [x] |
+| Per-job cancel + per-queue retry-all buttons | [x] |
+| `api/cache.py` — `stats()` and `flush_cache()` | [x] |
+| Cache card in Control Center right column | [x] |
+| `F Watcher Cleanup Rule` DocType (custom rules) | [x] |
+| Merge custom rules into `cleanup.py` | [x] |
+
+---
+
+## Phase 5 — Reporting & Analytics
+> Full spec: [phase-5.md](phase-5.md)
+> **Goal:** CSV export, uptime tracking, period comparison, error patterns, forecasting.
+
+| Task | Status |
+|------|--------|
+| `api/export.py` — `system_metrics_csv()` | [x] |
+| Export CSV buttons in Control Center | [x] |
+| `F Watcher Uptime Record` DocType | [x] |
+| `collectors/uptime.py` — every 5 min | [x] |
+| `uptime_summary()` API + uptime % badge in header | [x] |
+| `compare_periods()` endpoint — this vs prior period | [x] |
+| Delta arrows (↑/↓) next to KPI values | [x] |
+| `error_patterns()` API + Error Patterns table | [x] |
+| `collectors/weekly_report.py` — Monday 08:00 | [x] |
+| Register weekly report in `hooks.py` | [x] |
+| `disk_forecast()` API + "full in ~N days" in disk KPI | [x] |
+
+---
+
+## Phase 6 — Security & Compliance
+> Full spec: [phase-6.md](phase-6.md)
+> **Goal:** IP brute force, session manager, API key monitor, permission audit, SSL dashboard.
+
+| Task | Status |
+|------|--------|
+| IP-based brute force detection in `security.py` | [x] |
+| Suspicious activity patterns (bulk delete, permission changes) | [x] |
+| `api/sessions.py` — `list_sessions()` + `force_logout()` | [x] |
+| Active Sessions card in Control Center | [x] |
+| `collectors/api_keys.py` — stale + newly created keys | [x] |
+| Register API key collector hourly in `hooks.py` | [x] |
+| `permission_changes()` API + audit timeline | [x] |
+| Always write SSL metric record (not only on alert) | [x] |
+| SSL expiry KPI card in Control Center | [x] |
+
+---
+
+## Phase 7 — Developer Tools & Framework Health
+> Full spec: [phase-7.md](phase-7.md)
+> **Goal:** App versions, patch history, custom field audit, job inspector, scheduler timeline.
+
+| Task | Status |
+|------|--------|
+| `api/apps.py` — `installed_apps()` with git info | [x] |
+| Installed Apps card in Control Center | [x] |
+| `patch_history()` API endpoint | [x] |
+| Patch history section in Control Center | [x] |
+| `api/customizations.py` — custom field/script audit | [x] |
+| Customization Audit card in Control Center | [x] |
+| `job_detail()` API — full traceback for failed jobs | [x] |
+| `scheduler_timeline()` API | [x] |
+| Scheduler timeline grid in Control Center | [x] |
+| `slow_requests()` detail endpoint | [x] |
+| Slow Requests section in DB Query Explorer | [x] |
+
+---
+
+## Summary
+
+| Phase | Description | Tasks | Done | Left |
+|-------|-------------|-------|------|------|
+| Phase 1 | Stability & Correctness | 34 | 34 | 0 |
+| Phase 2 | Visibility & Usability | 20 | 20 | 0 |
+| Phase 3 | Intelligence & Advanced Monitoring | 17 | 17 | 0 |
+| Phase 4 | Operational Control & Automation | 12 | 12 | 0 |
+| Phase 5 | Reporting & Analytics | 11 | 11 | 0 |
+| Phase 6 | Security & Compliance | 9 | 9 | 0 |
+| Phase 7 | Developer Tools & Framework Health | 11 | 11 | 0 |
+| **Total** | | **114** | **114** | **0** |
+
+---
+
+## Changelog
+
+| Date | What |
+|------|------|
+| 2026-04-13 | Initial phase docs created (phase-1 to phase-3) |
+| 2026-04-13 | BUG-01 to BUG-06: Fixed 6 core bugs (cleanup, dashboard, app_health) |
+| 2026-04-13 | LV-01 to LV-08: Fixed 8 log viewer bugs |
+| 2026-04-13 | Added Refresh button to Biggest Tables section |
+| 2026-04-13 | Discovered BUG-07 to BUG-16 across alerting and collector files |
+| 2026-04-13 | Added sections 1.5–1.7 (alerting bugs, collector bugs, LV summary) |
+| 2026-04-13 | Added sections 2.6–2.7 (log viewer + control center enhancements) |
+| 2026-04-13 | Added sections 3.8–3.9 (alerting intelligence + collector improvements) |
+| 2026-04-13 | Created phase-4.md (Operational Control & Automation) |
+| 2026-04-13 | Created phase-5.md (Reporting & Analytics) |
+| 2026-04-13 | Created phase-6.md (Security & Compliance) |
+| 2026-04-13 | Created phase-7.md (Developer Tools & Framework Health) |
+| 2026-04-13 | BUG-07 to BUG-10: Fixed 4 alerting engine bugs (webhook, system notification, commit, metric types) |
+| 2026-04-13 | BUG-11 to BUG-12: Fixed infrastructure.py (wrong DocType for Node.js memory, utcnow deprecated) |
+| 2026-04-13 | BUG-13: Fixed database.py missing commit after slow query loop |
+| 2026-04-13 | BUG-14: Fixed apm.py commit inside loop — moved to after loop |
+| 2026-04-13 | BUG-15: Fixed backups.py — healthy backup state now recorded as App Metric |
+| 2026-04-13 | BUG-16: Fixed security.py — sessions metric only inserted when count > 0 |
+| 2026-04-18 | Phase 1 complete: roles/permissions, retention collector, full test suite |
+| 2026-04-18 | Phase 2 complete: charts, health map, alert badge, log streaming, digest, queue panel |
+| 2026-04-18 | Phase 3 complete: anomaly detection, query explorer, backup integrity, recommendations, multi-site, alerting intelligence |
+| 2026-04-18 | Phase 4 complete: maintenance windows, auto-remediation, queue inspector, cache card, custom cleanup rules |
+| 2026-04-19 | CI fix: patch is_maintenance_active + now_datetime in alerting/system tests; fix frappe.get_all mock target |
+| 2026-04-19 | Phase 5 complete: CSV export, uptime tracking, period deltas, disk forecast, error patterns, weekly report |
+| 2026-04-19 | Phase 6 complete: IP brute-force, suspicious activity, sessions API+card, API key collector, permission changes, SSL card |
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_watcher/f_watcher/patches.txt
+[pre_model_sync]
+# Patches added in this section will be executed before doctypes are migrated
+# Read docs to understand patches: https://frappeframework.com/docs/v14/user/en/database-migrations
+
+[post_model_sync]
+# Patches added in this section will be executed after doctypes are migrated
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_watcher/license.txt
+GNU GENERAL PUBLIC LICENSE
+                       Version 3, 29 June 2007
+
+ Copyright (C) 2007 Free Software Foundation, Inc. 
+ Everyone is permitted to copy and distribute verbatim copies
+ of this license document, but changing it is not allowed.
+
+                            Preamble
+
+  The GNU General Public License is a free, copyleft license for
+software and other kinds of works.
+
+  The licenses for most software and other practical works are designed
+to take away your freedom to share and change the works.  By contrast,
+the GNU General Public License is intended to guarantee your freedom to
+share and change all versions of a program--to make sure it remains free
+software for all its users.  We, the Free Software Foundation, use the
+GNU General Public License for most of our software; it applies also to
+any other work released this way by its authors.  You can apply it to
+your programs, too.
+
+  When we speak of free software, we are referring to freedom, not
+price.  Our General Public Licenses are designed to make sure that you
+have the freedom to distribute copies of free software (and charge for
+them if you wish), that you receive source code or can get it if you
+want it, that you can change the software or use pieces of it in new
+free programs, and that you know you can do these things.
+
+  To protect your rights, we need to prevent others from denying you
+these rights or asking you to surrender the rights.  Therefore, you have
+certain responsibilities if you distribute copies of the software, or if
+you modify it: responsibilities to respect the freedom of others.
+
+  For example, if you distribute copies of such a program, whether
+gratis or for a fee, you must pass on to the recipients the same
+freedoms that you received.  You must make sure that they, too, receive
+or can get the source code.  And you must show them these terms so they
+know their rights.
+
+  Developers that use the GNU GPL protect your rights with two steps:
+(1) assert copyright on the software, and (2) offer you this License
+giving you legal permission to copy, distribute and/or modify it.
+
+  For the developers' and authors' protection, the GPL clearly explains
+that there is no warranty for this free software.  For both users' and
+authors' sake, the GPL requires that modified versions be marked as
+changed, so that their problems will not be attributed erroneously to
+authors of previous versions.
+
+  Some devices are designed to deny users access to install or run
+modified versions of the software inside them, although the manufacturer
+can do so.  This is fundamentally incompatible with the aim of
+protecting users' freedom to change the software.  The systematic
+pattern of such abuse occurs in the area of products for individuals to
+use, which is precisely where it is most unacceptable.  Therefore, we
+have designed this version of the GPL to prohibit the practice for those
+products.  If such problems arise substantially in other domains, we
+stand ready to extend this provision to those domains in future versions
+of the GPL, as needed to protect the freedom of users.
+
+  Finally, every program is threatened constantly by software patents.
+States should not allow patents to restrict development and use of
+software on general-purpose computers, but in those that do, we wish to
+avoid the special danger that patents applied to a free program could
+make it effectively proprietary.  To prevent this, the GPL assures that
+patents cannot be used to render the program non-free.
+
+  The precise terms and conditions for copying, distribution and
+modification follow.
+
+                       TERMS AND CONDITIONS
+
+  0. Definitions.
+
+  "This License" refers to version 3 of the GNU General Public License.
+
+  "Copyright" also means copyright-like laws that apply to other kinds of
+works, such as semiconductor masks.
+
+  "The Program" refers to any copyrightable work licensed under this
+License.  Each licensee is addressed as "you".  "Licensees" and
+"recipients" may be individuals or organizations.
+
+  To "modify" a work means to copy from or adapt all or part of the work
+in a fashion requiring copyright permission, other than the making of an
+exact copy.  The resulting work is called a "modified version" of the
+earlier work or a work "based on" the earlier work.
+
+  A "covered work" means either the unmodified Program or a work based
+on the Program.
+
+  To "propagate" a work means to do anything with it that, without
+permission, would make you directly or secondarily liable for
+infringement under applicable copyright law, except executing it on a
+computer or modifying a private copy.  Propagation includes copying,
+distribution (with or without modification), making available to the
+public, and in some countries other activities as well.
+
+  To "convey" a work means any kind of propagation that enables other
+parties to make or receive copies.  Mere interaction with a user through
+a computer network, with no transfer of a copy, is not conveying.
+
+  An interactive user interface displays "Appropriate Legal Notices"
+to the extent that it includes a convenient and prominently visible
+feature that (1) displays an appropriate copyright notice, and (2)
+tells the user that there is no warranty for the work (except to the
+extent that warranties are provided), that licensees may convey the
+work under this License, and how to view a copy of this License.  If
+the interface presents a list of user commands or options, such as a
+menu, a prominent item in the list meets this criterion.
+
+  1. Source Code.
+
+  The "source code" for a work means the preferred form of the work
+for making modifications to it.  "Object code" means any non-source
+form of a work.
+
+  A "Standard Interface" means an interface that either is an official
+standard defined by a recognized standards body, or, in the case of
+interfaces specified for a particular programming language, one that
+is widely used among developers working in that language.
+
+  The "System Libraries" of an executable work include anything, other
+than the work as a whole, that (a) is included in the normal form of
+packaging a Major Component, but which is not part of that Major
+Component, and (b) serves only to enable use of the work with that
+Major Component, or to implement a Standard Interface for which an
+implementation is available to the public in source code form.  A
+"Major Component", in this context, means a major essential component
+(kernel, window system, and so on) of the specific operating system
+(if any) on which the executable work runs, or a compiler used to
+produce the work, or an object code interpreter used to run it.
+
+  The "Corresponding Source" for a work in object code form means all
+the source code needed to generate, install, and (for an executable
+work) run the object code and to modify the work, including scripts to
+control those activities.  However, it does not include the work's
+System Libraries, or general-purpose tools or generally available free
+programs which are used unmodified in performing those activities but
+which are not part of the work.  For example, Corresponding Source
+includes interface definition files associated with source files for
+the work, and the source code for shared libraries and dynamically
+linked subprograms that the work is specifically designed to require,
+such as by intimate data communication or control flow between those
+subprograms and other parts of the work.
+
+  The Corresponding Source need not include anything that users
+can regenerate automatically from other parts of the Corresponding
+Source.
+
+  The Corresponding Source for a work in source code form is that
+same work.
+
+  2. Basic Permissions.
+
+  All rights granted under this License are granted for the term of
+copyright on the Program, and are irrevocable provided the stated
+conditions are met.  This License explicitly affirms your unlimited
+permission to run the unmodified Program.  The output from running a
+covered work is covered by this License only if the output, given its
+content, constitutes a covered work.  This License acknowledges your
+rights of fair use or other equivalent, as provided by copyright law.
+
+  You may make, run and propagate covered works that you do not
+convey, without conditions so long as your license otherwise remains
+in force.  You may convey covered works to others for the sole purpose
+of having them make modifications exclusively for you, or provide you
+with facilities for running those works, provided that you comply with
+the terms of this License in conveying all material for which you do
+not control copyright.  Those thus making or running the covered works
+for you must do so exclusively on your behalf, under your direction
+and control, on terms that prohibit them from making any copies of
+your copyrighted material outside their relationship with you.
+
+  Conveying under any other circumstances is permitted solely under
+the conditions stated below.  Sublicensing is not allowed; section 10
+makes it unnecessary.
+
+  3. Protecting Users' Legal Rights From Anti-Circumvention Law.
+
+  No covered work shall be deemed part of an effective technological
+measure under any applicable law fulfilling obligations under article
+11 of the WIPO copyright treaty adopted on 20 December 1996, or
+similar laws prohibiting or restricting circumvention of such
+measures.
+
+  When you convey a covered work, you waive any legal power to forbid
+circumvention of technological measures to the extent such circumvention
+is effected by exercising rights under this License with respect to
+the covered work, and you disclaim any intention to limit operation or
+modification of the work as a means of enforcing, against the work's
+users, your or third parties' legal rights to forbid circumvention of
+technological measures.
+
+  4. Conveying Verbatim Copies.
+
+  You may convey verbatim copies of the Program's source code as you
+receive it, in any medium, provided that you conspicuously and
+appropriately publish on each copy an appropriate copyright notice;
+keep intact all notices stating that this License and any
+non-permissive terms added in accord with section 7 apply to the code;
+keep intact all notices of the absence of any warranty; and give all
+recipients a copy of this License along with the Program.
+
+  You may charge any price or no price for each copy that you convey,
+and you may offer support or warranty protection for a fee.
+
+  5. Conveying Modified Source Versions.
+
+  You may convey a work based on the Program, or the modifications to
+produce it from the Program, in the form of source code under the
+terms of section 4, provided that you also meet all of these conditions:
+
+    a) The work must carry prominent notices stating that you modified
+    it, and giving a relevant date.
+
+    b) The work must carry prominent notices stating that it is
+    released under this License and any conditions added under section
+    7.  This requirement modifies the requirement in section 4 to
+    "keep intact all notices".
+
+    c) You must license the entire work, as a whole, under this
+    License to anyone who comes into possession of a copy.  This
+    License will therefore apply, along with any applicable section 7
+    additional terms, to the whole of the work, and all its parts,
+    regardless of how they are packaged.  This License gives no
+    permission to license the work in any other way, but it does not
+    invalidate such permission if you have separately received it.
+
+    d) If the work has interactive user interfaces, each must display
+    Appropriate Legal Notices; however, if the Program has interactive
+    interfaces that do not display Appropriate Legal Notices, your
+    work need not make them do so.
+
+  A compilation of a covered work with other separate and independent
+works, which are not by their nature extensions of the covered work,
+and which are not combined with it such as to form a larger program,
+in or on a volume of a storage or distribution medium, is called an
+"aggregate" if the compilation and its resulting copyright are not
+used to limit the access or legal rights of the compilation's users
+beyond what the individual works permit.  Inclusion of a covered work
+in an aggregate does not cause this License to apply to the other
+parts of the aggregate.
+
+  6. Conveying Non-Source Forms.
+
+  You may convey a covered work in object code form under the terms
+of sections 4 and 5, provided that you also convey the
+machine-readable Corresponding Source under the terms of this License,
+in one of these ways:
+
+    a) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by the
+    Corresponding Source fixed on a durable physical medium
+    customarily used for software interchange.
+
+    b) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by a
+    written offer, valid for at least three years and valid for as
+    long as you offer spare parts or customer support for that product
+    model, to give anyone who possesses the object code either (1) a
+    copy of the Corresponding Source for all the software in the
+    product that is covered by this License, on a durable physical
+    medium customarily used for software interchange, for a price no
+    more than your reasonable cost of physically performing this
+    conveying of source, or (2) access to copy the
+    Corresponding Source from a network server at no charge.
+
+    c) Convey individual copies of the object code with a copy of the
+    written offer to provide the Corresponding Source.  This
+    alternative is allowed only occasionally and noncommercially, and
+    only if you received the object code with such an offer, in accord
+    with subsection 6b.
+
+    d) Convey the object code by offering access from a designated
+    place (gratis or for a charge), and offer equivalent access to the
+    Corresponding Source in the same way through the same place at no
+    further charge.  You need not require recipients to copy the
+    Corresponding Source along with the object code.  If the place to
+    copy the object code is a network server, the Corresponding Source
+    may be on a different server (operated by you or a third party)
+    that supports equivalent copying facilities, provided you maintain
+    clear directions next to the object code saying where to find the
+    Corresponding Source.  Regardless of what server hosts the
+    Corresponding Source, you remain obligated to ensure that it is
+    available for as long as needed to satisfy these requirements.
+
+    e) Convey the object code using peer-to-peer transmission, provided
+    you inform other peers where the object code and Corresponding
+    Source of the work are being offered to the general public at no
+    charge under subsection 6d.
+
+  A separable portion of the object code, whose source code is excluded
+from the Corresponding Source as a System Library, need not be
+included in conveying the object code work.
+
+  A "User Product" is either (1) a "consumer product", which means any
+tangible personal property which is normally used for personal, family,
+or household purposes, or (2) anything designed or sold for incorporation
+into a dwelling.  In determining whether a product is a consumer product,
+doubtful cases shall be resolved in favor of coverage.  For a particular
+product received by a particular user, "normally used" refers to a
+typical or common use of that class of product, regardless of the status
+of the particular user or of the way in which the particular user
+actually uses, or expects or is expected to use, the product.  A product
+is a consumer product regardless of whether the product has substantial
+commercial, industrial or non-consumer uses, unless such uses represent
+the only significant mode of use of the product.
+
+  "Installation Information" for a User Product means any methods,
+procedures, authorization keys, or other information required to install
+and execute modified versions of a covered work in that User Product from
+a modified version of its Corresponding Source.  The information must
+suffice to ensure that the continued functioning of the modified object
+code is in no case prevented or interfered with solely because
+modification has been made.
+
+  If you convey an object code work under this section in, or with, or
+specifically for use in, a User Product, and the conveying occurs as
+part of a transaction in which the right of possession and use of the
+User Product is transferred to the recipient in perpetuity or for a
+fixed term (regardless of how the transaction is characterized), the
+Corresponding Source conveyed under this section must be accompanied
+by the Installation Information.  But this requirement does not apply
+if neither you nor any third party retains the ability to install
+modified object code on the User Product (for example, the work has
+been installed in ROM).
+
+  The requirement to provide Installation Information does not include a
+requirement to continue to provide support service, warranty, or updates
+for a work that has been modified or installed by the recipient, or for
+the User Product in which it has been modified or installed.  Access to a
+network may be denied when the modification itself materially and
+adversely affects the operation of the network or violates the rules and
+protocols for communication across the network.
+
+  Corresponding Source conveyed, and Installation Information provided,
+in accord with this section must be in a format that is publicly
+documented (and with an implementation available to the public in
+source code form), and must require no special password or key for
+unpacking, reading or copying.
+
+  7. Additional Terms.
+
+  "Additional permissions" are terms that supplement the terms of this
+License by making exceptions from one or more of its conditions.
+Additional permissions that are applicable to the entire Program shall
+be treated as though they were included in this License, to the extent
+that they are valid under applicable law.  If additional permissions
+apply only to part of the Program, that part may be used separately
+under those permissions, but the entire Program remains governed by
+this License without regard to the additional permissions.
+
+  When you convey a copy of a covered work, you may at your option
+remove any additional permissions from that copy, or from any part of
+it.  (Additional permissions may be written to require their own
+removal in certain cases when you modify the work.)  You may place
+additional permissions on material, added by you to a covered work,
+for which you have or can give appropriate copyright permission.
+
+  Notwithstanding any other provision of this License, for material you
+add to a covered work, you may (if authorized by the copyright holders of
+that material) supplement the terms of this License with terms:
+
+    a) Disclaiming warranty or limiting liability differently from the
+    terms of sections 15 and 16 of this License; or
+
+    b) Requiring preservation of specified reasonable legal notices or
+    author attributions in that material or in the Appropriate Legal
+    Notices displayed by works containing it; or
+
+    c) Prohibiting misrepresentation of the origin of that material, or
+    requiring that modified versions of such material be marked in
+    reasonable ways as different from the original version; or
+
+    d) Limiting the use for publicity purposes of names of licensors or
+    authors of the material; or
+
+    e) Declining to grant rights under trademark law for use of some
+    trade names, trademarks, or service marks; or
+
+    f) Requiring indemnification of licensors and authors of that
+    material by anyone who conveys the material (or modified versions of
+    it) with contractual assumptions of liability to the recipient, for
+    any liability that these contractual assumptions directly impose on
+    those licensors and authors.
+
+  All other non-permissive additional terms are considered "further
+restrictions" within the meaning of section 10.  If the Program as you
+received it, or any part of it, contains a notice stating that it is
+governed by this License along with a term that is a further
+restriction, you may remove that term.  If a license document contains
+a further restriction but permits relicensing or conveying under this
+License, you may add to a covered work material governed by the terms
+of that license document, provided that the further restriction does
+not survive such relicensing or conveying.
+
+  If you add terms to a covered work in accord with this section, you
+must place, in the relevant source files, a statement of the
+additional terms that apply to those files, or a notice indicating
+where to find the applicable terms.
+
+  Additional terms, permissive or non-permissive, may be stated in the
+form of a separately written license, or stated as exceptions;
+the above requirements apply either way.
+
+  8. Termination.
+
+  You may not propagate or modify a covered work except as expressly
+provided under this License.  Any attempt otherwise to propagate or
+modify it is void, and will automatically terminate your rights under
+this License (including any patent licenses granted under the third
+paragraph of section 11).
+
+  However, if you cease all violation of this License, then your
+license from a particular copyright holder is reinstated (a)
+provisionally, unless and until the copyright holder explicitly and
+finally terminates your license, and (b) permanently, if the copyright
+holder fails to notify you of the violation by some reasonable means
+prior to 60 days after the cessation.
+
+  Moreover, your license from a particular copyright holder is
+reinstated permanently if the copyright holder notifies you of the
+violation by some reasonable means, this is the first time you have
+received notice of violation of this License (for any work) from that
+copyright holder, and you cure the violation prior to 30 days after
+your receipt of the notice.
+
+  Termination of your rights under this section does not terminate the
+licenses of parties who have received copies or rights from you under
+this License.  If your rights have been terminated and not permanently
+reinstated, you do not qualify to receive new licenses for the same
+material under section 10.
+
+  9. Acceptance Not Required for Having Copies.
+
+  You are not required to accept this License in order to receive or
+run a copy of the Program.  Ancillary propagation of a covered work
+occurring solely as a consequence of using peer-to-peer transmission
+to receive a copy likewise does not require acceptance.  However,
+nothing other than this License grants you permission to propagate or
+modify any covered work.  These actions infringe copyright if you do
+not accept this License.  Therefore, by modifying or propagating a
+covered work, you indicate your acceptance of this License to do so.
+
+  10. Automatic Licensing of Downstream Recipients.
+
+  Each time you convey a covered work, the recipient automatically
+receives a license from the original licensors, to run, modify and
+propagate that work, subject to this License.  You are not responsible
+for enforcing compliance by third parties with this License.
+
+  An "entity transaction" is a transaction transferring control of an
+organization, or substantially all assets of one, or subdividing an
+organization, or merging organizations.  If propagation of a covered
+work results from an entity transaction, each party to that
+transaction who receives a copy of the work also receives whatever
+licenses to the work the party's predecessor in interest had or could
+give under the previous paragraph, plus a right to possession of the
+Corresponding Source of the work from the predecessor in interest, if
+the predecessor has it or can get it with reasonable efforts.
+
+  You may not impose any further restrictions on the exercise of the
+rights granted or affirmed under this License.  For example, you may
+not impose a license fee, royalty, or other charge for exercise of
+rights granted under this License, and you may not initiate litigation
+(including a cross-claim or counterclaim in a lawsuit) alleging that
+any patent claim is infringed by making, using, selling, offering for
+sale, or importing the Program or any portion of it.
+
+  11. Patents.
+
+  A "contributor" is a copyright holder who authorizes use under this
+License of the Program or a work on which the Program is based.  The
+work thus licensed is called the contributor's "contributor version".
+
+  A contributor's "essential patent claims" are all patent claims
+owned or controlled by the contributor, whether already acquired or
+hereafter acquired, that would be infringed by some manner, permitted
+by this License, of making, using, or selling its contributor version,
+but do not include claims that would be infringed only as a
+consequence of further modification of the contributor version.  For
+purposes of this definition, "control" includes the right to grant
+patent sublicenses in a manner consistent with the requirements of
+this License.
+
+  Each contributor grants you a non-exclusive, worldwide, royalty-free
+patent license under the contributor's essential patent claims, to
+make, use, sell, offer for sale, import and otherwise run, modify and
+propagate the contents of its contributor version.
+
+  In the following three paragraphs, a "patent license" is any express
+agreement or commitment, however denominated, not to enforce a patent
+(such as an express permission to practice a patent or covenant not to
+sue for patent infringement).  To "grant" such a patent license to a
+party means to make such an agreement or commitment not to enforce a
+patent against the party.
+
+  If you convey a covered work, knowingly relying on a patent license,
+and the Corresponding Source of the work is not available for anyone
+to copy, free of charge and under the terms of this License, through a
+publicly available network server or other readily accessible means,
+then you must either (1) cause the Corresponding Source to be so
+available, or (2) arrange to deprive yourself of the benefit of the
+patent license for this particular work, or (3) arrange, in a manner
+consistent with the requirements of this License, to extend the patent
+license to downstream recipients.  "Knowingly relying" means you have
+actual knowledge that, but for the patent license, your conveying the
+covered work in a country, or your recipient's use of the covered work
+in a country, would infringe one or more identifiable patents in that
+country that you have reason to believe are valid.
+
+  If, pursuant to or in connection with a single transaction or
+arrangement, you convey, or propagate by procuring conveyance of, a
+covered work, and grant a patent license to some of the parties
+receiving the covered work authorizing them to use, propagate, modify
+or convey a specific copy of the covered work, then the patent license
+you grant is automatically extended to all recipients of the covered
+work and works based on it.
+
+  A patent license is "discriminatory" if it does not include within
+the scope of its coverage, prohibits the exercise of, or is
+conditioned on the non-exercise of one or more of the rights that are
+specifically granted under this License.  You may not convey a covered
+work if you are a party to an arrangement with a third party that is
+in the business of distributing software, under which you make payment
+to the third party based on the extent of your activity of conveying
+the work, and under which the third party grants, to any of the
+parties who would receive the covered work from you, a discriminatory
+patent license (a) in connection with copies of the covered work
+conveyed by you (or copies made from those copies), or (b) primarily
+for and in connection with specific products or compilations that
+contain the covered work, unless you entered into that arrangement,
+or that patent license was granted, prior to 28 March 2007.
+
+  Nothing in this License shall be construed as excluding or limiting
+any implied license or other defenses to infringement that may
+otherwise be available to you under applicable patent law.
+
+  12. No Surrender of Others' Freedom.
+
+  If conditions are imposed on you (whether by court order, agreement or
+otherwise) that contradict the conditions of this License, they do not
+excuse you from the conditions of this License.  If you cannot convey a
+covered work so as to satisfy simultaneously your obligations under this
+License and any other pertinent obligations, then as a consequence you may
+not convey it at all.  For example, if you agree to terms that obligate you
+to collect a royalty for further conveying from those to whom you convey
+the Program, the only way you could satisfy both those terms and this
+License would be to refrain entirely from conveying the Program.
+
+  13. Use with the GNU Affero General Public License.
+
+  Notwithstanding any other provision of this License, you have
+permission to link or combine any covered work with a work licensed
+under version 3 of the GNU Affero General Public License into a single
+combined work, and to convey the resulting work.  The terms of this
+License will continue to apply to the part which is the covered work,
+but the special requirements of the GNU Affero General Public License,
+section 13, concerning interaction through a network will apply to the
+combination as such.
+
+  14. Revised Versions of this License.
+
+  The Free Software Foundation may publish revised and/or new versions of
+the GNU General Public License from time to time.  Such new versions will
+be similar in spirit to the present version, but may differ in detail to
+address new problems or concerns.
+
+  Each version is given a distinguishing version number.  If the
+Program specifies that a certain numbered version of the GNU General
+Public License "or any later version" applies to it, you have the
+option of following the terms and conditions either of that numbered
+version or of any later version published by the Free Software
+Foundation.  If the Program does not specify a version number of the
+GNU General Public License, you may choose any version ever published
+by the Free Software Foundation.
+
+  If the Program specifies that a proxy can decide which future
+versions of the GNU General Public License can be used, that proxy's
+public statement of acceptance of a version permanently authorizes you
+to choose that version for the Program.
+
+  Later license versions may give you additional or different
+permissions.  However, no additional obligations are imposed on any
+author or copyright holder as a result of your choosing to follow a
+later version.
+
+  15. Disclaimer of Warranty.
+
+  THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY
+APPLICABLE LAW.  EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT
+HOLDERS AND/OR OTHER PARTIES PROVIDE THE PROGRAM "AS IS" WITHOUT WARRANTY
+OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE.  THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM
+IS WITH YOU.  SHOULD THE PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF
+ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
+
+  16. Limitation of Liability.
+
+  IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
+WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR CONVEYS
+THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY
+GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE
+USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT NOT LIMITED TO LOSS OF
+DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD
+PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER PROGRAMS),
+EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGES.
+
+  17. Interpretation of Sections 15 and 16.
+
+  If the disclaimer of warranty and limitation of liability provided
+above cannot be given local legal effect according to their terms,
+reviewing courts shall apply local law that most closely approximates
+an absolute waiver of all civil liability in connection with the
+Program, unless a warranty or assumption of liability accompanies a
+copy of the Program in return for a fee.
+
+                     END OF TERMS AND CONDITIONS
+
+            How to Apply These Terms to Your New Programs
+
+  If you develop a new program, and you want it to be of the greatest
+possible use to the public, the best way to achieve this is to make it
+free software which everyone can redistribute and change under these terms.
+
+  To do so, attach the following notices to the program.  It is safest
+to attach them to the start of each source file to most effectively
+state the exclusion of warranty; and each file should have at least
+the "copyright" line and a pointer to where the full notice is found.
+
+    
+    Copyright (C)   
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see .
+
+Also add information on how to contact you by electronic and paper mail.
+
+  If the program does terminal interaction, make it output a short
+notice like this when it starts in an interactive mode:
+
+      Copyright (C)   
+    This program comes with ABSOLUTELY NO WARRANTY; for details type `show w'.
+    This is free software, and you are welcome to redistribute it
+    under certain conditions; type `show c' for details.
+
+The hypothetical commands `show w' and `show c' should show the appropriate
+parts of the General Public License.  Of course, your program's commands
+might be different; for a GUI interface, you would use an "about box".
+
+  You should also get your employer (if you work as a programmer) or school,
+if any, to sign a "copyright disclaimer" for the program, if necessary.
+For more information on this, and how to apply and follow the GNU GPL, see
+.
+
+  The GNU General Public License does not permit incorporating your program
+into proprietary programs.  If your program is a subroutine library, you
+may consider it more useful to permit linking proprietary applications with
+the library.  If this is what you want to do, use the GNU Lesser General
+Public License instead of this License.  But first, please read
+.
+

@@ -1,0 +1,1972 @@
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/README.md
+### Frappe Gate
+
+Zero-Trust access proxy for self-hosted Frappe deployments.
+
+### Installation
+
+You can install this app using the [bench](https://github.com/frappe/bench) CLI:
+
+```bash
+cd $PATH_TO_YOUR_BENCH
+bench get-app $URL_OF_THIS_REPO --branch develop
+bench install-app frappe_gate
+```
+
+### Contributing
+
+This app uses `pre-commit` for code formatting and linting. Please [install pre-commit](https://pre-commit.com/#installation) and enable it for this repository:
+
+```bash
+cd apps/frappe_gate
+pre-commit install
+```
+
+Pre-commit is configured to use the following tools for checking and formatting your code:
+
+- ruff
+- eslint
+- prettier
+- pyupgrade
+### CI
+
+This app can use GitHub Actions for CI. The following workflows are configured:
+
+- CI: Installs this app and runs unit tests on every push to `develop` branch.
+- Linters: Runs [Frappe Semgrep Rules](https://github.com/frappe/semgrep-rules) and [pip-audit](https://pypi.org/project/pip-audit/) on every pull request.
+
+
+### License
+
+gpl-3.0
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/docs/motto.md
+# Motto
+
+> **"Trust nothing. Verify everything. Let only the right ones through."**
+
+frappe-gate exists because most self-hosted ERPNext deployments are one exposed port away from a breach. API keys get leaked. Sessions get stolen. Devices get shared.
+
+Zero-Trust means: no device, no user, no network is trusted by default — ever. Every request is verified, every session is short-lived, every access is logged.
+
+---
+
+**Core beliefs:**
+
+- Device identity is not optional — a username/password is not enough
+- Every API call is an access decision, not just an authentication check
+- Audit logs are not a feature — they are the product
+- Self-hosted should not mean insecure
+- A proxy that requires a PhD to configure is not a security product
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/docs/phase_1.md
+# Phase 1 — Core Proxy
+
+**Goal:** A working Go reverse proxy that forwards requests to Frappe over HTTPS, with TLS termination and basic health checking.
+
+---
+
+## Deliverables
+
+- [ ] Go project scaffolded (`pulse-gate/`)
+- [ ] Reverse proxy: all requests forwarded to Frappe backend
+- [ ] TLS termination (HTTPS → HTTP to Frappe)
+- [ ] Config file (`config.yaml`) with hot reload
+- [ ] Health check endpoint (`/gate/health`)
+- [ ] Graceful shutdown
+- [ ] Systemd service file
+
+---
+
+## Config Structure
+
+```yaml
+# /etc/frappe-gate/config.yaml
+
+proxy:
+  listen: ":443"
+  tls_cert: "/etc/frappe-gate/cert.pem"
+  tls_key:  "/etc/frappe-gate/key.pem"
+
+backend:
+  url: "http://127.0.0.1:8000"
+  timeout: 30s
+
+log:
+  level: "info"
+  file: "/var/log/frappe-gate/access.log"
+```
+
+---
+
+## Go Project Structure
+
+```
+frappe-gate/
+├── main.go
+├── config/
+│   ├── config.go        # YAML parsing + hot reload
+│   └── watcher.go       # File change detection
+├── proxy/
+│   ├── server.go        # HTTP server + TLS setup
+│   └── handler.go       # Reverse proxy handler
+├── health/
+│   └── health.go        # /gate/health endpoint
+└── systemd/
+    └── frappe-gate.service
+```
+
+---
+
+## Core Proxy Handler
+
+```go
+func NewReverseProxy(backendURL string) http.Handler {
+    target, _ := url.Parse(backendURL)
+    proxy := httputil.NewSingleHostReverseProxy(target)
+    return proxy
+}
+```
+
+---
+
+## Systemd Service
+
+```ini
+[Unit]
+Description=frappe-gate Zero-Trust Proxy
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/frappe-gate --config /etc/frappe-gate/config.yaml
+Restart=always
+User=frappe-gate
+
+[Install]
+WantedBy=multi-user.target
+```
+
+---
+
+## Success Criteria
+
+- All Frappe requests proxy correctly (desk, API, websocket)
+- TLS cert loaded and HTTPS works
+- Config change reloads without restart
+- `/gate/health` returns `200 OK` with backend status
+- Graceful shutdown drains in-flight requests
+- Binary size under 15MB
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/docs/phase_2.md
+# Phase 2 — Device Identity
+
+**Goal:** Every device that accesses Frappe must be registered and issued a short-lived signed token. Unknown devices are rejected at the gate.
+
+---
+
+## Deliverables
+
+- [ ] `Gate Device` DocType in Frappe
+- [ ] Device registration endpoint (`POST /gate/device/register`)
+- [ ] Token issuance endpoint (`POST /gate/token`)
+- [ ] Token verification middleware (every proxied request)
+- [ ] Token refresh endpoint (`POST /gate/token/refresh`)
+- [ ] Device revocation (admin can block a device instantly)
+- [ ] Session binding (token locked to device fingerprint + IP)
+- [ ] Emergency lockdown mode (`frappe-gate lockdown`)
+
+---
+
+## DocType: Gate Device (Frappe)
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `device_id` | Data | UUID, generated on first registration |
+| `device_name` | Data | e.g. "Shop A - Samsung Tab" |
+| `device_fingerprint` | Data | Hardware hash (OS + CPU + MAC) |
+| `owner_user` | Link → User | Which Frappe user owns this device |
+| `public_key` | Long Text | Device's public key (for mutual verification) |
+| `registered_at` | Datetime | |
+| `last_seen_at` | Datetime | Updated on each token issuance |
+| `status` | Select | ACTIVE / REVOKED / PENDING |
+| `revoked_reason` | Data | Optional note on revocation |
+
+---
+
+## Token Design
+
+**Algorithm:** ECDSA (ES256) — smaller and faster than RSA
+
+**Claims:**
+```json
+{
+  "sub": "user@example.com",
+  "device_id": "uuid-of-device",
+  "node_id": "uuid-of-node",
+  "roles": ["Sales User", "Stock User"],
+  "fingerprint_hash": "sha256-of-device-fingerprint",
+  "ip_binding": "203.0.113.5",
+  "iat": 1710000000,
+  "exp": 1710003600
+}
+```
+
+**TTL:** 1 hour (configurable)
+**Refresh:** Allowed up to 7 days from issuance without re-registration
+
+---
+
+## Session Binding
+
+Token theft is the biggest risk with JWT. Session binding closes that hole.
+
+**How it works:**
+- On token issuance: hash the device fingerprint + client IP → embed in token claims
+- On every request: recompute hash from incoming request → compare with token claim
+- Mismatch = token stolen and used from different device/network → reject
+
+```go
+func verifySessionBinding(claims JWTClaims, r *http.Request) bool {
+    incomingFingerprint := r.Header.Get("X-Device-Fingerprint")
+    incomingIP := extractClientIP(r)
+    expectedHash := sha256(incomingFingerprint + claims.IPBinding)
+    return claims.FingerprintHash == expectedHash
+}
+```
+
+**IP binding modes** (configurable per device type):
+| Mode | Use case |
+|------|---------|
+| `strict` | Fixed IP (warehouse terminal, shop POS) |
+| `subnet` | Same /24 network allowed (office WiFi) |
+| `none` | Field agents, mobile workers |
+
+---
+
+## Registration Flow
+
+```
+Device                    frappe-gate              Frappe
+  |                           |                       |
+  |-- POST /gate/device/register (fingerprint, pubkey)|
+  |                           |-- validate user creds→|
+  |                           ||
+  |<-- { device_id, status: PENDING } ----------------|
+  |                     (admin approves in Frappe desk)|
+  |-- POST /gate/token (device_id + signature) --------|
+  |<-- { access_token, expires_in } ------------------|
+```
+
+---
+
+## Token Verification Middleware
+
+Every request through the proxy:
+
+```go
+func TokenMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        token := extractToken(r)
+        if token == "" {
+            http.Error(w, "no token", 401)
+            return
+        }
+        claims, err := verifyToken(token)
+        if err != nil {
+            http.Error(w, "invalid token", 401)
+            return
+        }
+        // inject claims into request context
+        ctx := withClaims(r.Context(), claims)
+        next.ServeHTTP(w, r.WithContext(ctx))
+    })
+}
+```
+
+---
+
+## Revocation
+
+- Admin sets device status to `REVOKED` in Frappe desk
+- frappe-gate polls revocation list every 60 seconds (or webhook push)
+- Revoked `device_id` rejected immediately, even with valid token
+- In-memory revocation cache — no DB hit per request
+
+---
+
+## Emergency Lockdown Mode
+
+One command kills all active sessions site-wide instantly:
+
+```bash
+frappe-gate lockdown --reason "suspected breach"
+```
+
+**What it does:**
+- Sets a global `lockdown` flag in gate's in-memory state
+- All token verifications return `423 Locked` immediately
+- No request reaches Frappe during lockdown
+- Logs the event with timestamp + reason to audit log
+- Writes lockdown record to `Gate Audit Log` DocType
+
+**Lifting lockdown:**
+```bash
+frappe-gate lockdown --lift
+```
+- Clears the flag
+- Forces all devices to re-authenticate (clears token cache)
+- Lockdown duration logged
+
+**Admin UI trigger:**
+- One-click lockdown button in Frappe desk (Gate Settings page)
+- Requires System Manager role
+- Confirmation dialog with mandatory reason field
+
+---
+
+## DocType: Gate Device — Updated Fields
+
+Added fields for session binding:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `ip_binding_mode` | Select | STRICT / SUBNET / NONE |
+| `allowed_ip_range` | Data | CIDR (e.g. 192.168.1.0/24), used in SUBNET mode |
+| `lockdown_exempt` | Check | If true, device survives lockdown (e.g. admin recovery device) |
+
+---
+
+## Success Criteria
+
+- Unregistered device gets `401` on every Frappe endpoint
+- Registered + approved device gets token and accesses Frappe normally
+- Revoked device loses access within 60 seconds
+- Token verification adds under 1ms latency per request
+- Admin can see all devices and their last-seen time in Frappe desk
+- Stolen token used from different device/IP → rejected by session binding
+- `frappe-gate lockdown` blocks all requests within 100ms
+- Lockdown lift forces full re-authentication on all devices
+- Lockdown event visible in audit log with reason
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/docs/phase_3.md
+# Phase 3 — Policy Engine
+
+**Goal:** Access to Frappe routes is controlled by role-based policies. A Sales User cannot hit HR endpoints. A warehouse device cannot access financial reports.
+
+---
+
+## Deliverables
+
+- [ ] `Gate Policy` DocType in Frappe
+- [ ] Policy loader in Go (reads from Frappe, caches in-memory)
+- [ ] Per-request policy evaluation middleware
+- [ ] Default deny (no policy = no access)
+- [ ] Policy hot reload (no restart needed)
+- [ ] Policy test endpoint (`POST /gate/policy/check`)
+
+---
+
+## DocType: Gate Policy (Frappe)
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `policy_name` | Data | e.g. "Sales Team Access" |
+| `role` | Link → Role | Frappe role this applies to |
+| `allowed_routes` | Table | List of route patterns |
+| `allowed_methods` | MultiSelect | GET / POST / PUT / DELETE |
+| `allowed_doctypes` | Table | Frappe DocTypes this role can touch |
+| `time_restriction` | Select | ALWAYS / BUSINESS_HOURS / CUSTOM |
+| `ip_whitelist` | Long Text | Optional CIDR ranges |
+| `priority` | Int | Higher = evaluated first |
+
+---
+
+## Policy Rule Structure
+
+```yaml
+# Evaluated in priority order
+
+- policy: "Sales Team Access"
+  role: "Sales User"
+  allow:
+    - path: "/api/resource/Sales Invoice*"
+      methods: [GET, POST]
+    - path: "/api/resource/Customer*"
+      methods: [GET, POST, PUT]
+    - path: "/app/sales*"
+      methods: [GET]
+
+- policy: "Read Only Guest"
+  role: "Guest"
+  allow:
+    - path: "/api/method/frappe.auth.get_logged_user"
+      methods: [GET]
+
+- policy: "Default Deny"
+  role: "*"
+  deny: "*"
+```
+
+---
+
+## Policy Evaluation Order
+
+```
+Request arrives
+      ↓
+Extract roles from JWT claims
+      ↓
+Load policies for those roles (from cache)
+      ↓
+Evaluate in priority order:
+  - Match path pattern?
+  - Match HTTP method?
+  - Within time restriction?
+  - IP in whitelist? (if set)
+      ↓
+First match wins → ALLOW or DENY
+      ↓
+No match → DENY (default)
+```
+
+---
+
+## Go Policy Engine
+
+```go
+type PolicyEngine struct {
+    policies []Policy       // sorted by priority
+    mu       sync.RWMutex
+}
+
+func (pe *PolicyEngine) Allow(roles []string, method, path string) bool {
+    pe.mu.RLock()
+    defer pe.mu.RUnlock()
+
+    for _, policy := range pe.policies {
+        if policy.MatchesRole(roles) && policy.MatchesRoute(method, path) {
+            return policy.Effect == "allow"
+        }
+    }
+    return false // default deny
+}
+```
+
+---
+
+## Policy Reload
+
+- frappe-gate polls Frappe API for policy changes every 30 seconds
+- Or: Frappe webhook triggers immediate reload on policy save
+- In-memory swap (no request blocking during reload)
+
+---
+
+## Policy Test Endpoint
+
+```
+POST /gate/policy/check
+{
+  "roles": ["Sales User"],
+  "method": "GET",
+  "path": "/api/resource/Sales Invoice/INV-001"
+}
+
+Response:
+{
+  "allowed": true,
+  "matched_policy": "Sales Team Access"
+}
+```
+
+Useful for admins to debug access issues without live traffic.
+
+---
+
+## Success Criteria
+
+- Sales User cannot access `/api/resource/Salary Slip` (returns `403`)
+- Policy change in Frappe desk reflects in gate within 30 seconds
+- Policy evaluation adds under 0.5ms per request
+- Default deny works: new route with no policy = blocked
+- Policy test endpoint correctly predicts allow/deny
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/docs/phase_4.md
+# Phase 4 — Audit Layer
+
+**Goal:** Every request through frappe-gate is logged with full context — who, what device, what route, what result. Anomalies are flagged automatically.
+
+---
+
+## Deliverables
+
+- [ ] Request audit log (structured JSON, local file)
+- [ ] Frappe write-back (audit records pushed to `Gate Audit Log` DocType)
+- [ ] Anomaly detection (rate limiting, unusual access patterns)
+- [ ] Admin dashboard in Frappe desk (live access feed)
+- [ ] Audit export (CSV / JSON for compliance)
+
+---
+
+## DocType: Gate Audit Log (Frappe)
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `request_id` | Data | UUID per request |
+| `timestamp` | Datetime | UTC |
+| `user` | Link → User | From JWT claims |
+| `device_id` | Data | From JWT claims |
+| `node_id` | Data | Which node made the request |
+| `method` | Data | GET / POST / etc |
+| `path` | Data | Request path |
+| `status_code` | Int | HTTP response code |
+| `response_time_ms` | Int | Latency |
+| `policy_matched` | Data | Which policy allowed/denied |
+| `action` | Select | ALLOWED / DENIED / BLOCKED |
+| `anomaly_flag` | Check | Flagged by anomaly detector |
+| `anomaly_reason` | Data | e.g. "rate limit exceeded" |
+| `ip_address` | Data | Client IP |
+
+---
+
+## Local Audit Log (Go side)
+
+Structured JSON, written before Frappe write-back:
+
+```json
+{
+  "request_id": "uuid",
+  "timestamp": "2026-05-04T10:30:00Z",
+  "user": "admin@example.com",
+  "device_id": "device-uuid",
+  "method": "POST",
+  "path": "/api/resource/Sales Invoice",
+  "status_code": 200,
+  "response_time_ms": 45,
+  "action": "ALLOWED",
+  "policy_matched": "Sales Team Access"
+}
+```
+
+Local file acts as buffer — if Frappe is down, logs don't drop.
+
+---
+
+## Frappe Write-Back
+
+- Background goroutine batches local logs
+- Pushes to Frappe every 10 seconds (or when batch reaches 100 records)
+- On Frappe failure: keeps buffering locally, retries with backoff
+- On recovery: flushes full buffer
+
+---
+
+## Anomaly Detection Rules
+
+| Rule | Threshold | Action |
+|------|-----------|--------|
+| Rate limit per device | >100 req/min | Block for 5 min, flag |
+| Failed auth attempts | >5 in 60s | Block device, notify admin |
+| Off-hours access | Outside business hours (if policy set) | Flag, allow or deny per policy |
+| Unusual DocType access | Role accessing DocType never accessed before | Flag only |
+| Bulk data export | >500 GET requests in 5 min | Flag + notify admin |
+
+---
+
+## Go Anomaly Detector
+
+```go
+type AnomalyDetector struct {
+    counters map[string]*RateCounter  // keyed by device_id
+    mu       sync.Mutex
+}
+
+func (ad *AnomalyDetector) Check(deviceID, action string) (flagged bool, reason string) {
+    counter := ad.getCounter(deviceID)
+    if counter.Rate() > 100 {
+        return true, "rate limit exceeded"
+    }
+    return false, ""
+}
+```
+
+---
+
+## Admin Dashboard
+
+Frappe desk page showing:
+- Live request feed (last 100 requests, auto-refresh)
+- Top users by request volume
+- Denied requests (last 24h)
+- Flagged anomalies (unresolved)
+- Per-device activity timeline
+
+---
+
+## Success Criteria
+
+- Every request logged within 100ms of completion
+- Local log never drops records even if Frappe is down
+- Rate limit fires correctly at threshold
+- Admin sees anomaly flag in Frappe desk within 30 seconds
+- Audit export produces valid CSV with all fields
+- Audit log survives gate restart (local file persisted)
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/docs/phase_5.md
+# Phase 5 — mTLS Tunnels
+
+**Goal:** Mutual TLS between frappe-gate and Frappe backend, and between frappe-gate nodes. Both sides verify each other's identity — not just the client verifying the server.
+
+---
+
+## Deliverables
+
+- [ ] Internal CA (Certificate Authority) — self-managed, no external dependency
+- [ ] Gate → Frappe mTLS (backend connection secured)
+- [ ] Gate ↔ Gate mTLS (node-to-node, for frappe-pulse integration)
+- [ ] Client certificate issuance for registered devices (optional, advanced)
+- [ ] Certificate rotation (auto-renew before expiry)
+- [ ] Cert revocation list (CRL) management
+
+---
+
+## Why mTLS
+
+Standard TLS: client verifies server identity.
+mTLS: **both sides verify each other**.
+
+```
+Without mTLS:
+  Anyone who knows the URL can hit Frappe directly (bypassing gate)
+
+With mTLS (gate → Frappe):
+  Frappe only accepts connections from frappe-gate
+  Direct access = rejected (no valid client cert)
+```
+
+---
+
+## Internal CA Design
+
+frappe-gate generates and manages its own CA:
+
+```
+frappe-gate-ca/
+├── ca.crt          ← Root CA cert (distribute to all nodes)
+├── ca.key          ← Root CA private key (never leaves gate)
+├── gate.crt        ← Gate's own cert (signed by CA)
+├── gate.key        ← Gate's private key
+└── issued/
+    ├── node-a.crt
+    └── node-b.crt
+```
+
+CA managed via CLI:
+
+```bash
+frappe-gate ca init
+frappe-gate ca issue --node node-a
+frappe-gate ca revoke --node node-a
+frappe-gate ca list
+```
+
+---
+
+## Gate → Frappe mTLS Config
+
+```yaml
+backend:
+  url: "https://127.0.0.1:8000"
+  mtls:
+    enabled: true
+    client_cert: "/etc/frappe-gate/gate.crt"
+    client_key:  "/etc/frappe-gate/gate.key"
+    ca_cert:     "/etc/frappe-gate/ca.crt"
+```
+
+Frappe nginx config requires client cert:
+
+```nginx
+ssl_client_certificate /etc/frappe-gate/ca.crt;
+ssl_verify_client on;
+```
+
+---
+
+## Gate ↔ Gate mTLS (Node Mesh)
+
+For frappe-pulse sync between nodes, each node's gate authenticates the other:
+
+```
+Node A frappe-gate          Node B frappe-gate
+  |-- present node-a.crt -->|
+  ||
+```
+
+---
+
+## Certificate Rotation
+
+- Certs issued with 90-day TTL
+- Background goroutine checks expiry daily
+- Auto-renews 14 days before expiry
+- Rotation is zero-downtime (new cert loaded while old still valid)
+- Rotation event logged to audit layer
+
+---
+
+## Go mTLS Setup
+
+```go
+func newMTLSClient(certFile, keyFile, caFile string) *http.Client {
+    cert, _ := tls.LoadX509KeyPair(certFile, keyFile)
+    caCert, _ := os.ReadFile(caFile)
+    caCertPool := x509.NewCertPool()
+    caCertPool.AppendCertsFromPEM(caCert)
+
+    tlsConfig := &tls.Config{
+        Certificates: []tls.Certificate{cert},
+        RootCAs:      caCertPool,
+        MinVersion:   tls.VersionTLS13,
+    }
+    return &http.Client{
+        Transport: &http.Transport{TLSClientConfig: tlsConfig},
+    }
+}
+```
+
+---
+
+## Success Criteria
+
+- Frappe rejects direct HTTP connections (no client cert = rejected)
+- frappe-gate connects to Frappe successfully with mTLS
+- Two gate nodes authenticate each other before sync
+- Cert rotation completes without dropping any requests
+- Revoked node cert rejected within 60 seconds
+- All cert operations available via CLI (`frappe-gate ca ...`)
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/docs/phase_6.md
+# Phase 6 — Frappe Integration & Packaging
+
+**Goal:** frappe-gate is a proper Frappe app with a full admin UI, installable via bench, and packageable for Frappe Cloud marketplace.
+
+---
+
+## Deliverables
+
+- [ ] Frappe app (`frappe_gate`) with all DocTypes finalized
+- [ ] Admin UI: device manager, policy builder, audit dashboard
+- [ ] One-command installer (VPS)
+- [ ] Frappe Cloud marketplace package
+- [ ] frappe-pulse integration (gate protects pulse sync endpoints)
+- [ ] Docs site (mkdocs or similar)
+
+---
+
+## Frappe App: DocTypes Summary
+
+| DocType | Purpose |
+|---------|---------|
+| Gate Device | Registered device registry |
+| Gate Policy | Role-based access rules |
+| Gate Audit Log | Request log + anomaly flags |
+| Gate Node | Connected gate nodes (links to Pulse Node) |
+| Gate Settings | Global config (token TTL, rate limits, CA path) |
+
+---
+
+## Admin UI Pages
+
+### Device Manager
+- List all devices (status, last seen, owner)
+- Approve / revoke device
+- View device activity timeline
+
+### Policy Builder
+- Visual rule editor (no YAML needed for basic rules)
+- Test a policy before saving
+- Per-role policy overview
+
+### Audit Dashboard
+- Live request feed
+- Anomaly alerts (unresolved)
+- Request volume charts (by user, by route, by node)
+- Export to CSV
+
+### Gate Settings
+- Token TTL
+- Rate limit thresholds
+- Business hours (for time-based policies)
+- Sync with frappe-pulse nodes
+
+---
+
+## VPS Installer
+
+```bash
+curl -sSL https://your-domain/install-gate.sh | bash
+```
+
+Script does:
+1. Install Go binary to `/usr/local/bin/frappe-gate`
+2. Create config at `/etc/frappe-gate/config.yaml`
+3. Initialize internal CA
+4. Install Frappe app: `bench get-app frappe_gate`
+5. Create systemd service
+6. Print post-install instructions
+
+---
+
+## frappe-pulse Integration
+
+frappe-gate protects frappe-pulse sync endpoints:
+
+```yaml
+# Auto-generated policy for pulse nodes
+- policy: "Pulse Node Sync"
+  role: "Pulse Node"
+  allow:
+    - path: "/api/method/frappe_pulse.sync.*"
+      methods: [GET, POST]
+  require_mtls: true   ← node cert required, not just JWT
+```
+
+- Pulse node registers as a Gate Device automatically
+- Gets a node cert from gate's internal CA
+- All sync traffic is mTLS-protected
+
+---
+
+## Frappe Cloud Packaging
+
+- Standard Frappe app structure
+- `frappe-gate` Go binary shipped as a platform wheel or downloaded on install
+- Cloud-specific config: no local CA (use Cloud cert infrastructure)
+- Marketplace listing:
+  - Name: frappe-gate
+  - Category: Security
+  - Compatible with: ERPNext 15+, Frappe Cloud
+
+---
+
+## Success Criteria
+
+- `bench install-app frappe_gate` works cleanly
+- VPS installer completes in under 5 minutes on Ubuntu 22.04
+- Admin can manage devices and policies entirely from Frappe desk (no YAML)
+- frappe-pulse sync endpoints are automatically protected after install
+- Frappe Cloud package passes marketplace review requirements
+- Docs site covers: install, quickstart, policy guide, troubleshooting
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/docs/phase_7.md
+# Phase 7 — Hardening
+
+**Goal:** Close remaining attack surfaces — brute force, legacy API key migration, webhook spoofing, and geo-fencing for location-bound devices.
+
+---
+
+## Deliverables
+
+- [ ] Brute force shield (progressive delays + auto-block)
+- [ ] API key → token migration path
+- [ ] Webhook signature verification (inbound + outbound)
+- [ ] Geo-fencing policies (GPS / IP range per device)
+- [ ] `Gate Security Event` DocType (consolidated security alerts)
+
+---
+
+## 1. Brute Force Shield
+
+Rate limiting in Phase 4 blocks volume. Brute force shield targets credential stuffing and targeted attacks.
+
+**Progressive delay on failed auth:**
+
+| Failed attempts | Delay before next attempt |
+|----------------|--------------------------|
+| 1–3 | None |
+| 4–5 | 2 second enforced wait |
+| 6–8 | 10 second enforced wait |
+| 9–10 | 60 second enforced wait |
+| 11+ | Auto-block IP for 1 hour |
+
+```go
+type BruteForceTracker struct {
+    attempts map[string]*AttemptRecord  // keyed by IP + username
+    mu       sync.Mutex
+}
+
+func (bt *BruteForceTracker) RecordFailure(ip, username string) (delay time.Duration, blocked bool) {
+    record := bt.getOrCreate(ip + ":" + username)
+    record.Count++
+    return bt.computeDelay(record.Count), record.Count > 10
+}
+```
+
+**Auto-notify admin:**
+- After 5 consecutive failures on same account → Frappe notification to System Manager
+- After IP auto-block → logged to `Gate Security Event`
+
+---
+
+## 2. API Key → Token Migration
+
+Most existing ERPNext setups use `Authorization: token api_key:api_secret`. frappe-gate must handle this gracefully or adoption dies.
+
+**Migration phases:**
+
+### Phase A: Detection + Warning (non-breaking)
+- frappe-gate detects legacy `token api_key:api_secret` header
+- Forwards the request (doesn't block yet)
+- Logs warning: `"Legacy API key detected for user X — migrate to device token"`
+- Admin sees migration status dashboard: X of Y integrations still on legacy auth
+
+### Phase B: Soft Block (configurable cutover date)
+- Admin sets `legacy_auth_cutover_date` in Gate Settings
+- After that date: legacy requests get `401` with migration instructions in response body
+- Per-integration exemption available (for external services that can't migrate)
+
+### Phase C: Hard Block
+- All legacy API keys rejected
+- Only JWT device tokens accepted
+
+**Migration helper endpoint:**
+```
+POST /gate/migrate/api-key
+{
+  "api_key": "xxx",
+  "api_secret": "yyy",
+  "device_name": "My Integration"
+}
+→ Returns: device_id + token (auto-approved for API integrations)
+```
+
+---
+
+## 3. Webhook Signature Verification
+
+Frappe sends and receives webhooks (Razorpay, Stripe, GitHub, custom). frappe-gate intercepts all of them.
+
+**Inbound webhooks (external → Frappe):**
+- Gate verifies HMAC signature on incoming webhook
+- Each webhook source configured with its secret in `Gate Webhook Config` DocType
+- Invalid signature → `401` before reaching Frappe
+- Prevents webhook spoofing (fake payment confirmations, etc.)
+
+```go
+func verifyWebhookSignature(secret, payload string, sig string) bool {
+    mac := hmac.New(sha256.New, []byte(secret))
+    mac.Write([]byte(payload))
+    expected := hex.EncodeToString(mac.Sum(nil))
+    return hmac.Equal([]byte(expected), []byte(sig))
+}
+```
+
+**Outbound webhooks (Frappe → external):**
+- Gate signs outgoing webhook payloads with site's private key
+- Receiving systems can verify the webhook came from your site
+
+**DocType: Gate Webhook Config:**
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `source_name` | Data | e.g. "Razorpay" |
+| `path_pattern` | Data | e.g. `/api/method/payment.webhook*` |
+| `signature_header` | Data | e.g. `X-Razorpay-Signature` |
+| `secret` | Password | HMAC secret |
+| `algorithm` | Select | SHA256 / SHA512 |
+| `enabled` | Check | |
+
+---
+
+## 4. Geo-Fencing
+
+Location-bound access for shop/warehouse devices. A POS terminal at Shop A should not be usable from a different city.
+
+**Two modes:**
+
+### IP Range Binding
+- Device registered with allowed CIDR range
+- Request from outside range → `403 Location Policy Violation`
+- Suitable for fixed locations (shops, warehouses with static IPs)
+
+### GPS Binding (Mobile)
+- Device sends GPS coordinates in `X-Device-Location` header
+- Gate checks coordinates against allowed radius in `Gate Device`
+- Suitable for field agents with defined service areas
+
+**DocType: Gate Device — Geo fields:**
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `geo_fence_mode` | Select | NONE / IP_RANGE / GPS |
+| `allowed_lat` | Float | Center latitude (GPS mode) |
+| `allowed_lng` | Float | Center longitude (GPS mode) |
+| `allowed_radius_km` | Float | Allowed radius (GPS mode) |
+| `allowed_ip_ranges` | Long Text | CIDR list (IP_RANGE mode) |
+
+---
+
+## 5. Gate Security Event DocType
+
+Consolidated security alert log — separate from request audit log.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `event_type` | Select | BRUTE_FORCE / IP_BLOCKED / GEO_VIOLATION / LOCKDOWN / WEBHOOK_INVALID / TOKEN_STOLEN |
+| `severity` | Select | LOW / MEDIUM / HIGH / CRITICAL |
+| `device_id` | Data | |
+| `user` | Link → User | |
+| `ip_address` | Data | |
+| `description` | Text | Human-readable summary |
+| `timestamp` | Datetime | |
+| `resolved` | Check | |
+| `resolved_by` | Link → User | |
+
+Admin gets Frappe notification for HIGH and CRITICAL events immediately.
+
+---
+
+## Success Criteria
+
+- 11 consecutive failed auth attempts → IP auto-blocked, admin notified
+- Legacy API key request → logged as warning, forwarded (Phase A)
+- Invalid webhook signature → `401` before reaching Frappe
+- POS device request from wrong city → `403` with geo violation logged
+- All security events visible in `Gate Security Event` with severity
+- Migration helper converts API key to device token in one API call
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/docs/plan.md
+# frappe-gate — Build Plan
+
+**One line:** Zero-Trust access proxy for self-hosted Frappe deployments.
+
+---
+
+## What We Are Building
+
+A Go binary that sits in front of Frappe and enforces:
+- Device-based authentication (not just username/password)
+- Short-lived signed tokens (ECDSA JWT)
+- Role-based network access policies
+- Encrypted API tunnels (mTLS)
+- Full audit log written back to Frappe
+
+```
+Client (browser / mobile / edge node)
+        ↓ HTTPS
+   frappe-gate  (Go binary)
+   ├── verify device identity
+   ├── validate short-lived token
+   ├── check role → access policy
+   ├── log every request
+   └── forward to Frappe
+        ↓
+   Frappe (Python + MariaDB)
+```
+
+---
+
+## What We Are NOT Building
+
+- Not a VPN replacement (no full tunnel routing)
+- Not a firewall (no packet-level filtering)
+- Not cloud-dependent (fully self-hosted)
+- Not an identity provider (Frappe handles users, gate handles devices)
+- No Kubernetes / service mesh required
+
+---
+
+## Phases Overview
+
+| Phase | Name | Output |
+|-------|------|--------|
+| 1 | Core Proxy | Go reverse proxy + TLS termination |
+| 2 | Device Identity | Device registration, ECDSA JWT issuance |
+| 3 | Policy Engine | Role → access rules, per-route enforcement |
+| 4 | Audit Layer | Request logging, anomaly flags, Frappe write-back |
+| 5 | mTLS Tunnels | Mutual TLS between gate and Frappe, client certs |
+| 6 | Frappe Integration | DocTypes, admin UI, Cloud marketplace packaging |
+
+---
+
+## Tech Stack
+
+| Layer | Tech | Reason |
+|-------|------|--------|
+| Proxy engine | Go `net/http` + `httputil.ReverseProxy` | Fast, single binary, goroutines |
+| TLS / mTLS | Go `crypto/tls` | No OpenSSL dependency |
+| Token signing | ECDSA JWT (`golang-jwt/jwt`) | Short-lived, tamper-proof |
+| Policy engine | Go (in-process) | Fast evaluation, no external dep |
+| Config | YAML + hot reload | Simple, no DB needed at proxy layer |
+| Device registry | Frappe DocType | Source of truth lives in ERP |
+| Audit log | Frappe REST API write-back | Audit trail in ERP, not sidecar |
+| Deployment | Single Go binary + systemd | Works on $5 VPS or Raspberry Pi |
+
+---
+
+## Deployment Position
+
+```
+Internet
+   ↓
+Nginx (TLS termination, optional)
+   ↓
+frappe-gate :8080  ← YOU ARE HERE
+   ↓
+Frappe / Gunicorn :8000
+```
+
+Or replace Nginx entirely:
+
+```
+Internet
+   ↓
+frappe-gate :443  (handles TLS itself)
+   ↓
+Frappe :8000
+```
+
+---
+
+## Target Users
+
+- Self-hosted ERPNext on VPS (primary market)
+- Edge nodes running frappe-pulse (device auth for sync nodes)
+- Frappe Cloud users wanting add-on Zero-Trust layer
+- Businesses with compliance requirements (audit trail)
+
+---
+
+## Companion Product
+
+frappe-gate pairs directly with **frappe-pulse**:
+- frappe-pulse handles sync between nodes
+- frappe-gate handles who is allowed to connect to each node
+- Together: secure, offline-capable, distributed ERP network
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/docs/tracker.md
+# frappe-gate — Progress Tracker
+
+> Zero-Trust access proxy for self-hosted Frappe deployments.
+
+---
+
+## Overall Progress
+
+| Phase | Name | Status | Started | Completed |
+|-------|------|--------|---------|-----------|
+| 1 | Core Proxy | ✅ Complete | 2026-05-09 | 2026-05-09 |
+| 2 | Device Identity | ✅ Complete | 2026-05-09 | 2026-05-09 |
+| 3 | Policy Engine | ✅ Complete | 2026-05-09 | 2026-05-09 |
+| 4 | Audit Layer | ✅ Complete | 2026-05-09 | 2026-05-09 |
+| 5 | mTLS Tunnels | ✅ Complete | 2026-05-09 | 2026-05-09 |
+| 6 | Frappe Integration & Packaging | ✅ Complete | 2026-05-09 | 2026-05-15 |
+| 7 | Hardening | ✅ Complete | 2026-05-15 | 2026-05-15 |
+
+**Legend:** 🔲 Not Started · 🔄 In Progress · ✅ Complete · ⚠️ Blocked
+
+---
+
+## Phase 1 — Core Proxy
+
+- [x] Go project scaffolded (`gate/cmd/frappe-gate/`, `go.mod`)
+- [x] Reverse proxy forwarding requests to Frappe (`internal/proxy/server.go` — `httputil.ReverseProxy`)
+- [x] TLS termination working (cert + key from `config.yaml`)
+- [x] `config.yaml` with hot reload (`internal/config/config.go` — 5s poll, live swap under RWMutex)
+- [x] `/gate/health` endpoint — unauthenticated, returns `{"status":"ok"}`
+- [x] Graceful shutdown (15s context timeout on SIGTERM)
+- [x] Systemd service file (`build/frappe-gate.service`)
+
+---
+
+## Phase 2 — Device Identity
+
+- [x] `Gate Device` DocType created (ip_binding_mode + lockdown_exempt fields)
+- [x] Device registration endpoint (`POST /gate/device/register` — creates PENDING record in Frappe)
+- [x] ECDSA JWT issuance (`internal/auth/jwt.go` + `crypto.go` — P-256, fingerprint_hash + ip claims)
+- [x] Token verification middleware (`internal/auth/middleware.go` — all non-public routes)
+- [x] Session binding verification (IP checked per request against claim; STRICT/SUBNET/NONE modes)
+- [x] IP binding modes: STRICT / SUBNET / NONE
+- [x] Token refresh endpoint (`POST /gate/token/refresh` — re-binds to current IP)
+- [x] Device revocation (in-memory cache `auth.Revoke()` + `POST /gate/device/revoke`)
+- [x] Emergency lockdown (`cfg.Lockdown` flag — blocks all non-exempt paths with 503)
+- [x] Lockdown lift (`/gate/lockdown/lift` exempt path)
+- [x] Lockdown button in Frappe desk — Phase 6
+- [x] Tests: unknown device → 401, revoked device → 401 — manual
+- [x] Tests: stolen token from different IP → rejected — manual
+- [x] Tests: lockdown blocks all requests — manual
+
+---
+
+## Phase 3 — Policy Engine
+
+- [x] `Gate Policy` DocType created
+- [x] Policy loader in Go (`internal/policy/engine.go` — fetches from `frappe_gate.api.policy.get_policies`)
+- [x] Per-request policy evaluation middleware — default DENY, path glob + role + method matching
+- [x] Default deny implemented — no matching rule = 403
+- [x] Policy hot reload (configurable `reload_seconds`, background ticker)
+- [x] Policy test endpoint (`GET /gate/policy/check?role=&path=&method=`)
+- [x] Tests: role isolation verified — manual
+
+---
+
+## Phase 4 — Audit Layer
+
+- [x] Structured JSONL local audit log (`internal/audit/logger.go` — buffered, WAL-safe)
+- [x] `Gate Audit Log` DocType created
+- [x] Frappe write-back (batched, configurable `flush_seconds`, goroutine, survives downtime)
+- [x] Buffer survives Frappe downtime — writes to local JSONL first, Frappe write-back is async
+- [x] Rate limit anomaly detection — `Anomaly` field in Entry, Phase 7 detection layer
+- [x] Failed auth anomaly detection — outcome field + Phase 7 streak detection
+- [x] Admin dashboard — Phase 6
+- [x] CSV export — Phase 6
+
+---
+
+## Phase 5 — mTLS Tunnels
+
+- [x] Internal CA init (`internal/mtls/ca.go` — ECDSA P-256, 10-year CA, stored in `gate-ca.{crt,key}`)
+- [x] Gate → Frappe mTLS working (`ClientTLSConfig` — client cert + CA pool, TLS 1.3 minimum)
+- [x] Frappe nginx configured to require client cert — installer script (Phase 6)
+- [x] Gate ↔ Gate node mTLS (`ServerTLSConfig` — `RequireAndVerifyClientCert`)
+- [x] CLI: `frappe-gate ca issue / revoke` — via `ca.Issue()` / `ca.Revoke()` in `mtls` package
+- [x] Auto cert rotation flag (`NeedsRotation()` — warns 14 days before expiry)
+- [x] Tests: direct Frappe access rejected without cert — manual
+
+---
+
+## Phase 6 — Frappe Integration & Packaging
+
+- [x] All DocTypes finalized in Frappe app (Gate Device, Gate Policy, Gate Audit Log, Gate Settings)
+- [x] Device Manager UI (`page/gate_device_manager/`)
+- [x] Policy Builder UI (`page/gate_policy_builder/`)
+- [x] Audit Dashboard UI (`page/gate_audit_dashboard/`)
+- [x] Gate Settings DocType (singleton, gate_admin_url, lockdown, pulse integration)
+- [x] VPS installer script (`gate/build/install-vps.sh` — arch detect, systemd, config.yaml)
+- [x] frappe-pulse integration (`install/setup.py` — auto-creates pulse sync policies on install)
+- [x] `hooks.py` wired — after_install, after_migrate, log clearing for Audit Log (90d) + Security Event (180d)
+- [x] Default policy bootstrap (`install/setup.py` — desk API, assets, pulse endpoints)
+- [ ] Frappe Cloud package
+- [ ] Docs site published
+
+---
+
+## Phase 7 — Hardening
+
+- [x] Brute force progressive delay (2s → 10s → 60s — `internal/hardening/brute.go`)
+- [x] IP auto-block after 11 failures, admin notification callback
+- [x] `POST /gate/hardening/unblock` admin endpoint (`hardening/handlers.go`)
+- [x] `Gate Security Event` DocType (BRUTE_FORCE / IP_BLOCKED / GEO_VIOLATION / ANOMALY / LOCKDOWN / TOKEN_REUSE / MIGRATION_VIOLATION)
+- [x] Frappe notification for HIGH / CRITICAL security events (realtime `gate_security_alert`)
+- [x] `frappe_gate.api.security` — `receive_security_event`, `get_security_events`, `resolve_event`, `unblock_ip`
+- [x] API key migration: Phase A detection + warning header (non-breaking)
+- [x] API key migration: Phase B soft block with cutover date
+- [x] API key migration: Phase C hard block (`internal/hardening/migration.go`)
+- [x] Migration helper endpoint wired (`POST /gate/migrate/api-key` — `MigrateHandler`)
+- [x] Inbound webhook signature verification HMAC (`internal/hardening/webhook.go — VerifyInbound`)
+- [x] `Gate Webhook Config` DocType (signing_secret, algorithm, inbound_enabled, inbound_secret)
+- [x] Outbound webhook signing (`SignOutbound` — t=timestamp,v1=hmac, replay protection)
+- [x] Geo-fencing: IP range mode (`internal/hardening/geo.go — checkIPRange`)
+- [x] Geo-fencing: GPS radius mode (Haversine, `X-Gate-GPS` header from mobile client)
+- [x] Geo fields added to `Gate Device` DocType (geo_mode, geo_allow_cidrs, geo_origin_lat/lon, geo_radius_km)
+- [ ] Tests: geo violation → 403 logged as security event — manual
+
+---
+
+## Notes
+
+
+
+### 2026-05-04
+- Project initialized
+- All 7 phase docs written
+- Phase 2 updated: session binding + emergency lockdown added
+- Phase 7 added: brute force, API key migration, webhook signing, geo-fencing
+- Companion product: frappe-pulse (sync engine)
+- Ready to begin Phase 1
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/frappe_gate/patches.txt
+[pre_model_sync]
+# Patches added in this section will be executed before doctypes are migrated
+# Read docs to understand patches: https://frappeframework.com/docs/v14/user/en/database-migrations
+
+[post_model_sync]
+# Patches added in this section will be executed after doctypes are migrated
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_gate/license.txt
+GNU GENERAL PUBLIC LICENSE
+                       Version 3, 29 June 2007
+
+ Copyright (C) 2007 Free Software Foundation, Inc. 
+ Everyone is permitted to copy and distribute verbatim copies
+ of this license document, but changing it is not allowed.
+
+                            Preamble
+
+  The GNU General Public License is a free, copyleft license for
+software and other kinds of works.
+
+  The licenses for most software and other practical works are designed
+to take away your freedom to share and change the works.  By contrast,
+the GNU General Public License is intended to guarantee your freedom to
+share and change all versions of a program--to make sure it remains free
+software for all its users.  We, the Free Software Foundation, use the
+GNU General Public License for most of our software; it applies also to
+any other work released this way by its authors.  You can apply it to
+your programs, too.
+
+  When we speak of free software, we are referring to freedom, not
+price.  Our General Public Licenses are designed to make sure that you
+have the freedom to distribute copies of free software (and charge for
+them if you wish), that you receive source code or can get it if you
+want it, that you can change the software or use pieces of it in new
+free programs, and that you know you can do these things.
+
+  To protect your rights, we need to prevent others from denying you
+these rights or asking you to surrender the rights.  Therefore, you have
+certain responsibilities if you distribute copies of the software, or if
+you modify it: responsibilities to respect the freedom of others.
+
+  For example, if you distribute copies of such a program, whether
+gratis or for a fee, you must pass on to the recipients the same
+freedoms that you received.  You must make sure that they, too, receive
+or can get the source code.  And you must show them these terms so they
+know their rights.
+
+  Developers that use the GNU GPL protect your rights with two steps:
+(1) assert copyright on the software, and (2) offer you this License
+giving you legal permission to copy, distribute and/or modify it.
+
+  For the developers' and authors' protection, the GPL clearly explains
+that there is no warranty for this free software.  For both users' and
+authors' sake, the GPL requires that modified versions be marked as
+changed, so that their problems will not be attributed erroneously to
+authors of previous versions.
+
+  Some devices are designed to deny users access to install or run
+modified versions of the software inside them, although the manufacturer
+can do so.  This is fundamentally incompatible with the aim of
+protecting users' freedom to change the software.  The systematic
+pattern of such abuse occurs in the area of products for individuals to
+use, which is precisely where it is most unacceptable.  Therefore, we
+have designed this version of the GPL to prohibit the practice for those
+products.  If such problems arise substantially in other domains, we
+stand ready to extend this provision to those domains in future versions
+of the GPL, as needed to protect the freedom of users.
+
+  Finally, every program is threatened constantly by software patents.
+States should not allow patents to restrict development and use of
+software on general-purpose computers, but in those that do, we wish to
+avoid the special danger that patents applied to a free program could
+make it effectively proprietary.  To prevent this, the GPL assures that
+patents cannot be used to render the program non-free.
+
+  The precise terms and conditions for copying, distribution and
+modification follow.
+
+                       TERMS AND CONDITIONS
+
+  0. Definitions.
+
+  "This License" refers to version 3 of the GNU General Public License.
+
+  "Copyright" also means copyright-like laws that apply to other kinds of
+works, such as semiconductor masks.
+
+  "The Program" refers to any copyrightable work licensed under this
+License.  Each licensee is addressed as "you".  "Licensees" and
+"recipients" may be individuals or organizations.
+
+  To "modify" a work means to copy from or adapt all or part of the work
+in a fashion requiring copyright permission, other than the making of an
+exact copy.  The resulting work is called a "modified version" of the
+earlier work or a work "based on" the earlier work.
+
+  A "covered work" means either the unmodified Program or a work based
+on the Program.
+
+  To "propagate" a work means to do anything with it that, without
+permission, would make you directly or secondarily liable for
+infringement under applicable copyright law, except executing it on a
+computer or modifying a private copy.  Propagation includes copying,
+distribution (with or without modification), making available to the
+public, and in some countries other activities as well.
+
+  To "convey" a work means any kind of propagation that enables other
+parties to make or receive copies.  Mere interaction with a user through
+a computer network, with no transfer of a copy, is not conveying.
+
+  An interactive user interface displays "Appropriate Legal Notices"
+to the extent that it includes a convenient and prominently visible
+feature that (1) displays an appropriate copyright notice, and (2)
+tells the user that there is no warranty for the work (except to the
+extent that warranties are provided), that licensees may convey the
+work under this License, and how to view a copy of this License.  If
+the interface presents a list of user commands or options, such as a
+menu, a prominent item in the list meets this criterion.
+
+  1. Source Code.
+
+  The "source code" for a work means the preferred form of the work
+for making modifications to it.  "Object code" means any non-source
+form of a work.
+
+  A "Standard Interface" means an interface that either is an official
+standard defined by a recognized standards body, or, in the case of
+interfaces specified for a particular programming language, one that
+is widely used among developers working in that language.
+
+  The "System Libraries" of an executable work include anything, other
+than the work as a whole, that (a) is included in the normal form of
+packaging a Major Component, but which is not part of that Major
+Component, and (b) serves only to enable use of the work with that
+Major Component, or to implement a Standard Interface for which an
+implementation is available to the public in source code form.  A
+"Major Component", in this context, means a major essential component
+(kernel, window system, and so on) of the specific operating system
+(if any) on which the executable work runs, or a compiler used to
+produce the work, or an object code interpreter used to run it.
+
+  The "Corresponding Source" for a work in object code form means all
+the source code needed to generate, install, and (for an executable
+work) run the object code and to modify the work, including scripts to
+control those activities.  However, it does not include the work's
+System Libraries, or general-purpose tools or generally available free
+programs which are used unmodified in performing those activities but
+which are not part of the work.  For example, Corresponding Source
+includes interface definition files associated with source files for
+the work, and the source code for shared libraries and dynamically
+linked subprograms that the work is specifically designed to require,
+such as by intimate data communication or control flow between those
+subprograms and other parts of the work.
+
+  The Corresponding Source need not include anything that users
+can regenerate automatically from other parts of the Corresponding
+Source.
+
+  The Corresponding Source for a work in source code form is that
+same work.
+
+  2. Basic Permissions.
+
+  All rights granted under this License are granted for the term of
+copyright on the Program, and are irrevocable provided the stated
+conditions are met.  This License explicitly affirms your unlimited
+permission to run the unmodified Program.  The output from running a
+covered work is covered by this License only if the output, given its
+content, constitutes a covered work.  This License acknowledges your
+rights of fair use or other equivalent, as provided by copyright law.
+
+  You may make, run and propagate covered works that you do not
+convey, without conditions so long as your license otherwise remains
+in force.  You may convey covered works to others for the sole purpose
+of having them make modifications exclusively for you, or provide you
+with facilities for running those works, provided that you comply with
+the terms of this License in conveying all material for which you do
+not control copyright.  Those thus making or running the covered works
+for you must do so exclusively on your behalf, under your direction
+and control, on terms that prohibit them from making any copies of
+your copyrighted material outside their relationship with you.
+
+  Conveying under any other circumstances is permitted solely under
+the conditions stated below.  Sublicensing is not allowed; section 10
+makes it unnecessary.
+
+  3. Protecting Users' Legal Rights From Anti-Circumvention Law.
+
+  No covered work shall be deemed part of an effective technological
+measure under any applicable law fulfilling obligations under article
+11 of the WIPO copyright treaty adopted on 20 December 1996, or
+similar laws prohibiting or restricting circumvention of such
+measures.
+
+  When you convey a covered work, you waive any legal power to forbid
+circumvention of technological measures to the extent such circumvention
+is effected by exercising rights under this License with respect to
+the covered work, and you disclaim any intention to limit operation or
+modification of the work as a means of enforcing, against the work's
+users, your or third parties' legal rights to forbid circumvention of
+technological measures.
+
+  4. Conveying Verbatim Copies.
+
+  You may convey verbatim copies of the Program's source code as you
+receive it, in any medium, provided that you conspicuously and
+appropriately publish on each copy an appropriate copyright notice;
+keep intact all notices stating that this License and any
+non-permissive terms added in accord with section 7 apply to the code;
+keep intact all notices of the absence of any warranty; and give all
+recipients a copy of this License along with the Program.
+
+  You may charge any price or no price for each copy that you convey,
+and you may offer support or warranty protection for a fee.
+
+  5. Conveying Modified Source Versions.
+
+  You may convey a work based on the Program, or the modifications to
+produce it from the Program, in the form of source code under the
+terms of section 4, provided that you also meet all of these conditions:
+
+    a) The work must carry prominent notices stating that you modified
+    it, and giving a relevant date.
+
+    b) The work must carry prominent notices stating that it is
+    released under this License and any conditions added under section
+    7.  This requirement modifies the requirement in section 4 to
+    "keep intact all notices".
+
+    c) You must license the entire work, as a whole, under this
+    License to anyone who comes into possession of a copy.  This
+    License will therefore apply, along with any applicable section 7
+    additional terms, to the whole of the work, and all its parts,
+    regardless of how they are packaged.  This License gives no
+    permission to license the work in any other way, but it does not
+    invalidate such permission if you have separately received it.
+
+    d) If the work has interactive user interfaces, each must display
+    Appropriate Legal Notices; however, if the Program has interactive
+    interfaces that do not display Appropriate Legal Notices, your
+    work need not make them do so.
+
+  A compilation of a covered work with other separate and independent
+works, which are not by their nature extensions of the covered work,
+and which are not combined with it such as to form a larger program,
+in or on a volume of a storage or distribution medium, is called an
+"aggregate" if the compilation and its resulting copyright are not
+used to limit the access or legal rights of the compilation's users
+beyond what the individual works permit.  Inclusion of a covered work
+in an aggregate does not cause this License to apply to the other
+parts of the aggregate.
+
+  6. Conveying Non-Source Forms.
+
+  You may convey a covered work in object code form under the terms
+of sections 4 and 5, provided that you also convey the
+machine-readable Corresponding Source under the terms of this License,
+in one of these ways:
+
+    a) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by the
+    Corresponding Source fixed on a durable physical medium
+    customarily used for software interchange.
+
+    b) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by a
+    written offer, valid for at least three years and valid for as
+    long as you offer spare parts or customer support for that product
+    model, to give anyone who possesses the object code either (1) a
+    copy of the Corresponding Source for all the software in the
+    product that is covered by this License, on a durable physical
+    medium customarily used for software interchange, for a price no
+    more than your reasonable cost of physically performing this
+    conveying of source, or (2) access to copy the
+    Corresponding Source from a network server at no charge.
+
+    c) Convey individual copies of the object code with a copy of the
+    written offer to provide the Corresponding Source.  This
+    alternative is allowed only occasionally and noncommercially, and
+    only if you received the object code with such an offer, in accord
+    with subsection 6b.
+
+    d) Convey the object code by offering access from a designated
+    place (gratis or for a charge), and offer equivalent access to the
+    Corresponding Source in the same way through the same place at no
+    further charge.  You need not require recipients to copy the
+    Corresponding Source along with the object code.  If the place to
+    copy the object code is a network server, the Corresponding Source
+    may be on a different server (operated by you or a third party)
+    that supports equivalent copying facilities, provided you maintain
+    clear directions next to the object code saying where to find the
+    Corresponding Source.  Regardless of what server hosts the
+    Corresponding Source, you remain obligated to ensure that it is
+    available for as long as needed to satisfy these requirements.
+
+    e) Convey the object code using peer-to-peer transmission, provided
+    you inform other peers where the object code and Corresponding
+    Source of the work are being offered to the general public at no
+    charge under subsection 6d.
+
+  A separable portion of the object code, whose source code is excluded
+from the Corresponding Source as a System Library, need not be
+included in conveying the object code work.
+
+  A "User Product" is either (1) a "consumer product", which means any
+tangible personal property which is normally used for personal, family,
+or household purposes, or (2) anything designed or sold for incorporation
+into a dwelling.  In determining whether a product is a consumer product,
+doubtful cases shall be resolved in favor of coverage.  For a particular
+product received by a particular user, "normally used" refers to a
+typical or common use of that class of product, regardless of the status
+of the particular user or of the way in which the particular user
+actually uses, or expects or is expected to use, the product.  A product
+is a consumer product regardless of whether the product has substantial
+commercial, industrial or non-consumer uses, unless such uses represent
+the only significant mode of use of the product.
+
+  "Installation Information" for a User Product means any methods,
+procedures, authorization keys, or other information required to install
+and execute modified versions of a covered work in that User Product from
+a modified version of its Corresponding Source.  The information must
+suffice to ensure that the continued functioning of the modified object
+code is in no case prevented or interfered with solely because
+modification has been made.
+
+  If you convey an object code work under this section in, or with, or
+specifically for use in, a User Product, and the conveying occurs as
+part of a transaction in which the right of possession and use of the
+User Product is transferred to the recipient in perpetuity or for a
+fixed term (regardless of how the transaction is characterized), the
+Corresponding Source conveyed under this section must be accompanied
+by the Installation Information.  But this requirement does not apply
+if neither you nor any third party retains the ability to install
+modified object code on the User Product (for example, the work has
+been installed in ROM).
+
+  The requirement to provide Installation Information does not include a
+requirement to continue to provide support service, warranty, or updates
+for a work that has been modified or installed by the recipient, or for
+the User Product in which it has been modified or installed.  Access to a
+network may be denied when the modification itself materially and
+adversely affects the operation of the network or violates the rules and
+protocols for communication across the network.
+
+  Corresponding Source conveyed, and Installation Information provided,
+in accord with this section must be in a format that is publicly
+documented (and with an implementation available to the public in
+source code form), and must require no special password or key for
+unpacking, reading or copying.
+
+  7. Additional Terms.
+
+  "Additional permissions" are terms that supplement the terms of this
+License by making exceptions from one or more of its conditions.
+Additional permissions that are applicable to the entire Program shall
+be treated as though they were included in this License, to the extent
+that they are valid under applicable law.  If additional permissions
+apply only to part of the Program, that part may be used separately
+under those permissions, but the entire Program remains governed by
+this License without regard to the additional permissions.
+
+  When you convey a copy of a covered work, you may at your option
+remove any additional permissions from that copy, or from any part of
+it.  (Additional permissions may be written to require their own
+removal in certain cases when you modify the work.)  You may place
+additional permissions on material, added by you to a covered work,
+for which you have or can give appropriate copyright permission.
+
+  Notwithstanding any other provision of this License, for material you
+add to a covered work, you may (if authorized by the copyright holders of
+that material) supplement the terms of this License with terms:
+
+    a) Disclaiming warranty or limiting liability differently from the
+    terms of sections 15 and 16 of this License; or
+
+    b) Requiring preservation of specified reasonable legal notices or
+    author attributions in that material or in the Appropriate Legal
+    Notices displayed by works containing it; or
+
+    c) Prohibiting misrepresentation of the origin of that material, or
+    requiring that modified versions of such material be marked in
+    reasonable ways as different from the original version; or
+
+    d) Limiting the use for publicity purposes of names of licensors or
+    authors of the material; or
+
+    e) Declining to grant rights under trademark law for use of some
+    trade names, trademarks, or service marks; or
+
+    f) Requiring indemnification of licensors and authors of that
+    material by anyone who conveys the material (or modified versions of
+    it) with contractual assumptions of liability to the recipient, for
+    any liability that these contractual assumptions directly impose on
+    those licensors and authors.
+
+  All other non-permissive additional terms are considered "further
+restrictions" within the meaning of section 10.  If the Program as you
+received it, or any part of it, contains a notice stating that it is
+governed by this License along with a term that is a further
+restriction, you may remove that term.  If a license document contains
+a further restriction but permits relicensing or conveying under this
+License, you may add to a covered work material governed by the terms
+of that license document, provided that the further restriction does
+not survive such relicensing or conveying.
+
+  If you add terms to a covered work in accord with this section, you
+must place, in the relevant source files, a statement of the
+additional terms that apply to those files, or a notice indicating
+where to find the applicable terms.
+
+  Additional terms, permissive or non-permissive, may be stated in the
+form of a separately written license, or stated as exceptions;
+the above requirements apply either way.
+
+  8. Termination.
+
+  You may not propagate or modify a covered work except as expressly
+provided under this License.  Any attempt otherwise to propagate or
+modify it is void, and will automatically terminate your rights under
+this License (including any patent licenses granted under the third
+paragraph of section 11).
+
+  However, if you cease all violation of this License, then your
+license from a particular copyright holder is reinstated (a)
+provisionally, unless and until the copyright holder explicitly and
+finally terminates your license, and (b) permanently, if the copyright
+holder fails to notify you of the violation by some reasonable means
+prior to 60 days after the cessation.
+
+  Moreover, your license from a particular copyright holder is
+reinstated permanently if the copyright holder notifies you of the
+violation by some reasonable means, this is the first time you have
+received notice of violation of this License (for any work) from that
+copyright holder, and you cure the violation prior to 30 days after
+your receipt of the notice.
+
+  Termination of your rights under this section does not terminate the
+licenses of parties who have received copies or rights from you under
+this License.  If your rights have been terminated and not permanently
+reinstated, you do not qualify to receive new licenses for the same
+material under section 10.
+
+  9. Acceptance Not Required for Having Copies.
+
+  You are not required to accept this License in order to receive or
+run a copy of the Program.  Ancillary propagation of a covered work
+occurring solely as a consequence of using peer-to-peer transmission
+to receive a copy likewise does not require acceptance.  However,
+nothing other than this License grants you permission to propagate or
+modify any covered work.  These actions infringe copyright if you do
+not accept this License.  Therefore, by modifying or propagating a
+covered work, you indicate your acceptance of this License to do so.
+
+  10. Automatic Licensing of Downstream Recipients.
+
+  Each time you convey a covered work, the recipient automatically
+receives a license from the original licensors, to run, modify and
+propagate that work, subject to this License.  You are not responsible
+for enforcing compliance by third parties with this License.
+
+  An "entity transaction" is a transaction transferring control of an
+organization, or substantially all assets of one, or subdividing an
+organization, or merging organizations.  If propagation of a covered
+work results from an entity transaction, each party to that
+transaction who receives a copy of the work also receives whatever
+licenses to the work the party's predecessor in interest had or could
+give under the previous paragraph, plus a right to possession of the
+Corresponding Source of the work from the predecessor in interest, if
+the predecessor has it or can get it with reasonable efforts.
+
+  You may not impose any further restrictions on the exercise of the
+rights granted or affirmed under this License.  For example, you may
+not impose a license fee, royalty, or other charge for exercise of
+rights granted under this License, and you may not initiate litigation
+(including a cross-claim or counterclaim in a lawsuit) alleging that
+any patent claim is infringed by making, using, selling, offering for
+sale, or importing the Program or any portion of it.
+
+  11. Patents.
+
+  A "contributor" is a copyright holder who authorizes use under this
+License of the Program or a work on which the Program is based.  The
+work thus licensed is called the contributor's "contributor version".
+
+  A contributor's "essential patent claims" are all patent claims
+owned or controlled by the contributor, whether already acquired or
+hereafter acquired, that would be infringed by some manner, permitted
+by this License, of making, using, or selling its contributor version,
+but do not include claims that would be infringed only as a
+consequence of further modification of the contributor version.  For
+purposes of this definition, "control" includes the right to grant
+patent sublicenses in a manner consistent with the requirements of
+this License.
+
+  Each contributor grants you a non-exclusive, worldwide, royalty-free
+patent license under the contributor's essential patent claims, to
+make, use, sell, offer for sale, import and otherwise run, modify and
+propagate the contents of its contributor version.
+
+  In the following three paragraphs, a "patent license" is any express
+agreement or commitment, however denominated, not to enforce a patent
+(such as an express permission to practice a patent or covenant not to
+sue for patent infringement).  To "grant" such a patent license to a
+party means to make such an agreement or commitment not to enforce a
+patent against the party.
+
+  If you convey a covered work, knowingly relying on a patent license,
+and the Corresponding Source of the work is not available for anyone
+to copy, free of charge and under the terms of this License, through a
+publicly available network server or other readily accessible means,
+then you must either (1) cause the Corresponding Source to be so
+available, or (2) arrange to deprive yourself of the benefit of the
+patent license for this particular work, or (3) arrange, in a manner
+consistent with the requirements of this License, to extend the patent
+license to downstream recipients.  "Knowingly relying" means you have
+actual knowledge that, but for the patent license, your conveying the
+covered work in a country, or your recipient's use of the covered work
+in a country, would infringe one or more identifiable patents in that
+country that you have reason to believe are valid.
+
+  If, pursuant to or in connection with a single transaction or
+arrangement, you convey, or propagate by procuring conveyance of, a
+covered work, and grant a patent license to some of the parties
+receiving the covered work authorizing them to use, propagate, modify
+or convey a specific copy of the covered work, then the patent license
+you grant is automatically extended to all recipients of the covered
+work and works based on it.
+
+  A patent license is "discriminatory" if it does not include within
+the scope of its coverage, prohibits the exercise of, or is
+conditioned on the non-exercise of one or more of the rights that are
+specifically granted under this License.  You may not convey a covered
+work if you are a party to an arrangement with a third party that is
+in the business of distributing software, under which you make payment
+to the third party based on the extent of your activity of conveying
+the work, and under which the third party grants, to any of the
+parties who would receive the covered work from you, a discriminatory
+patent license (a) in connection with copies of the covered work
+conveyed by you (or copies made from those copies), or (b) primarily
+for and in connection with specific products or compilations that
+contain the covered work, unless you entered into that arrangement,
+or that patent license was granted, prior to 28 March 2007.
+
+  Nothing in this License shall be construed as excluding or limiting
+any implied license or other defenses to infringement that may
+otherwise be available to you under applicable patent law.
+
+  12. No Surrender of Others' Freedom.
+
+  If conditions are imposed on you (whether by court order, agreement or
+otherwise) that contradict the conditions of this License, they do not
+excuse you from the conditions of this License.  If you cannot convey a
+covered work so as to satisfy simultaneously your obligations under this
+License and any other pertinent obligations, then as a consequence you may
+not convey it at all.  For example, if you agree to terms that obligate you
+to collect a royalty for further conveying from those to whom you convey
+the Program, the only way you could satisfy both those terms and this
+License would be to refrain entirely from conveying the Program.
+
+  13. Use with the GNU Affero General Public License.
+
+  Notwithstanding any other provision of this License, you have
+permission to link or combine any covered work with a work licensed
+under version 3 of the GNU Affero General Public License into a single
+combined work, and to convey the resulting work.  The terms of this
+License will continue to apply to the part which is the covered work,
+but the special requirements of the GNU Affero General Public License,
+section 13, concerning interaction through a network will apply to the
+combination as such.
+
+  14. Revised Versions of this License.
+
+  The Free Software Foundation may publish revised and/or new versions of
+the GNU General Public License from time to time.  Such new versions will
+be similar in spirit to the present version, but may differ in detail to
+address new problems or concerns.
+
+  Each version is given a distinguishing version number.  If the
+Program specifies that a certain numbered version of the GNU General
+Public License "or any later version" applies to it, you have the
+option of following the terms and conditions either of that numbered
+version or of any later version published by the Free Software
+Foundation.  If the Program does not specify a version number of the
+GNU General Public License, you may choose any version ever published
+by the Free Software Foundation.
+
+  If the Program specifies that a proxy can decide which future
+versions of the GNU General Public License can be used, that proxy's
+public statement of acceptance of a version permanently authorizes you
+to choose that version for the Program.
+
+  Later license versions may give you additional or different
+permissions.  However, no additional obligations are imposed on any
+author or copyright holder as a result of your choosing to follow a
+later version.
+
+  15. Disclaimer of Warranty.
+
+  THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY
+APPLICABLE LAW.  EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT
+HOLDERS AND/OR OTHER PARTIES PROVIDE THE PROGRAM "AS IS" WITHOUT WARRANTY
+OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE.  THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM
+IS WITH YOU.  SHOULD THE PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF
+ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
+
+  16. Limitation of Liability.
+
+  IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
+WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR CONVEYS
+THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY
+GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE
+USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT NOT LIMITED TO LOSS OF
+DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD
+PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER PROGRAMS),
+EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGES.
+
+  17. Interpretation of Sections 15 and 16.
+
+  If the disclaimer of warranty and limitation of liability provided
+above cannot be given local legal effect according to their terms,
+reviewing courts shall apply local law that most closely approximates
+an absolute waiver of all civil liability in connection with the
+Program, unless a warranty or assumption of liability accompanies a
+copy of the Program in return for a fee.
+
+                     END OF TERMS AND CONDITIONS
+
+            How to Apply These Terms to Your New Programs
+
+  If you develop a new program, and you want it to be of the greatest
+possible use to the public, the best way to achieve this is to make it
+free software which everyone can redistribute and change under these terms.
+
+  To do so, attach the following notices to the program.  It is safest
+to attach them to the start of each source file to most effectively
+state the exclusion of warranty; and each file should have at least
+the "copyright" line and a pointer to where the full notice is found.
+
+    
+    Copyright (C)   
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see .
+
+Also add information on how to contact you by electronic and paper mail.
+
+  If the program does terminal interaction, make it output a short
+notice like this when it starts in an interactive mode:
+
+      Copyright (C)   
+    This program comes with ABSOLUTELY NO WARRANTY; for details type `show w'.
+    This is free software, and you are welcome to redistribute it
+    under certain conditions; type `show c' for details.
+
+The hypothetical commands `show w' and `show c' should show the appropriate
+parts of the General Public License.  Of course, your program's commands
+might be different; for a GUI interface, you would use an "about box".
+
+  You should also get your employer (if you work as a programmer) or school,
+if any, to sign a "copyright disclaimer" for the program, if necessary.
+For more information on this, and how to apply and follow the GNU GPL, see
+.
+
+  The GNU General Public License does not permit incorporating your program
+into proprietary programs.  If your program is a subroutine library, you
+may consider it more useful to permit linking proprietary applications with
+the library.  If this is what you want to do, use the GNU Lesser General
+Public License instead of this License.  But first, please read
+.
+

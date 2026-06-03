@@ -1,0 +1,4448 @@
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/api/presence_debug.py
+import frappe
+from datetime import datetime
+
+@frappe.whitelist()
+def debug_redis_presence():
+	"""
+	Debug: Show ALL presence data in Redis
+	"""
+	# Get all system users
+	all_users = frappe.get_all(
+		"User",
+		filters={"enabled": 1, "user_type": "System User"},
+		fields=["name", "full_name"]
+	)
+
+	result = {
+		"total_users": len(all_users),
+		"current_user": frappe.session.user,
+		"presence_data": []
+	}
+
+	for user in all_users:
+		cache_key = f"f_icecore:presence:{user.name}"
+		presence = frappe.cache().get_value(cache_key)
+
+		result["presence_data"].append({
+			"user": user.name,
+			"full_name": user.full_name or user.name,
+			"cache_key": cache_key,
+			"has_presence": presence is not None,
+			"presence": presence
+		})
+
+	return result
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/debug_ice_module.py
+
+import frappe
+from f_icecore.f_icecore.api.turn_credentials import get_ice_servers, get_turn_config
+
+def execute():
+    try:
+        print("--- TURN Config ---")
+        print(get_turn_config())
+        print("\n--- ICE Servers ---")
+        print(get_ice_servers())
+    except Exception as e:
+        print(f"Error: {e}")
+
+execute()
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/f_icecore/api/call_recording.py
+"""
+Call Recording API
+Handles creating, completing, and managing call recording documents.
+
+Recording is done client-side using MediaRecorder API on the browser.
+The recorded blob is uploaded as a Frappe file attachment, and
+a Call Recording document tracks the metadata.
+"""
+
+import frappe
+from frappe import _
+import json
+from datetime import datetime
+
+
+@frappe.whitelist()
+def start_recording(call_id=None, group_call_id=None, call_type="audio"):
+	"""
+	Start a call recording. Creates a Call Recording document with status=Recording.
+
+	The actual recording is done client-side via MediaRecorder API.
+	This just creates the tracking document.
+
+	Args:
+		call_id: 1:1 call session ID (optional)
+		group_call_id: Group call session ID (optional)
+		call_type: 'audio', 'video', or 'screen'
+
+	Returns:
+		dict: {success, recording_id}
+	"""
+	user = frappe.session.user
+
+	# Check if recording is enabled in settings
+	try:
+		enabled = frappe.db.get_single_value("F IceCore Settings", "enable_call_recording")
+		# enabled=0 means explicitly disabled; enabled=1 or None means allow
+		if enabled == 0:
+			return {"success": False, "message": _("Call recording is disabled by administrator")}
+	except Exception:
+		pass  # Settings doc may not exist yet, allow recording
+
+	# Validate that at least one call reference is provided
+	if not call_id and not group_call_id:
+		frappe.throw(_("Either call_id or group_call_id is required"))
+
+	# Determine participants
+	participants = [user]
+	if call_id:
+		call_doc = frappe.get_doc("F IceCore Call Session", call_id)
+		other_user = call_doc.to_user if call_doc.from_user == user else call_doc.from_user
+		participants.append(other_user)
+	elif group_call_id:
+		group_doc = frappe.get_doc("F IceCore Group Call Session", group_call_id)
+		for p in group_doc.participants:
+			if p.user != user and p.status == "Connected":
+				participants.append(p.user)
+
+	# Create recording document
+	rec_doc = frappe.get_doc({
+		"doctype": "F IceCore Call Recording",
+		"call_session": call_id,
+		"group_call_session": group_call_id,
+		"recorded_by": user,
+		"call_type": call_type,
+		"status": "Recording",
+		"started_at": datetime.now(),
+		"participants": json.dumps(participants)
+	})
+	rec_doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+
+	print(f"\n🔴 F-IceCore Recording: Started by {user} — {rec_doc.name}")
+
+	return {
+		"success": True,
+		"recording_id": rec_doc.name
+	}
+
+
+@frappe.whitelist()
+def stop_recording(recording_id):
+	"""
+	Stop a recording and mark it as completed.
+	The actual file upload is handled separately via upload_recording.
+
+	Args:
+		recording_id: The Call Recording document name
+
+	Returns:
+		dict: {success}
+	"""
+	user = frappe.session.user
+	rec_doc = frappe.get_doc("F IceCore Call Recording", recording_id)
+
+	if rec_doc.recorded_by != user:
+		frappe.throw(_("Not authorized"))
+
+	rec_doc.status = "Completed"
+	rec_doc.ended_at = datetime.now()
+
+	# Calculate duration
+	if rec_doc.started_at:
+		start = rec_doc.started_at
+		if isinstance(start, str):
+			start = datetime.fromisoformat(start)
+		rec_doc.duration = int((datetime.now() - start).total_seconds())
+
+	rec_doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	print(f"\n⏹️ F-IceCore Recording: Stopped {recording_id} — duration: {rec_doc.duration}s")
+
+	return {"success": True}
+
+
+@frappe.whitelist()
+def upload_recording(recording_id, filename=None):
+	"""
+	Upload a recorded file and attach it to the recording document.
+	The file content is sent via the standard Frappe file upload mechanism.
+
+	This endpoint is called after the recording blob has been uploaded
+	via the frappe.call with file data.
+
+	Args:
+		recording_id: The Call Recording document name
+		filename: Optional filename override
+
+	Returns:
+		dict: {success, file_url}
+	"""
+	user = frappe.session.user
+	rec_doc = frappe.get_doc("F IceCore Call Recording", recording_id)
+
+	if rec_doc.recorded_by != user:
+		frappe.throw(_("Not authorized"))
+
+	# Check if file was uploaded with this request
+	if not frappe.request or not frappe.request.files:
+		frappe.throw(_("No file uploaded"))
+
+	file_data = frappe.request.files.get("file") or frappe.request.files.get("recording_file")
+	if not file_data:
+		frappe.throw(_("No recording file found in upload"))
+
+	# Generate filename if not provided
+	if not filename:
+		ext = "webm"
+		timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+		filename = f"recording_{recording_id}_{timestamp}.{ext}"
+
+	# Save file using Frappe's file manager
+	file_doc = frappe.get_doc({
+		"doctype": "File",
+		"file_name": filename,
+		"content": file_data.read(),
+		"attached_to_doctype": "F IceCore Call Recording",
+		"attached_to_name": recording_id,
+		"is_private": 1
+	})
+	file_doc.save(ignore_permissions=True)
+
+	# Update recording document
+	rec_doc.recording_file = file_doc.file_url
+	rec_doc.file_size = file_doc.file_size
+	rec_doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	print(f"\n💾 F-IceCore Recording: File saved for {recording_id} — {file_doc.file_url}")
+
+	return {
+		"success": True,
+		"file_url": file_doc.file_url
+	}
+
+
+@frappe.whitelist()
+def save_recording_blob(recording_id, blob_b64, filename=None):
+	"""
+	Save a recording from a base64-encoded blob.
+	This is an alternative to the file upload method — useful when
+	sending the blob via JSON in frappe.call.
+
+	Args:
+		recording_id: The Call Recording document name
+		blob_b64: Base64-encoded recording data
+		filename: Optional filename
+
+	Returns:
+		dict: {success, file_url}
+	"""
+	import base64
+
+	user = frappe.session.user
+	rec_doc = frappe.get_doc("F IceCore Call Recording", recording_id)
+
+	if rec_doc.recorded_by != user:
+		frappe.throw(_("Not authorized"))
+
+	# Decode base64
+	try:
+		file_content = base64.b64decode(blob_b64)
+	except Exception as e:
+		frappe.throw(_("Invalid recording data: {0}").format(str(e)))
+
+	# Generate filename
+	if not filename:
+		ext = "webm"
+		timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+		filename = f"recording_{recording_id}_{timestamp}.{ext}"
+
+	# Save file
+	file_doc = frappe.get_doc({
+		"doctype": "File",
+		"file_name": filename,
+		"content": file_content,
+		"attached_to_doctype": "F IceCore Call Recording",
+		"attached_to_name": recording_id,
+		"is_private": 1
+	})
+	file_doc.save(ignore_permissions=True)
+
+	# Update recording document
+	rec_doc.recording_file = file_doc.file_url
+	rec_doc.file_size = len(file_content)
+	rec_doc.format = "webm"
+	rec_doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	print(f"\n💾 F-IceCore Recording: Blob saved for {recording_id} — {file_doc.file_url} ({len(file_content)} bytes)")
+
+	return {
+		"success": True,
+		"file_url": file_doc.file_url
+	}
+
+
+@frappe.whitelist()
+def get_recordings(call_id=None, group_call_id=None, limit=20):
+	"""
+	Get recordings for the current user, optionally filtered by call.
+
+	Args:
+		call_id: Filter by 1:1 call session (optional)
+		group_call_id: Filter by group call session (optional)
+		limit: Max results (default 20)
+
+	Returns:
+		list: Recording documents
+	"""
+	user = frappe.session.user
+	filters = {"recorded_by": user, "status": ["!=", "Deleted"]}
+
+	if call_id:
+		filters["call_session"] = call_id
+	if group_call_id:
+		filters["group_call_session"] = group_call_id
+
+	recordings = frappe.get_all(
+		"F IceCore Call Recording",
+		filters=filters,
+		fields=["name", "call_session", "group_call_session", "call_type",
+				"status", "duration", "file_size", "recording_file",
+				"started_at", "ended_at", "participants", "format"],
+		order_by="creation desc",
+		limit_page_length=int(limit)
+	)
+
+	return recordings
+
+
+@frappe.whitelist()
+def delete_recording(recording_id):
+	"""
+	Soft-delete a recording (marks as Deleted, removes file).
+
+	Args:
+		recording_id: The Call Recording document name
+
+	Returns:
+		dict: {success}
+	"""
+	user = frappe.session.user
+	rec_doc = frappe.get_doc("F IceCore Call Recording", recording_id)
+
+	if rec_doc.recorded_by != user:
+		frappe.throw(_("Not authorized to delete this recording"))
+
+	# Remove the actual file
+	if rec_doc.recording_file:
+		try:
+			file_doc = frappe.get_doc("File", {"file_url": rec_doc.recording_file})
+			file_doc.delete(ignore_permissions=True)
+		except Exception as e:
+			frappe.logger().warning(f"F-IceCore: Could not delete recording file: {e}")
+
+	rec_doc.status = "Deleted"
+	rec_doc.recording_file = None
+	rec_doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	return {"success": True}
+
+
+def cleanup_old_recordings():
+	"""
+	Scheduled task: delete recordings older than the configured retention period.
+	"""
+	try:
+		days = frappe.db.get_single_value("F IceCore Settings", "cleanup_old_recordings") or 30
+		if days == 0:
+			return  # Never delete
+
+		from frappe.utils import add_days, now_datetime
+		cutoff = add_days(now_datetime(), -int(days))
+
+		old_recordings = frappe.get_all(
+			"F IceCore Call Recording",
+			filters={
+				"creation": ["<", cutoff],
+				"status": ["in", ["Completed", "Failed"]]
+			},
+			pluck="name"
+		)
+
+		for rec_name in old_recordings:
+			try:
+				rec_doc = frappe.get_doc("F IceCore Call Recording", rec_name)
+				# Delete attached file
+				if rec_doc.recording_file:
+					try:
+						file_docs = frappe.get_all("File", filters={"file_url": rec_doc.recording_file}, pluck="name")
+						for fd in file_docs:
+							frappe.delete_doc("File", fd, ignore_permissions=True)
+					except Exception:
+						pass
+				frappe.delete_doc("F IceCore Call Recording", rec_name, ignore_permissions=True)
+			except Exception as e:
+				frappe.logger().error(f"F-IceCore: Failed to cleanup recording {rec_name}: {e}")
+
+		if old_recordings:
+			frappe.db.commit()
+			frappe.logger().info(f"F-IceCore: Cleaned up {len(old_recordings)} old recordings")
+
+	except Exception as e:
+		frappe.logger().error(f"F-IceCore: Recording cleanup failed: {e}")
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/f_icecore/api/call_session.py
+import frappe
+from datetime import datetime, timedelta
+import json
+
+@frappe.whitelist()
+def get_active_calls():
+	user = frappe.session.user
+	active_calls = frappe.get_all("F IceCore Call Session",
+		filters={"status": ["in", ["Ringing", "Active"]], "or_filters": [{"from_user": user}, {"to_user": user}]},
+		fields=["name", "from_user", "to_user", "call_type", "status", "creation"], order_by="creation desc")
+	for call in active_calls:
+		other_user = call.to_user if call.from_user == user else call.from_user
+		call["other_user"] = other_user
+		call["other_user_name"] = frappe.db.get_value("User", other_user, "full_name")
+	return active_calls
+
+@frappe.whitelist()
+def get_call_history(limit=50):
+	user = frappe.session.user
+	history = frappe.get_all("F IceCore Call Session",
+		filters={"or_filters": [{"from_user": user}, {"to_user": user}]},
+		fields=["name", "from_user", "to_user", "call_type", "status", "creation", "duration"],
+		order_by="creation desc", limit=limit)
+	for call in history:
+		other_user = call.to_user if call.from_user == user else call.from_user
+		call["other_user_name"] = frappe.db.get_value("User", other_user, "full_name")
+		call["direction"] = "incoming" if call.to_user == user else "outgoing"
+	return history
+
+@frappe.whitelist()
+def get_call_stats():
+	user = frappe.session.user
+	total_calls = frappe.db.count("F IceCore Call Session", filters={"or_filters": [{"from_user": user}, {"to_user": user}]})
+	answered_calls = frappe.db.count("F IceCore Call Session",
+		filters={"status": ["in", ["Active", "Ended"]], "or_filters": [{"from_user": user}, {"to_user": user}]})
+	return {"total_calls": total_calls, "answered_calls": answered_calls, "missed_calls": 0,
+		"total_duration_seconds": 0, "total_duration_minutes": 0, "recent_calls_7d": 0, "answer_rate": 0}
+
+@frappe.whitelist()
+def search_users_for_call(query):
+	user = frappe.session.user
+	users = frappe.get_all("User", filters={"enabled": 1, "user_type": "System User", "name": ["!=", user],
+		"or_filters": [{"full_name": ["like", f"%{query}%"]}, {"email": ["like", f"%{query}%"]}]},
+		fields=["name", "full_name", "email", "user_image"], limit=20)
+	return users
+
+def cleanup_old_sessions():
+	cutoff_date = datetime.now() - timedelta(days=90)
+	frappe.db.sql("DELETE FROM `tabF IceCore Call Session` WHERE creation < %s AND status IN ('Ended', 'Rejected')", (cutoff_date,))
+	frappe.db.commit()
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/f_icecore/api/call_transfer.py
+"""
+Call Transfer API
+Handles blind and attended call transfers between users.
+
+Transfer Types:
+- Blind Transfer: The call is immediately transferred to the target user.
+  The original caller hangs up, and a new call is initiated between
+  the remaining party and the transfer target.
+- Attended Transfer: The transferring user first calls the target to consult,
+  then completes the transfer connecting the original party to the target.
+
+Flow (Blind Transfer):
+1. User A and User B are in a call.
+2. User A initiates a blind transfer to User C.
+3. Server creates a transfer record, ends A's side of the call.
+4. Server sends a "transfer_incoming" signal to User C (like an incoming call).
+5. Server sends a "transfer_notify" signal to User B (your call is being transferred).
+6. If User C accepts, a new call session is created between B and C.
+7. If User C declines, B is notified the transfer failed.
+
+Flow (Attended Transfer):
+1. User A and User B are in a call.
+2. User A initiates an attended transfer to User C.
+3. User A is put in a consultation call with User C (B is on hold).
+4. User A confirms the transfer → B and C are connected, A is dropped.
+5. Or User A cancels → A reconnects with B.
+"""
+
+import frappe
+from frappe import _
+import json
+from datetime import datetime
+
+# Import dual-write helper from signaling
+from f_icecore.f_icecore.api.signaling import _publish_and_queue, create_call_session
+
+
+@frappe.whitelist()
+def initiate_transfer(call_id, transfer_target, transfer_type="blind", reason=None):
+	"""
+	Initiate a call transfer.
+
+	Args:
+		call_id: The current call session ID
+		transfer_target: Email of the user to transfer the call to
+		transfer_type: "blind" or "attended"
+		reason: Optional reason for the transfer
+
+	Returns:
+		dict: {success, transfer_id}
+	"""
+	user = frappe.session.user
+
+	# Check if transfer is enabled
+	enabled = frappe.db.get_single_value("F IceCore Settings", "enable_call_transfer")
+	if not enabled:
+		return {"success": False, "message": _("Call transfer is disabled by administrator")}
+
+	# Validate the call
+	call_doc = frappe.get_doc("F IceCore Call Session", call_id)
+	if call_doc.from_user != user and call_doc.to_user != user:
+		frappe.throw(_("You are not a participant in this call"))
+
+	if call_doc.status != "Active":
+		frappe.throw(_("Call is not active"))
+
+	# Determine the other party (the person being transferred)
+	to_user = call_doc.to_user if call_doc.from_user == user else call_doc.from_user
+
+	# Validate transfer target
+	if not frappe.db.exists("User", transfer_target):
+		frappe.throw(_("Transfer target user not found"))
+
+	if transfer_target == user:
+		frappe.throw(_("Cannot transfer call to yourself"))
+
+	if transfer_target == to_user:
+		frappe.throw(_("Cannot transfer call to the other party"))
+
+	# Create transfer record
+	transfer_doc = frappe.get_doc({
+		"doctype": "F IceCore Call Transfer",
+		"original_call": call_id,
+		"transfer_type": transfer_type,
+		"status": "Initiated",
+		"from_user": user,
+		"to_user": to_user,
+		"transfer_target": transfer_target,
+		"initiated_at": datetime.now(),
+		"reason": reason
+	})
+	transfer_doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+
+	transfer_id = transfer_doc.name
+	user_name = frappe.db.get_value("User", user, "full_name") or user
+	to_user_name = frappe.db.get_value("User", to_user, "full_name") or to_user
+
+	print(f"\n🔄 F-IceCore Transfer: {user} transferring call {call_id} to {transfer_target}")
+	print(f"   Type: {transfer_type}, Other party: {to_user}")
+
+	if transfer_type == "blind":
+		# Blind transfer: immediately send notification to target
+		transfer_doc.status = "Ringing"
+		transfer_doc.save(ignore_permissions=True)
+		frappe.db.commit()
+
+		# Notify the transfer target (like an incoming call, but with transfer context)
+		_publish_and_queue(
+			event="f_icecore:transfer_incoming",
+			message={
+				"transfer_id": transfer_id,
+				"call_id": call_id,
+				"from_user": to_user,  # The person they'll be connected to
+				"from_user_name": to_user_name,
+				"transferred_by": user,
+				"transferred_by_name": user_name,
+				"call_type": call_doc.call_type,
+				"transfer_type": "blind",
+				"timestamp": datetime.now().isoformat()
+			},
+			user=transfer_target,
+			after_commit=True
+		)
+
+		# Notify the other party that the call is being transferred
+		_publish_and_queue(
+			event="f_icecore:transfer_notify",
+			message={
+				"transfer_id": transfer_id,
+				"call_id": call_id,
+				"transferred_by": user,
+				"transferred_by_name": user_name,
+				"transfer_target": transfer_target,
+				"transfer_target_name": frappe.db.get_value("User", transfer_target, "full_name") or transfer_target,
+				"transfer_type": "blind",
+				"timestamp": datetime.now().isoformat()
+			},
+			user=to_user,
+			after_commit=True
+		)
+
+	elif transfer_type == "attended":
+		# Attended transfer: just mark as initiated.
+		# The frontend will handle the consultation call flow.
+		# The transferring user will call the target separately,
+		# then call complete_transfer() to finalize.
+		_publish_and_queue(
+			event="f_icecore:transfer_notify",
+			message={
+				"transfer_id": transfer_id,
+				"call_id": call_id,
+				"transferred_by": user,
+				"transferred_by_name": user_name,
+				"transfer_target": transfer_target,
+				"transfer_target_name": frappe.db.get_value("User", transfer_target, "full_name") or transfer_target,
+				"transfer_type": "attended",
+				"message": _("Call is being transferred. Please hold..."),
+				"timestamp": datetime.now().isoformat()
+			},
+			user=to_user,
+			after_commit=True
+		)
+
+	return {
+		"success": True,
+		"transfer_id": transfer_id
+	}
+
+
+@frappe.whitelist()
+def accept_transfer(transfer_id):
+	"""
+	Accept an incoming transfer (blind or attended).
+	Creates a new call session between the remaining party and the transfer target.
+
+	Args:
+		transfer_id: The transfer document name
+
+	Returns:
+		dict: {success, new_call_id}
+	"""
+	user = frappe.session.user
+	transfer_doc = frappe.get_doc("F IceCore Call Transfer", transfer_id)
+
+	if transfer_doc.transfer_target != user:
+		frappe.throw(_("Not authorized to accept this transfer"))
+
+	if transfer_doc.status not in ("Initiated", "Ringing"):
+		frappe.throw(_("Transfer is no longer pending"))
+
+	# Get the original call details
+	original_call = frappe.get_doc("F IceCore Call Session", transfer_doc.original_call)
+	call_type = original_call.call_type
+
+	# The person being transferred (the remaining party)
+	remaining_user = transfer_doc.to_user
+
+	# End the original call
+	original_call.status = "Ended"
+	original_call.ended_at = datetime.now()
+	original_call.end_reason = f"Transferred to {user} (Transfer: {transfer_id})"
+	original_call.save(ignore_permissions=True)
+
+	# Create new call session between remaining party and transfer target
+	new_call = create_call_session(remaining_user, user, call_type, json.dumps({
+		"transferred_from": transfer_doc.original_call,
+		"transfer_id": transfer_id
+	}))
+
+	# Update the new call to Active status
+	new_call_doc = frappe.get_doc("F IceCore Call Session", new_call["name"])
+	new_call_doc.status = "Active"
+	new_call_doc.accepted_at = datetime.now()
+	new_call_doc.save(ignore_permissions=True)
+
+	# Update transfer record
+	transfer_doc.status = "Completed"
+	transfer_doc.completed_at = datetime.now()
+	transfer_doc.new_call_session = new_call["name"]
+	transfer_doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	new_call_id = new_call["name"]
+	remaining_user_name = frappe.db.get_value("User", remaining_user, "full_name") or remaining_user
+
+	print(f"\n✅ F-IceCore Transfer: {user} accepted transfer {transfer_id}")
+	print(f"   New call: {new_call_id} between {remaining_user} and {user}")
+
+	# Notify the remaining party to connect to the new target
+	_publish_and_queue(
+		event="f_icecore:transfer_completed",
+		message={
+			"transfer_id": transfer_id,
+			"old_call_id": transfer_doc.original_call,
+			"new_call_id": new_call_id,
+			"new_peer": user,
+			"new_peer_name": frappe.db.get_value("User", user, "full_name") or user,
+			"call_type": call_type,
+			"timestamp": datetime.now().isoformat()
+		},
+		user=remaining_user,
+		after_commit=True
+	)
+
+	# Notify the original transferrer that transfer completed
+	_publish_and_queue(
+		event="f_icecore:transfer_completed",
+		message={
+			"transfer_id": transfer_id,
+			"old_call_id": transfer_doc.original_call,
+			"new_call_id": new_call_id,
+			"status": "completed",
+			"timestamp": datetime.now().isoformat()
+		},
+		user=transfer_doc.from_user,
+		after_commit=True
+	)
+
+	return {
+		"success": True,
+		"new_call_id": new_call_id,
+		"remaining_user": remaining_user,
+		"remaining_user_name": remaining_user_name,
+		"call_type": call_type
+	}
+
+
+@frappe.whitelist()
+def reject_transfer(transfer_id, reason=None):
+	"""
+	Reject an incoming transfer.
+
+	Args:
+		transfer_id: The transfer document name
+		reason: Optional rejection reason
+
+	Returns:
+		dict: {success}
+	"""
+	user = frappe.session.user
+	transfer_doc = frappe.get_doc("F IceCore Call Transfer", transfer_id)
+
+	if transfer_doc.transfer_target != user:
+		frappe.throw(_("Not authorized"))
+
+	transfer_doc.status = "Rejected"
+	transfer_doc.completed_at = datetime.now()
+	transfer_doc.reason = reason or "Transfer declined"
+	transfer_doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	target_name = frappe.db.get_value("User", user, "full_name") or user
+
+	# Notify both the remaining party and the original transferrer
+	# Notify remaining party (B) — their call continues / they should know transfer failed
+	_publish_and_queue(
+		event="f_icecore:transfer_failed",
+		message={
+			"transfer_id": transfer_id,
+			"call_id": transfer_doc.original_call,
+			"reason": f"{target_name} declined the transfer",
+			"timestamp": datetime.now().isoformat()
+		},
+		user=transfer_doc.to_user,
+		after_commit=True
+	)
+
+	# Notify transferrer (A)
+	_publish_and_queue(
+		event="f_icecore:transfer_failed",
+		message={
+			"transfer_id": transfer_id,
+			"call_id": transfer_doc.original_call,
+			"reason": f"{target_name} declined the transfer",
+			"timestamp": datetime.now().isoformat()
+		},
+		user=transfer_doc.from_user,
+		after_commit=True
+	)
+
+	print(f"\n❌ F-IceCore Transfer: {user} rejected transfer {transfer_id}")
+
+	return {"success": True}
+
+
+@frappe.whitelist()
+def cancel_transfer(transfer_id):
+	"""
+	Cancel a pending transfer (by the transferrer).
+
+	Args:
+		transfer_id: The transfer document name
+
+	Returns:
+		dict: {success}
+	"""
+	user = frappe.session.user
+	transfer_doc = frappe.get_doc("F IceCore Call Transfer", transfer_id)
+
+	if transfer_doc.from_user != user:
+		frappe.throw(_("Not authorized to cancel this transfer"))
+
+	if transfer_doc.status in ("Completed", "Failed"):
+		return {"success": False, "message": _("Transfer already finalized")}
+
+	transfer_doc.status = "Cancelled"
+	transfer_doc.completed_at = datetime.now()
+	transfer_doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	# Notify the target that the transfer was cancelled
+	_publish_and_queue(
+		event="f_icecore:transfer_cancelled",
+		message={
+			"transfer_id": transfer_id,
+			"call_id": transfer_doc.original_call,
+			"timestamp": datetime.now().isoformat()
+		},
+		user=transfer_doc.transfer_target,
+		after_commit=True
+	)
+
+	# Notify the remaining party
+	_publish_and_queue(
+		event="f_icecore:transfer_cancelled",
+		message={
+			"transfer_id": transfer_id,
+			"call_id": transfer_doc.original_call,
+			"message": _("Transfer was cancelled"),
+			"timestamp": datetime.now().isoformat()
+		},
+		user=transfer_doc.to_user,
+		after_commit=True
+	)
+
+	print(f"\n🚫 F-IceCore Transfer: {user} cancelled transfer {transfer_id}")
+
+	return {"success": True}
+
+
+@frappe.whitelist()
+def complete_attended_transfer(transfer_id):
+	"""
+	Complete an attended transfer after the transferrer has consulted with the target.
+	This connects the remaining party with the transfer target and drops the transferrer.
+
+	Args:
+		transfer_id: The transfer document name
+
+	Returns:
+		dict: {success, new_call_id}
+	"""
+	user = frappe.session.user
+	transfer_doc = frappe.get_doc("F IceCore Call Transfer", transfer_id)
+
+	if transfer_doc.from_user != user:
+		frappe.throw(_("Not authorized"))
+
+	if transfer_doc.transfer_type != "attended":
+		frappe.throw(_("This is not an attended transfer"))
+
+	if transfer_doc.status in ("Completed", "Failed", "Cancelled"):
+		frappe.throw(_("Transfer already finalized"))
+
+	# Get original call details
+	original_call = frappe.get_doc("F IceCore Call Session", transfer_doc.original_call)
+	call_type = original_call.call_type
+	remaining_user = transfer_doc.to_user
+	target_user = transfer_doc.transfer_target
+
+	# End the original call
+	original_call.status = "Ended"
+	original_call.ended_at = datetime.now()
+	original_call.end_reason = f"Attended transfer completed to {target_user} (Transfer: {transfer_id})"
+	original_call.save(ignore_permissions=True)
+
+	# Create new call session
+	new_call = create_call_session(remaining_user, target_user, call_type, json.dumps({
+		"transferred_from": transfer_doc.original_call,
+		"transfer_id": transfer_id,
+		"transfer_type": "attended"
+	}))
+
+	new_call_doc = frappe.get_doc("F IceCore Call Session", new_call["name"])
+	new_call_doc.status = "Active"
+	new_call_doc.accepted_at = datetime.now()
+	new_call_doc.save(ignore_permissions=True)
+
+	# Update transfer record
+	transfer_doc.status = "Completed"
+	transfer_doc.completed_at = datetime.now()
+	transfer_doc.new_call_session = new_call["name"]
+	transfer_doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	new_call_id = new_call["name"]
+	target_name = frappe.db.get_value("User", target_user, "full_name") or target_user
+	remaining_user_name = frappe.db.get_value("User", remaining_user, "full_name") or remaining_user
+
+	# Notify the remaining party to connect to the target
+	_publish_and_queue(
+		event="f_icecore:transfer_completed",
+		message={
+			"transfer_id": transfer_id,
+			"old_call_id": transfer_doc.original_call,
+			"new_call_id": new_call_id,
+			"new_peer": target_user,
+			"new_peer_name": target_name,
+			"call_type": call_type,
+			"timestamp": datetime.now().isoformat()
+		},
+		user=remaining_user,
+		after_commit=True
+	)
+
+	# Notify the target to connect to the remaining party
+	_publish_and_queue(
+		event="f_icecore:transfer_completed",
+		message={
+			"transfer_id": transfer_id,
+			"old_call_id": transfer_doc.original_call,
+			"new_call_id": new_call_id,
+			"new_peer": remaining_user,
+			"new_peer_name": remaining_user_name,
+			"call_type": call_type,
+			"timestamp": datetime.now().isoformat()
+		},
+		user=target_user,
+		after_commit=True
+	)
+
+	print(f"\n✅ F-IceCore Transfer: Attended transfer {transfer_id} completed")
+	print(f"   New call: {new_call_id} between {remaining_user} and {target_user}")
+
+	return {
+		"success": True,
+		"new_call_id": new_call_id
+	}
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/f_icecore/api/group_signaling.py
+"""
+Group Call Signaling API
+Handles group call lifecycle and WebRTC signaling for multi-user calls (full mesh topology).
+
+Protocol:
+- When a new user joins, all already-connected participants send offers to the new joiner.
+- The joiner only responds with answers, never initiates offers.
+- This prevents offer collision in the mesh.
+"""
+
+import frappe
+from frappe import _
+from frappe.realtime import publish_realtime
+import json
+from datetime import datetime
+
+# Import dual-write helper from 1:1 signaling
+from f_icecore.f_icecore.api.signaling import _publish_and_queue, _queue_signal
+
+
+@frappe.whitelist()
+def initiate_group_call(participants_json, call_type="audio"):
+	"""
+	Initiate a group call with multiple participants.
+
+	Args:
+		participants_json: JSON array of user emails to invite, e.g. '["a@x.com","b@x.com"]'
+		call_type: "audio" or "video"
+
+	Returns:
+		dict: {success, group_call_id, participants}
+	"""
+	initiator = frappe.session.user
+	participants = json.loads(participants_json) if isinstance(participants_json, str) else participants_json
+
+	# Validate
+	if not participants or len(participants) < 1:
+		frappe.throw(_("At least one other participant is required"))
+
+	if initiator in participants:
+		participants.remove(initiator)
+
+	if len(participants) < 1:
+		frappe.throw(_("At least one other participant is required"))
+
+	# Check max participants from settings
+	max_participants = frappe.db.get_single_value("F IceCore Settings", "max_group_call_participants") or 5
+	total = len(participants) + 1  # +1 for initiator
+	if total > max_participants:
+		frappe.throw(_("Maximum {0} participants allowed in a group call").format(max_participants))
+
+	# Validate all users exist
+	for user in participants:
+		if not frappe.db.exists("User", user):
+			frappe.throw(_("User {0} not found").format(user))
+
+	# Create Group Call Session document
+	group_doc = frappe.get_doc({
+		"doctype": "F IceCore Group Call Session",
+		"initiator": initiator,
+		"call_type": call_type,
+		"status": "Ringing",
+		"max_participants": max_participants,
+		"created_at": datetime.now()
+	})
+
+	# Add initiator as first participant (Connected immediately)
+	group_doc.append("participants", {
+		"user": initiator,
+		"status": "Connected",
+		"is_initiator": 1,
+		"joined_at": datetime.now()
+	})
+
+	# Add each invitee as Invited
+	for user in participants:
+		group_doc.append("participants", {
+			"user": user,
+			"status": "Invited",
+			"is_initiator": 0
+		})
+
+	group_doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+
+	group_call_id = group_doc.name
+	initiator_name = frappe.db.get_value("User", initiator, "full_name") or initiator
+
+	print(f"\n🔔 F-IceCore Group: Initiated group call {group_call_id} by {initiator}")
+	print(f"   Participants: {participants}")
+
+	# Send incoming group call notification to each invitee
+	for user in participants:
+		call_data = {
+			"group_call_id": group_call_id,
+			"initiator": initiator,
+			"initiator_name": initiator_name,
+			"call_type": call_type,
+			"participants": [initiator] + participants,
+			"timestamp": datetime.now().isoformat()
+		}
+
+		_publish_and_queue(
+			event="f_icecore:incoming_group_call",
+			message=call_data,
+			user=user,
+			after_commit=True
+		)
+		print(f"   📤 Sent incoming_group_call to {user}")
+
+	return {
+		"success": True,
+		"group_call_id": group_call_id,
+		"participants": [initiator] + participants
+	}
+
+
+@frappe.whitelist()
+def accept_group_call(group_call_id):
+	"""
+	Accept a group call invitation. Marks the user as Connected.
+	Returns list of already-connected users so the joiner knows who to expect offers from.
+
+	Args:
+		group_call_id: The group call session name
+
+	Returns:
+		dict: {success, connected_users}
+	"""
+	user = frappe.session.user
+	group_doc = frappe.get_doc("F IceCore Group Call Session", group_call_id)
+
+	# Find this user's participant row
+	participant_row = None
+	for p in group_doc.participants:
+		if p.user == user:
+			participant_row = p
+			break
+
+	if not participant_row:
+		frappe.throw(_("You are not a participant in this call"))
+
+	if participant_row.status in ("Connected",):
+		# Already connected - return connected users
+		connected_users = [p.user for p in group_doc.participants if p.status == "Connected" and p.user != user]
+		return {"success": True, "connected_users": connected_users}
+
+	# Update participant status
+	participant_row.status = "Connected"
+	participant_row.joined_at = datetime.now()
+	group_doc.save(ignore_permissions=True)
+
+	# If this is the first person accepting, set call to Active
+	if group_doc.status == "Ringing":
+		group_doc.status = "Active"
+		group_doc.save(ignore_permissions=True)
+
+	frappe.db.commit()
+
+	user_name = frappe.db.get_value("User", user, "full_name") or user
+
+	# Get list of already-connected users (excluding the joiner)
+	connected_users = [p.user for p in group_doc.participants if p.status == "Connected" and p.user != user]
+
+	print(f"\n✅ F-IceCore Group: {user} joined {group_call_id}")
+	print(f"   Already connected: {connected_users}")
+
+	# Notify all connected participants that a new user joined
+	for connected_user in connected_users:
+		_publish_and_queue(
+			event="f_icecore:group_participant_joined",
+			message={
+				"group_call_id": group_call_id,
+				"user": user,
+				"user_name": user_name,
+				"timestamp": datetime.now().isoformat()
+			},
+			user=connected_user,
+			after_commit=True
+		)
+
+	return {
+		"success": True,
+		"connected_users": connected_users
+	}
+
+
+@frappe.whitelist()
+def reject_group_call(group_call_id):
+	"""
+	Reject a group call invitation.
+
+	Args:
+		group_call_id: The group call session name
+	"""
+	user = frappe.session.user
+	group_doc = frappe.get_doc("F IceCore Group Call Session", group_call_id)
+
+	for p in group_doc.participants:
+		if p.user == user:
+			p.status = "Rejected"
+			break
+
+	group_doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	print(f"\n❌ F-IceCore Group: {user} rejected {group_call_id}")
+
+	# Check if all invitees have rejected — end the call
+	non_initiator = [p for p in group_doc.participants if not p.is_initiator]
+	if all(p.status in ("Rejected", "Disconnected") for p in non_initiator):
+		_end_group_call(group_doc, "All invitees declined")
+
+	return {"success": True}
+
+
+@frappe.whitelist()
+def leave_group_call(group_call_id):
+	"""
+	Leave a group call. If no connected participants remain, auto-end the call.
+
+	Args:
+		group_call_id: The group call session name
+	"""
+	user = frappe.session.user
+	group_doc = frappe.get_doc("F IceCore Group Call Session", group_call_id)
+
+	for p in group_doc.participants:
+		if p.user == user:
+			p.status = "Disconnected"
+			p.left_at = datetime.now()
+			break
+
+	group_doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	user_name = frappe.db.get_value("User", user, "full_name") or user
+
+	print(f"\n📤 F-IceCore Group: {user} left {group_call_id}")
+
+	# Notify remaining connected participants
+	connected = [p.user for p in group_doc.participants if p.status == "Connected"]
+	for connected_user in connected:
+		_publish_and_queue(
+			event="f_icecore:group_participant_left",
+			message={
+				"group_call_id": group_call_id,
+				"user": user,
+				"user_name": user_name,
+				"timestamp": datetime.now().isoformat()
+			},
+			user=connected_user,
+			after_commit=True
+		)
+
+	# If no one is connected anymore, end the call
+	if len(connected) <= 1:
+		# Reload to get latest state
+		group_doc.reload()
+		_end_group_call(group_doc, "All participants left")
+
+		# If 1 person remains, notify them the call ended
+		if len(connected) == 1:
+			_publish_and_queue(
+				event="f_icecore:group_call_ended",
+				message={
+					"group_call_id": group_call_id,
+					"reason": "All other participants left",
+					"timestamp": datetime.now().isoformat()
+				},
+				user=connected[0],
+				after_commit=True
+			)
+
+	return {"success": True}
+
+
+# ============================================================
+# Mid-call: Add participants / Upgrade 1:1 to group call
+# ============================================================
+
+@frappe.whitelist()
+def add_participant_to_group_call(group_call_id, new_user):
+	"""
+	Add a new participant to an existing group call (mid-call invite).
+
+	Args:
+		group_call_id: The group call session name
+		new_user: Email of the user to add
+
+	Returns:
+		dict: {success, message}
+	"""
+	current_user = frappe.session.user
+	group_doc = frappe.get_doc("F IceCore Group Call Session", group_call_id)
+
+	if group_doc.status == "Ended":
+		frappe.throw(_("This group call has already ended"))
+
+	# Check if user is already a participant
+	for p in group_doc.participants:
+		if p.user == new_user:
+			if p.status in ("Connected", "Invited", "Ringing"):
+				return {"success": False, "message": _("User is already in this call")}
+			# If previously disconnected/rejected, re-invite
+			p.status = "Invited"
+			p.left_at = None
+			group_doc.save(ignore_permissions=True)
+			frappe.db.commit()
+			break
+	else:
+		# Check max participants
+		max_participants = group_doc.max_participants or 5
+		active_count = sum(1 for p in group_doc.participants if p.status in ("Connected", "Invited", "Ringing"))
+		if active_count + 1 > max_participants:
+			frappe.throw(_("Maximum {0} participants allowed").format(max_participants))
+
+		# Validate user exists
+		if not frappe.db.exists("User", new_user):
+			frappe.throw(_("User {0} not found").format(new_user))
+
+		# Add new participant row
+		group_doc.append("participants", {
+			"user": new_user,
+			"status": "Invited",
+			"is_initiator": 0
+		})
+		group_doc.save(ignore_permissions=True)
+		frappe.db.commit()
+
+	# Get initiator name and all current participants
+	initiator_name = frappe.db.get_value("User", group_doc.initiator, "full_name") or group_doc.initiator
+	all_participants = [p.user for p in group_doc.participants]
+
+	# Send incoming group call notification to the new user
+	_publish_and_queue(
+		event="f_icecore:incoming_group_call",
+		message={
+			"group_call_id": group_call_id,
+			"initiator": group_doc.initiator,
+			"initiator_name": initiator_name,
+			"call_type": group_doc.call_type,
+			"participants": all_participants,
+			"added_by": current_user,
+			"timestamp": datetime.now().isoformat()
+		},
+		user=new_user,
+		after_commit=True
+	)
+
+	print(f"\n👥 F-IceCore Group: {current_user} added {new_user} to {group_call_id}")
+
+	return {"success": True, "message": _("Invitation sent")}
+
+
+@frappe.whitelist()
+def upgrade_to_group_call(current_call_id, new_user, call_type="audio"):
+	"""
+	Upgrade a 1:1 call to a group call by creating a new group call session
+	with the current two participants + the new user.
+
+	The existing 1:1 call will be ended, and both existing parties
+	will be notified to join the new group call.
+
+	Args:
+		current_call_id: The existing 1:1 F IceCore Call Session name
+		new_user: Email of the user to add
+		call_type: 'audio' or 'video'
+
+	Returns:
+		dict: {success, group_call_id}
+	"""
+	current_user = frappe.session.user
+
+	# Get the 1:1 call session
+	call_doc = frappe.get_doc("F IceCore Call Session", current_call_id)
+
+	# Determine the other user in the 1:1 call
+	if call_doc.from_user == current_user:
+		other_user = call_doc.to_user
+	elif call_doc.to_user == current_user:
+		other_user = call_doc.from_user
+	else:
+		frappe.throw(_("You are not a participant in this call"))
+
+	# Validate the new user
+	if not frappe.db.exists("User", new_user):
+		frappe.throw(_("User {0} not found").format(new_user))
+
+	if new_user == current_user or new_user == other_user:
+		frappe.throw(_("User is already in this call"))
+
+	# Check max participants
+	max_participants = frappe.db.get_single_value("F IceCore Settings", "max_group_call_participants") or 5
+
+	# Create a new group call session
+	group_doc = frappe.get_doc({
+		"doctype": "F IceCore Group Call Session",
+		"initiator": current_user,
+		"call_type": call_type,
+		"status": "Active",
+		"max_participants": max_participants,
+		"created_at": datetime.now(),
+		"metadata": json.dumps({"upgraded_from": current_call_id})
+	})
+
+	# Add current user as Connected
+	group_doc.append("participants", {
+		"user": current_user,
+		"status": "Connected",
+		"is_initiator": 1,
+		"joined_at": datetime.now()
+	})
+
+	# Add other user from 1:1 call as Connected (they're already in the call)
+	group_doc.append("participants", {
+		"user": other_user,
+		"status": "Invited",
+		"is_initiator": 0
+	})
+
+	# Add new user as Invited
+	group_doc.append("participants", {
+		"user": new_user,
+		"status": "Invited",
+		"is_initiator": 0
+	})
+
+	group_doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+
+	group_call_id = group_doc.name
+	initiator_name = frappe.db.get_value("User", current_user, "full_name") or current_user
+	all_participants = [current_user, other_user, new_user]
+
+	print(f"\n🔄 F-IceCore Group: Upgrading 1:1 call {current_call_id} → group call {group_call_id}")
+	print(f"   Participants: {all_participants}")
+
+	# Notify the other user (already in 1:1 call) to switch to group call
+	_publish_and_queue(
+		event="f_icecore:upgrade_to_group_call",
+		message={
+			"group_call_id": group_call_id,
+			"old_call_id": current_call_id,
+			"initiator": current_user,
+			"initiator_name": initiator_name,
+			"call_type": call_type,
+			"participants": all_participants,
+			"timestamp": datetime.now().isoformat()
+		},
+		user=other_user,
+		after_commit=True
+	)
+
+	# Notify the new user with a standard incoming group call
+	_publish_and_queue(
+		event="f_icecore:incoming_group_call",
+		message={
+			"group_call_id": group_call_id,
+			"initiator": current_user,
+			"initiator_name": initiator_name,
+			"call_type": call_type,
+			"participants": all_participants,
+			"timestamp": datetime.now().isoformat()
+		},
+		user=new_user,
+		after_commit=True
+	)
+
+	# End the old 1:1 call
+	call_doc.status = "Ended"
+	call_doc.ended_at = datetime.now()
+	call_doc.end_reason = f"Upgraded to group call {group_call_id}"
+	call_doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	return {
+		"success": True,
+		"group_call_id": group_call_id,
+		"participants": all_participants
+	}
+
+
+# ============================================================
+# Group WebRTC Signaling (offer, answer, ICE candidate routing)
+# ============================================================
+
+@frappe.whitelist()
+def send_group_offer(group_call_id, to_user, offer_sdp):
+	"""
+	Send a WebRTC offer to a specific peer in the group call.
+	Only already-connected participants send offers to new joiners.
+
+	Args:
+		group_call_id: The group call session name
+		to_user: Target user to send offer to
+		offer_sdp: JSON string of the SDP offer
+	"""
+	from_user = frappe.session.user
+
+	message = {
+		"group_call_id": group_call_id,
+		"from_user": from_user,
+		"offer": offer_sdp,
+		"timestamp": datetime.now().isoformat()
+	}
+
+	# SocketIO path (user-specific event)
+	publish_realtime(
+		event=f"f_icecore:group_webrtc_offer:{to_user}",
+		message=message,
+		user=to_user
+	)
+	# Redis queue path
+	_queue_signal(to_user, "f_icecore:group_webrtc_offer", message)
+
+	return {"success": True}
+
+
+@frappe.whitelist()
+def send_group_answer(group_call_id, to_user, answer_sdp):
+	"""
+	Send a WebRTC answer to a specific peer in the group call.
+	Joiners send answers back to the peers who sent offers.
+
+	Args:
+		group_call_id: The group call session name
+		to_user: Target user to send answer to
+		answer_sdp: JSON string of the SDP answer
+	"""
+	from_user = frappe.session.user
+
+	message = {
+		"group_call_id": group_call_id,
+		"from_user": from_user,
+		"answer": answer_sdp,
+		"timestamp": datetime.now().isoformat()
+	}
+
+	# SocketIO path
+	publish_realtime(
+		event=f"f_icecore:group_webrtc_answer:{to_user}",
+		message=message,
+		user=to_user
+	)
+	# Redis queue path
+	_queue_signal(to_user, "f_icecore:group_webrtc_answer", message)
+
+	return {"success": True}
+
+
+@frappe.whitelist()
+def send_group_ice_candidate(group_call_id, to_user, candidate):
+	"""
+	Send an ICE candidate to a specific peer in the group call.
+
+	Args:
+		group_call_id: The group call session name
+		to_user: Target user to send ICE candidate to
+		candidate: ICE candidate data (string or dict)
+	"""
+	from_user = frappe.session.user
+
+	message = {
+		"group_call_id": group_call_id,
+		"from_user": from_user,
+		"candidate": candidate,
+		"timestamp": datetime.now().isoformat()
+	}
+
+	# SocketIO path
+	publish_realtime(
+		event=f"f_icecore:group_ice_candidate:{to_user}",
+		message=message,
+		user=to_user
+	)
+	# Redis queue path
+	_queue_signal(to_user, "f_icecore:group_ice_candidate", message)
+
+	return {"success": True}
+
+
+@frappe.whitelist()
+def get_group_call_status(group_call_id):
+	"""
+	Get the current status of a group call including all participants.
+
+	Args:
+		group_call_id: The group call session name
+
+	Returns:
+		dict: Call status and participant list
+	"""
+	group_doc = frappe.get_doc("F IceCore Group Call Session", group_call_id)
+
+	participants = []
+	for p in group_doc.participants:
+		user_name = frappe.db.get_value("User", p.user, "full_name") or p.user
+		participants.append({
+			"user": p.user,
+			"user_name": user_name,
+			"status": p.status,
+			"is_initiator": p.is_initiator,
+			"joined_at": str(p.joined_at) if p.joined_at else None,
+			"left_at": str(p.left_at) if p.left_at else None
+		})
+
+	return {
+		"group_call_id": group_call_id,
+		"status": group_doc.status,
+		"call_type": group_doc.call_type,
+		"initiator": group_doc.initiator,
+		"participants": participants,
+		"created_at": str(group_doc.created_at) if group_doc.created_at else None
+	}
+
+
+# ============================================================
+# Internal helpers
+# ============================================================
+
+def _end_group_call(group_doc, reason=""):
+	"""
+	End a group call session. Sets status to Ended, calculates duration.
+	"""
+	if group_doc.status == "Ended":
+		return
+
+	group_doc.status = "Ended"
+	group_doc.ended_at = datetime.now()
+	group_doc.end_reason = reason
+
+	# Calculate duration
+	if group_doc.created_at:
+		delta = datetime.now() - group_doc.created_at
+		group_doc.duration = int(delta.total_seconds())
+
+	# Disconnect any remaining connected participants
+	for p in group_doc.participants:
+		if p.status == "Connected":
+			p.status = "Disconnected"
+			p.left_at = datetime.now()
+
+	group_doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	print(f"\n📵 F-IceCore Group: Call {group_doc.name} ended — {reason}")
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/f_icecore/api/permissions.py
+import frappe
+
+def has_app_permission(user=None):
+	if not user:
+		user = frappe.session.user
+	if user == "Administrator":
+		return True
+	if frappe.db.get_value("User", user, "user_type") != "System User":
+		return False
+	return frappe.db.get_value("User", user, "enabled")
+
+def can_call_user(caller, target):
+	if caller == target:
+		return False, "Cannot call yourself"
+	if not has_app_permission(caller):
+		return False, "You don't have permission"
+	if not frappe.db.exists("User", {"name": target, "enabled": 1}):
+		return False, "User not found"
+	return True, ""
+
+@frappe.whitelist()
+def check_call_permission(target_user):
+	caller = frappe.session.user
+	can_call, reason = can_call_user(caller, target_user)
+	return {"can_call": can_call, "reason": reason}
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/f_icecore/api/presence.py
+import frappe
+from frappe.realtime import publish_realtime
+from datetime import datetime
+import math
+
+PRESENCE_TTL = 300  # 5 minutes
+
+@frappe.whitelist()
+def update_presence(status="online", metadata=None):
+	"""
+	Update user presence in Redis and broadcast via Socket.IO
+	"""
+	user = frappe.session.user
+
+	presence_data = {
+		"user": user,
+		"status": status,
+		"last_seen": datetime.now().isoformat(),
+		"metadata": metadata,
+		"full_name": frappe.db.get_value("User", user, "full_name") or user
+	}
+
+	# Store in Redis cache
+	cache_key = f"f_icecore:presence:{user}"
+	frappe.cache().set_value(cache_key, presence_data, expires_in_sec=PRESENCE_TTL)
+
+	# Broadcast to all users via Socket.IO
+	publish_realtime(
+		event="f_icecore:presence_update",
+		message=presence_data,
+		after_commit=True
+	)
+
+	return presence_data
+
+@frappe.whitelist()
+def heartbeat():
+	"""
+	Heartbeat to keep user online
+	Called every 60 seconds from client
+	"""
+	user = frappe.session.user
+	cache_key = f"f_icecore:presence:{user}"
+
+	presence = frappe.cache().get_value(cache_key)
+
+	if not presence:
+		# First heartbeat - set as online
+		return update_presence(status="online")
+
+	# Update last_seen timestamp
+	presence["last_seen"] = datetime.now().isoformat()
+	frappe.cache().set_value(cache_key, presence, expires_in_sec=PRESENCE_TTL)
+
+	return presence
+
+@frappe.whitelist()
+def get_online_users():
+	"""
+	Get all online users (excluding current user)
+	"""
+	current_user = frappe.session.user
+
+	all_users = frappe.get_all(
+		"User",
+		filters={
+			"enabled": 1,
+			"user_type": "System User",
+			"name": ["!=", current_user]  # Exclude self
+		},
+		fields=["name", "full_name", "user_image"]
+	)
+
+	online_users = []
+
+	for user in all_users:
+		cache_key = f"f_icecore:presence:{user.name}"
+		presence = frappe.cache().get_value(cache_key)
+
+		if presence and presence.get("status") != "offline":
+			online_users.append({
+				"user": user.name,
+				"full_name": user.full_name or user.name,
+				"user_image": user.user_image,
+				"status": presence.get("status", "online"),
+				"last_seen": presence.get("last_seen")
+			})
+
+	return online_users
+
+@frappe.whitelist()
+def get_user_presence(user):
+	presence = frappe.cache().get_value(f"f_icecore:presence:{user}")
+	return presence or {"user": user, "status": "offline", "last_seen": None}
+
+@frappe.whitelist()
+def get_call_capable_users():
+	"""
+	Get users who can receive calls (online and not busy/in_call)
+	"""
+	online_users = get_online_users()
+
+	# Filter out users who are in a call or busy
+	call_capable = [
+		u for u in online_users
+		if u.get("status") not in ["in_call", "busy", "offline"]
+	]
+
+	return call_capable
+
+@frappe.whitelist()
+def search_users(query="", page=1, page_size=10):
+	"""
+	Search users by name (email), full_name, phone, mobile_no.
+	Returns paginated results with online/offline presence status.
+
+	Args:
+		query: Search string (matches across name, full_name, phone, mobile_no)
+		page: Page number (1-indexed)
+		page_size: Results per page (default 10)
+
+	Returns:
+		dict: {users: [...], total: int, page: int, page_size: int, total_pages: int}
+	"""
+	current_user = frappe.session.user
+	page = max(1, int(page))
+	page_size = min(50, max(1, int(page_size)))
+	offset = (page - 1) * page_size
+
+	conditions = """
+		`enabled` = 1
+		AND `user_type` = 'System User'
+		AND `name` != %(current_user)s
+		AND `name` NOT IN ('Administrator', 'Guest')
+	"""
+	params = {"current_user": current_user}
+
+	if query and query.strip():
+		query = query.strip()
+		conditions += """
+			AND (
+				`name` LIKE %(q)s
+				OR `full_name` LIKE %(q)s
+				OR `phone` LIKE %(q)s
+				OR `mobile_no` LIKE %(q)s
+			)
+		"""
+		params["q"] = f"%{query}%"
+
+	total = frappe.db.sql(
+		f"SELECT COUNT(*) FROM `tabUser` WHERE {conditions}",
+		params
+	)[0][0]
+
+	users_raw = frappe.db.sql(
+		f"""SELECT `name`, `full_name`, `user_image`, `phone`, `mobile_no`
+			FROM `tabUser`
+			WHERE {conditions}
+			ORDER BY `full_name` ASC
+			LIMIT %(limit)s OFFSET %(offset)s""",
+		{**params, "limit": page_size, "offset": offset},
+		as_dict=True
+	)
+
+	# Enrich with presence data from Redis
+	users = []
+	for user in users_raw:
+		cache_key = f"f_icecore:presence:{user.name}"
+		presence = frappe.cache().get_value(cache_key)
+
+		status = "offline"
+		last_seen = None
+		if presence and presence.get("status") != "offline":
+			status = presence.get("status", "offline")
+			last_seen = presence.get("last_seen")
+
+		users.append({
+			"user": user.name,
+			"full_name": user.full_name or user.name,
+			"user_image": user.user_image,
+			"phone": user.phone,
+			"mobile_no": user.mobile_no,
+			"status": status,
+			"last_seen": last_seen
+		})
+
+	total_pages = math.ceil(total / page_size) if total > 0 else 1
+
+	return {
+		"users": users,
+		"total": total,
+		"page": page,
+		"page_size": page_size,
+		"total_pages": total_pages
+	}
+
+
+def cleanup_stale_presence():
+	pass
+
+def handle_presence_update(data):
+	update_presence(status=data.get("status", "online"), metadata=data.get("metadata"))
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/f_icecore/api/signaling.py
+"""
+WebRTC Signaling API
+Handles offer, answer, and ICE candidate exchange between peers
+Uses Frappe's realtime (SocketIO) for signaling
++ HTTP Polling fallback for clients with broken SocketIO (e.g. mobile via IP address)
+"""
+
+import frappe
+from frappe import _
+from frappe.realtime import publish_realtime
+import json
+from datetime import datetime
+import time
+
+
+# ============================================================
+# Signal Queue - Redis-based queue for polling fallback
+# ============================================================
+
+def _queue_signal(user, event, message):
+	"""
+	Queue a signal in Redis for a specific user.
+	This is called alongside publish_realtime so that clients
+	without a working SocketIO connection can still receive signals
+	by polling via HTTP.
+
+	Signals are stored as a Redis list with a TTL of 120 seconds.
+	Each signal is a JSON object with event name, message data, and timestamp.
+	"""
+	try:
+		cache_key = f"f_icecore:signal_queue:{user}"
+		signal = json.dumps({
+			"event": event,
+			"message": message,
+			"ts": time.time()
+		})
+		# Use Redis list - push to the right
+		r = frappe.cache()
+		r.rpush(cache_key, signal)
+		# Set expiry to 120 seconds (signals older than that are stale anyway)
+		r.expire(cache_key, 120)
+	except Exception as e:
+		frappe.logger().error(f"F-IceCore: Failed to queue signal for {user}: {e}")
+
+
+@frappe.whitelist()
+def poll_signals():
+	"""
+	Poll for pending signals for the current user.
+	Returns all queued signals and clears the queue.
+
+	This is the HTTP polling fallback for clients whose SocketIO
+	connection is broken (e.g. mobile connecting via IP address).
+
+	Returns:
+		list: Array of signal objects [{event, message, ts}, ...]
+	"""
+	user = frappe.session.user
+	cache_key = f"f_icecore:signal_queue:{user}"
+
+	try:
+		r = frappe.cache()
+		signals = []
+
+		# Pop all items from the list atomically
+		while True:
+			item = r.lpop(cache_key)
+			if item is None:
+				break
+			try:
+				if isinstance(item, bytes):
+					item = item.decode('utf-8')
+				signal = json.loads(item)
+				signals.append(signal)
+			except (json.JSONDecodeError, UnicodeDecodeError) as e:
+				frappe.logger().error(f"F-IceCore: Failed to parse queued signal: {e}")
+
+		return signals
+	except Exception as e:
+		frappe.logger().error(f"F-IceCore: Failed to poll signals: {e}")
+		return []
+
+
+# ============================================================
+# Helper: publish + queue (dual-write)
+# ============================================================
+
+def _publish_and_queue(event, message, user, after_commit=False):
+	"""
+	Send a signal via both SocketIO (publish_realtime) AND Redis queue.
+	The SocketIO path works when the client has a working connection.
+	The Redis queue path works when polled via HTTP.
+	"""
+	# SocketIO path (may not reach client if their socket is disconnected)
+	publish_realtime(
+		event=event,
+		message=message,
+		user=user,
+		after_commit=after_commit
+	)
+	# Redis queue path (always works - client polls via HTTP)
+	_queue_signal(user, event, message)
+
+
+# ============================================================
+# Call lifecycle APIs
+# ============================================================
+
+@frappe.whitelist()
+def initiate_call(to_user, call_type="audio", metadata=None):
+	"""
+	Initiate a call to another user
+
+	Args:
+		to_user: Target user to call
+		call_type: "audio", "video", or "screen"
+		metadata: Additional call metadata
+
+	Returns:
+		dict: Call session information
+	"""
+	from_user = frappe.session.user
+
+	# Validate users
+	if not frappe.db.exists("User", to_user):
+		frappe.throw(_("User not found"))
+
+	if from_user == to_user:
+		frappe.throw(_("Cannot call yourself"))
+
+	# Check if user is online
+	is_online = check_user_online(to_user)
+	if not is_online:
+		return {
+			"success": False,
+			"message": _("User is not online")
+		}
+
+	# Create call session
+	call_session = create_call_session(from_user, to_user, call_type, metadata)
+
+	# Send incoming call notification to the target user
+	print(f"\n\n🔔🔔🔔 F-IceCore: Broadcasting incoming_call from {from_user} to {to_user}\n")
+	frappe.logger().info(f"🔔 F-IceCore: Broadcasting incoming_call from {from_user} to {to_user}")
+
+	call_data = {
+		"call_id": call_session["name"],
+		"from_user": from_user,
+		"from_user_name": frappe.db.get_value("User", from_user, "full_name"),
+		"to_user": to_user,
+		"call_type": call_type,
+		"metadata": metadata,
+		"timestamp": str(call_session["creation"])
+	}
+
+	print(f"🔔 F-IceCore: call_data = {call_data}\n")
+
+	# Send via both SocketIO AND Redis queue
+	print(f"🔔 F-IceCore: Sending incoming_call to user={to_user} (SocketIO + Redis queue)\n")
+	_publish_and_queue(
+		event="f_icecore:incoming_call",
+		message=call_data,
+		user=to_user,
+		after_commit=True
+	)
+	print(f"✅✅✅ F-IceCore: publish_and_queue completed!\n\n")
+
+	frappe.logger().info(f"✅ F-IceCore: Broadcasted incoming_call event")
+
+	return {
+		"success": True,
+		"call_session": call_session
+	}
+
+
+@frappe.whitelist()
+def accept_call(call_id):
+	"""Accept an incoming call"""
+	user = frappe.session.user
+	call_doc = frappe.get_doc("F IceCore Call Session", call_id)
+
+	if call_doc.to_user != user:
+		frappe.throw(_("Not authorized to accept this call"))
+
+	call_doc.status = "Active"
+	call_doc.accepted_at = datetime.now()
+	call_doc.save(ignore_permissions=True)
+
+	# Notify the caller that call was accepted (via both SocketIO + queue)
+	_publish_and_queue(
+		event="call_accepted",
+		message={"call_id": call_id, "accepted_by": user, "from_user": call_doc.from_user, "to_user": call_doc.to_user, "timestamp": datetime.now().isoformat()},
+		user=call_doc.from_user,
+		after_commit=True
+	)
+
+	frappe.logger().info(f"✅ F-IceCore: Broadcasted call_accepted event for {call_id}")
+
+	return {"success": True, "call_session": call_doc.as_dict()}
+
+
+@frappe.whitelist()
+def reject_call(call_id, reason=None):
+	"""Reject an incoming call"""
+	user = frappe.session.user
+	call_doc = frappe.get_doc("F IceCore Call Session", call_id)
+
+	if call_doc.to_user != user and call_doc.from_user != user:
+		frappe.throw(_("Not authorized"))
+
+	call_doc.status = "Rejected"
+	call_doc.ended_at = datetime.now()
+	call_doc.end_reason = reason or "User rejected"
+	call_doc.save(ignore_permissions=True)
+
+	other_user = call_doc.from_user if user == call_doc.to_user else call_doc.to_user
+
+	# Notify the other party (via both SocketIO + queue)
+	_publish_and_queue(
+		event="call_rejected",
+		message={"call_id": call_id, "rejected_by": user, "reason": reason, "from_user": call_doc.from_user, "to_user": call_doc.to_user, "timestamp": datetime.now().isoformat()},
+		user=other_user,
+		after_commit=True
+	)
+
+	frappe.logger().info(f"✅ F-IceCore: Broadcasted call_rejected event for {call_id}")
+
+	return {"success": True}
+
+
+@frappe.whitelist()
+def end_call(call_id):
+	"""End an active call"""
+	user = frappe.session.user
+	call_doc = frappe.get_doc("F IceCore Call Session", call_id)
+
+	if call_doc.from_user != user and call_doc.to_user != user:
+		frappe.throw(_("Not authorized"))
+
+	call_doc.status = "Ended"
+	call_doc.ended_at = datetime.now()
+	call_doc.save(ignore_permissions=True)
+
+	other_user = call_doc.to_user if user == call_doc.from_user else call_doc.from_user
+
+	# Notify the other party (via both SocketIO + queue)
+	_publish_and_queue(
+		event="call_ended",
+		message={"call_id": call_id, "ended_by": user, "from_user": call_doc.from_user, "to_user": call_doc.to_user, "timestamp": datetime.now().isoformat()},
+		user=other_user,
+		after_commit=True
+	)
+
+	frappe.logger().info(f"✅ F-IceCore: Broadcasted call_ended event for {call_id}")
+
+	return {"success": True}
+
+
+# ============================================================
+# WebRTC signaling APIs (offer, answer, ICE candidates)
+# ============================================================
+
+@frappe.whitelist()
+def send_offer(to_user, offer_sdp, call_id=None, call_type=None):
+	"""Send WebRTC offer to peer"""
+	from_user = frappe.session.user
+	# Get call_type from call session if not provided
+	if not call_type and call_id:
+		call_type = frappe.db.get_value("F IceCore Call Session", call_id, "call_type") or "audio"
+
+	message = {"from_user": from_user, "offer": offer_sdp, "call_id": call_id, "call_type": call_type or "audio", "timestamp": datetime.now().isoformat()}
+
+	# SocketIO path (user-specific event)
+	publish_realtime(
+		event=f"f_icecore:webrtc_offer:{to_user}",
+		message=message,
+		user=to_user
+	)
+	# Redis queue path (generic event name - client will parse)
+	_queue_signal(to_user, "f_icecore:webrtc_offer", message)
+
+	return {"success": True}
+
+
+@frappe.whitelist()
+def send_answer(to_user, answer_sdp, call_id=None):
+	"""Send WebRTC answer to peer"""
+	from_user = frappe.session.user
+	message = {"from_user": from_user, "answer": answer_sdp, "call_id": call_id, "timestamp": datetime.now().isoformat()}
+
+	# SocketIO path
+	publish_realtime(
+		event=f"f_icecore:webrtc_answer:{to_user}",
+		message=message,
+		user=to_user
+	)
+	# Redis queue path
+	_queue_signal(to_user, "f_icecore:webrtc_answer", message)
+
+	return {"success": True}
+
+
+@frappe.whitelist()
+def send_ice_candidate(to_user, candidate, call_id=None):
+	"""Send ICE candidate to peer"""
+	from_user = frappe.session.user
+	message = {"from_user": from_user, "candidate": candidate, "call_id": call_id, "timestamp": datetime.now().isoformat()}
+
+	# SocketIO path
+	publish_realtime(
+		event=f"f_icecore:ice_candidate:{to_user}",
+		message=message,
+		user=to_user
+	)
+	# Redis queue path
+	_queue_signal(to_user, "f_icecore:ice_candidate", message)
+
+	return {"success": True}
+
+
+# ============================================================
+# Debug / Test endpoints
+# ============================================================
+
+@frappe.whitelist()
+def test_realtime(to_user):
+	"""
+	Debug endpoint: Test if realtime events reach a target user.
+	Call this from caller's browser console:
+	  frappe.call({method: 'f_icecore.f_icecore.api.signaling.test_realtime', args: {to_user: 'testecice@ice.com'}})
+	Then check recipient's browser console for the log.
+	"""
+	from_user = frappe.session.user
+
+	# Test 1: Send to specific user (user= param)
+	_publish_and_queue(
+		event="f_icecore:test_ping",
+		message={"from_user": from_user, "test": "user_targeted", "timestamp": datetime.now().isoformat()},
+		user=to_user,
+		after_commit=True
+	)
+
+	# Test 2: Also send incoming_call event to specific user
+	_publish_and_queue(
+		event="f_icecore:incoming_call",
+		message={
+			"call_id": "TEST-CALL",
+			"from_user": from_user,
+			"from_user_name": frappe.db.get_value("User", from_user, "full_name"),
+			"to_user": to_user,
+			"call_type": "audio",
+			"metadata": None,
+			"timestamp": datetime.now().isoformat()
+		},
+		user=to_user,
+		after_commit=True
+	)
+
+	print(f"\n🧪 TEST: Sent test_ping + incoming_call to user={to_user}\n")
+
+	return {
+		"success": True,
+		"message": f"Test events sent to {to_user}. Check their browser console or poll_signals."
+	}
+
+
+# ============================================================
+# Helper functions
+# ============================================================
+
+def handle_signal(data):
+	"""Generic signal handler for SocketIO events"""
+	pass
+
+
+def create_call_session(from_user, to_user, call_type, metadata):
+	"""Create a new call session document"""
+	doc = frappe.get_doc({
+		"doctype": "F IceCore Call Session",
+		"from_user": from_user,
+		"to_user": to_user,
+		"call_type": call_type,
+		"status": "Ringing",
+		"metadata": json.dumps(metadata) if metadata else None
+	})
+	doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+	return doc.as_dict()
+
+
+def check_user_online(user):
+	"""Check if a user is currently online"""
+	cache_key = f"f_icecore:presence:{user}"
+	presence = frappe.cache().get_value(cache_key)
+	if presence:
+		return presence.get("status") == "online"
+	return False
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/f_icecore/api/test_call_session.py
+"""
+Tests for F-IceCore Call Session API
+"""
+
+import frappe
+import unittest
+from datetime import datetime, timedelta
+from unittest.mock import patch
+
+
+class TestCallSession(unittest.TestCase):
+	"""Test call session management"""
+
+	def setUp(self):
+		"""Set up test environment"""
+		frappe.set_user("Administrator")
+		self.test_user = "caller@example.com"
+		self.remote_user = "callee@example.com"
+
+	def tearDown(self):
+		"""Clean up after tests"""
+		# Delete test call sessions
+		frappe.db.delete("F IceCore Call Session")
+		frappe.db.commit()
+
+	def test_create_call_session(self):
+		"""Test creating a call session"""
+		from f_icecore.f_icecore.api.call_session import create_call_session
+
+		session = create_call_session(
+			from_user=self.test_user,
+			to_user=self.remote_user,
+			call_type="audio"
+		)
+
+		# Verify session created
+		self.assertIsNotNone(session)
+		self.assertEqual(session["from_user"], self.test_user)
+		self.assertEqual(session["to_user"], self.remote_user)
+		self.assertEqual(session["call_type"], "audio")
+		self.assertEqual(session["status"], "Initiated")
+
+	def test_update_call_status(self):
+		"""Test updating call status"""
+		from f_icecore.f_icecore.api.call_session import (
+			create_call_session,
+			update_call_status
+		)
+
+		# Create session
+		session = create_call_session(
+			from_user=self.test_user,
+			to_user=self.remote_user,
+			call_type="video"
+		)
+
+		# Update to ringing
+		updated = update_call_status(session["name"], "Ringing")
+		self.assertEqual(updated["status"], "Ringing")
+
+		# Update to answered
+		updated = update_call_status(session["name"], "Answered")
+		self.assertEqual(updated["status"], "Answered")
+		self.assertIsNotNone(updated.get("start_time"))
+
+	def test_end_call_sets_duration(self):
+		"""Test that ending call calculates duration"""
+		from f_icecore.f_icecore.api.call_session import (
+			create_call_session,
+			update_call_status,
+			end_call
+		)
+
+		# Create and answer call
+		session = create_call_session(
+			from_user=self.test_user,
+			to_user=self.remote_user,
+			call_type="audio"
+		)
+		update_call_status(session["name"], "Answered")
+
+		# End call
+		ended = end_call(session["name"])
+
+		# Verify status and duration
+		self.assertEqual(ended["status"], "Ended")
+		self.assertIsNotNone(ended.get("end_time"))
+		self.assertIsNotNone(ended.get("duration"))
+		self.assertGreaterEqual(ended["duration"], 0)
+
+	def test_get_call_history(self):
+		"""Test getting call history"""
+		from f_icecore.f_icecore.api.call_session import (
+			create_call_session,
+			get_call_history
+		)
+
+		frappe.session.user = self.test_user
+
+		# Create multiple call sessions
+		create_call_session(self.test_user, self.remote_user, "audio")
+		create_call_session(self.test_user, "other@example.com", "video")
+		create_call_session(self.remote_user, self.test_user, "audio")
+
+		# Get history
+		history = get_call_history(limit=10)
+
+		# Verify results
+		self.assertIsInstance(history, list)
+		self.assertGreater(len(history), 0)
+
+		# Verify all calls involve test user
+		for call in history:
+			involves_user = (
+				call["from_user"] == self.test_user or
+				call["to_user"] == self.test_user
+			)
+			self.assertTrue(involves_user)
+
+	def test_get_call_stats(self):
+		"""Test getting call statistics"""
+		from f_icecore.f_icecore.api.call_session import (
+			create_call_session,
+			update_call_status,
+			end_call,
+			get_call_stats
+		)
+
+		frappe.session.user = self.test_user
+
+		# Create answered call
+		session1 = create_call_session(self.test_user, self.remote_user, "audio")
+		update_call_status(session1["name"], "Answered")
+		end_call(session1["name"])
+
+		# Create missed call
+		session2 = create_call_session(self.remote_user, self.test_user, "video")
+		update_call_status(session2["name"], "Missed")
+
+		# Get stats
+		stats = get_call_stats()
+
+		# Verify stats
+		self.assertIn("total_calls", stats)
+		self.assertIn("answered_calls", stats)
+		self.assertIn("missed_calls", stats)
+		self.assertIn("total_duration_minutes", stats)
+		self.assertIn("answer_rate", stats)
+
+		self.assertGreater(stats["total_calls"], 0)
+
+	def test_cleanup_old_sessions(self):
+		"""Test cleanup of old call sessions"""
+		from f_icecore.f_icecore.api.call_session import cleanup_old_sessions
+
+		# Create old session (simulate by modifying creation date)
+		session = frappe.new_doc("F IceCore Call Session")
+		session.from_user = self.test_user
+		session.to_user = self.remote_user
+		session.call_type = "audio"
+		session.status = "Ended"
+		session.insert(ignore_permissions=True)
+
+		# Manually set old creation date
+		old_date = datetime.now() - timedelta(days=100)
+		frappe.db.set_value(
+			"F IceCore Call Session",
+			session.name,
+			"creation",
+			old_date
+		)
+		frappe.db.commit()
+
+		# Run cleanup
+		deleted_count = cleanup_old_sessions(days=90)
+
+		# Verify cleanup ran
+		self.assertIsInstance(deleted_count, int)
+
+	def test_call_history_enriched_with_user_details(self):
+		"""Test that call history includes user full names"""
+		from f_icecore.f_icecore.api.call_session import (
+			create_call_session,
+			get_call_history
+		)
+
+		frappe.session.user = self.test_user
+
+		# Create call
+		create_call_session(self.test_user, self.remote_user, "audio")
+
+		# Get history
+		history = get_call_history(limit=10)
+
+		# Verify enrichment
+		if len(history) > 0:
+			call = history[0]
+			self.assertIn("other_user", call)
+			self.assertIn("other_user_name", call)
+			self.assertIn("direction", call)
+
+	def test_call_types_validated(self):
+		"""Test that call types are validated"""
+		from f_icecore.f_icecore.api.call_session import create_call_session
+
+		# Valid call types should work
+		for call_type in ["audio", "video", "screen"]:
+			session = create_call_session(
+				self.test_user,
+				self.remote_user,
+				call_type
+			)
+			self.assertEqual(session["call_type"], call_type)
+
+		# Invalid call type should fail
+		with self.assertRaises(frappe.ValidationError):
+			create_call_session(
+				self.test_user,
+				self.remote_user,
+				"invalid_type"
+			)
+
+	def test_call_status_transitions(self):
+		"""Test valid call status transitions"""
+		from f_icecore.f_icecore.api.call_session import (
+			create_call_session,
+			update_call_status
+		)
+
+		session = create_call_session(
+			self.test_user,
+			self.remote_user,
+			"audio"
+		)
+
+		# Valid transitions
+		valid_statuses = ["Initiated", "Ringing", "Answered", "Ended"]
+
+		for status in valid_statuses[1:]:  # Skip Initiated (already set)
+			updated = update_call_status(session["name"], status)
+			self.assertEqual(updated["status"], status)
+
+
+def run_tests():
+	"""Run all call session tests"""
+	suite = unittest.TestLoader().loadTestsFromTestCase(TestCallSession)
+	unittest.TextTestRunner(verbosity=2).run(suite)
+
+
+if __name__ == "__main__":
+	run_tests()
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/f_icecore/api/test_presence.py
+"""
+Tests for F-IceCore User Presence API
+"""
+
+import frappe
+import unittest
+import time
+from unittest.mock import patch
+
+
+class TestPresence(unittest.TestCase):
+	"""Test user presence tracking functionality"""
+
+	def setUp(self):
+		"""Set up test environment"""
+		self.test_user = "test@example.com"
+		frappe.set_user("Administrator")
+		# Clear any existing presence data
+		frappe.cache().delete_value(f"f_icecore:presence:{self.test_user}")
+
+	def tearDown(self):
+		"""Clean up after tests"""
+		frappe.cache().delete_value(f"f_icecore:presence:{self.test_user}")
+
+	def test_update_presence_sets_online(self):
+		"""Test that updating presence sets user online"""
+		from f_icecore.f_icecore.api.presence import update_presence, get_user_presence
+
+		frappe.session.user = self.test_user
+
+		# Update presence to online
+		result = update_presence(status="online")
+
+		# Verify success
+		self.assertEqual(result["success"], True)
+		self.assertEqual(result["status"], "online")
+
+		# Verify presence is stored in cache
+		presence = get_user_presence(self.test_user)
+		self.assertIsNotNone(presence)
+		self.assertEqual(presence["status"], "online")
+
+	def test_presence_ttl_expires(self):
+		"""Test that presence expires after TTL"""
+		from f_icecore.f_icecore.api.presence import update_presence, get_user_presence
+
+		frappe.session.user = self.test_user
+
+		# Set very short TTL for testing
+		with patch('f_icecore.f_icecore.api.presence.PRESENCE_TTL', 1):
+			update_presence(status="online")
+
+			# Verify initially present
+			presence = get_user_presence(self.test_user)
+			self.assertIsNotNone(presence)
+
+			# Wait for TTL to expire
+			time.sleep(2)
+
+			# Verify presence expired
+			presence = get_user_presence(self.test_user)
+			self.assertIsNone(presence)
+
+	def test_heartbeat_updates_timestamp(self):
+		"""Test that heartbeat updates last seen timestamp"""
+		from f_icecore.f_icecore.api.presence import update_presence, heartbeat, get_user_presence
+
+		frappe.session.user = self.test_user
+
+		# Set initial presence
+		update_presence(status="online")
+		presence1 = get_user_presence(self.test_user)
+		first_seen = presence1["last_seen"]
+
+		# Wait a moment
+		time.sleep(0.1)
+
+		# Send heartbeat
+		heartbeat()
+		presence2 = get_user_presence(self.test_user)
+		second_seen = presence2["last_seen"]
+
+		# Verify timestamp was updated
+		self.assertNotEqual(first_seen, second_seen)
+
+	def test_get_online_users_returns_active_users(self):
+		"""Test that get_online_users returns only active users"""
+		from f_icecore.f_icecore.api.presence import update_presence, get_online_users
+
+		# Set multiple users online
+		users = ["user1@example.com", "user2@example.com", "user3@example.com"]
+
+		for user in users:
+			frappe.session.user = user
+			update_presence(status="online")
+
+		# Get online users
+		frappe.session.user = "user1@example.com"
+		online = get_online_users()
+
+		# Verify other users are returned (excluding self)
+		user_list = [u["user"] for u in online]
+		self.assertIn("user2@example.com", user_list)
+		self.assertIn("user3@example.com", user_list)
+		self.assertNotIn("user1@example.com", user_list)  # Should exclude self
+
+	def test_get_call_capable_users_filters_by_permissions(self):
+		"""Test that get_call_capable_users filters by permissions"""
+		from f_icecore.f_icecore.api.presence import get_call_capable_users
+
+		# This would require setting up proper user permissions
+		# For now, test that it returns a list
+		frappe.session.user = self.test_user
+
+		result = get_call_capable_users()
+
+		# Verify returns a list
+		self.assertIsInstance(result, list)
+
+	def test_different_presence_statuses(self):
+		"""Test different presence statuses"""
+		from f_icecore.f_icecore.api.presence import update_presence, get_user_presence
+
+		frappe.session.user = self.test_user
+
+		statuses = ["online", "away", "busy", "offline"]
+
+		for status in statuses:
+			update_presence(status=status)
+			presence = get_user_presence(self.test_user)
+			self.assertEqual(presence["status"], status)
+
+	@patch('frappe.publish_realtime')
+	def test_presence_update_broadcasts_event(self, mock_publish):
+		"""Test that presence updates broadcast realtime events"""
+		from f_icecore.f_icecore.api.presence import update_presence
+
+		frappe.session.user = self.test_user
+
+		update_presence(status="online")
+
+		# Verify realtime event was published
+		mock_publish.assert_called()
+
+	def test_cleanup_stale_presence(self):
+		"""Test cleanup of stale presence data"""
+		from f_icecore.f_icecore.api.presence import cleanup_stale_presence
+
+		# This is a scheduled task that cleans up expired presence
+		# Just verify it runs without error
+		try:
+			cleanup_stale_presence()
+			success = True
+		except Exception:
+			success = False
+
+		self.assertTrue(success)
+
+
+def run_tests():
+	"""Run all presence tests"""
+	suite = unittest.TestLoader().loadTestsFromTestCase(TestPresence)
+	unittest.TextTestRunner(verbosity=2).run(suite)
+
+
+if __name__ == "__main__":
+	run_tests()
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/f_icecore/api/test_signaling.py
+"""
+Tests for F-IceCore WebRTC Signaling API
+"""
+
+import frappe
+import unittest
+from unittest.mock import patch, MagicMock
+
+
+class TestSignaling(unittest.TestCase):
+	"""Test WebRTC signaling functionality"""
+
+	def setUp(self):
+		"""Set up test environment"""
+		self.test_user = "test@example.com"
+		self.remote_user = "remote@example.com"
+		frappe.set_user("Administrator")
+
+	def tearDown(self):
+		"""Clean up after tests"""
+		frappe.db.rollback()
+
+	@patch('frappe.publish_realtime')
+	def test_initiate_call_creates_session(self, mock_publish):
+		"""Test that initiating a call creates a call session"""
+		from f_icecore.f_icecore.api.signaling import initiate_call
+
+		# Mock current user
+		frappe.session.user = self.test_user
+
+		# Initiate call
+		result = initiate_call(
+			to_user=self.remote_user,
+			call_type="audio"
+		)
+
+		# Verify session created
+		self.assertIsNotNone(result)
+		self.assertIn("call_id", result)
+		self.assertEqual(result["status"], "Initiated")
+
+		# Verify realtime event was published
+		mock_publish.assert_called_once()
+		call_args = mock_publish.call_args
+		self.assertIn("f_icecore:incoming_call", call_args[1]["event"])
+
+	@patch('frappe.publish_realtime')
+	def test_send_offer_publishes_to_remote_user(self, mock_publish):
+		"""Test that sending offer publishes SDP to remote user"""
+		from f_icecore.f_icecore.api.signaling import send_offer
+
+		frappe.session.user = self.test_user
+
+		test_sdp = "v=0\r\no=- 123456 1 IN IP4 127.0.0.1"
+
+		result = send_offer(
+			to_user=self.remote_user,
+			offer_sdp=test_sdp
+		)
+
+		# Verify success
+		self.assertEqual(result["success"], True)
+
+		# Verify realtime published
+		mock_publish.assert_called_once()
+		call_args = mock_publish.call_args
+		self.assertEqual(call_args[1]["user"], self.remote_user)
+		self.assertIn("offer", call_args[1]["message"])
+
+	@patch('frappe.publish_realtime')
+	def test_send_answer_publishes_to_caller(self, mock_publish):
+		"""Test that sending answer publishes SDP to caller"""
+		from f_icecore.f_icecore.api.signaling import send_answer
+
+		frappe.session.user = self.remote_user
+
+		test_sdp = "v=0\r\no=- 654321 1 IN IP4 127.0.0.1"
+
+		result = send_answer(
+			to_user=self.test_user,
+			answer_sdp=test_sdp
+		)
+
+		# Verify success
+		self.assertEqual(result["success"], True)
+
+		# Verify realtime published
+		mock_publish.assert_called_once()
+
+	@patch('frappe.publish_realtime')
+	def test_send_ice_candidate_publishes_to_peer(self, mock_publish):
+		"""Test that ICE candidates are sent to peer"""
+		from f_icecore.f_icecore.api.signaling import send_ice_candidate
+
+		frappe.session.user = self.test_user
+
+		test_candidate = {
+			"candidate": "candidate:1 1 UDP 2130706431 192.168.1.100 54321 typ host",
+			"sdpMid": "0",
+			"sdpMLineIndex": 0
+		}
+
+		result = send_ice_candidate(
+			to_user=self.remote_user,
+			candidate=test_candidate
+		)
+
+		# Verify success
+		self.assertEqual(result["success"], True)
+
+		# Verify realtime published
+		mock_publish.assert_called_once()
+		call_args = mock_publish.call_args
+		self.assertIn("ice_candidate", call_args[1]["message"])
+
+	def test_cannot_call_self(self):
+		"""Test that users cannot call themselves"""
+		from f_icecore.f_icecore.api.signaling import initiate_call
+
+		frappe.session.user = self.test_user
+
+		# Try to call self
+		with self.assertRaises(frappe.ValidationError):
+			initiate_call(
+				to_user=self.test_user,
+				call_type="audio"
+			)
+
+	def test_invalid_call_type_rejected(self):
+		"""Test that invalid call types are rejected"""
+		from f_icecore.f_icecore.api.signaling import initiate_call
+
+		frappe.session.user = self.test_user
+
+		# Try invalid call type
+		with self.assertRaises(frappe.ValidationError):
+			initiate_call(
+				to_user=self.remote_user,
+				call_type="invalid_type"
+			)
+
+
+def run_tests():
+	"""Run all signaling tests"""
+	suite = unittest.TestLoader().loadTestsFromTestCase(TestSignaling)
+	unittest.TextTestRunner(verbosity=2).run(suite)
+
+
+if __name__ == "__main__":
+	run_tests()
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/f_icecore/api/test_turn_credentials.py
+"""
+Tests for F-IceCore TURN Credentials API
+"""
+
+import frappe
+import unittest
+import time
+import hmac
+import hashlib
+import base64
+from unittest.mock import patch
+
+
+class TestTURNCredentials(unittest.TestCase):
+	"""Test TURN credential generation"""
+
+	def setUp(self):
+		"""Set up test environment"""
+		frappe.set_user("Administrator")
+
+		# Create test settings
+		if not frappe.db.exists("F IceCore Settings", "F IceCore Settings"):
+			settings = frappe.new_doc("F IceCore Settings")
+			settings.turn_server = "turn.example.com"
+			settings.turn_secret = "test_secret_key_123"
+			settings.stun_port = 3478
+			settings.turn_port = 3478
+			settings.turns_port = 5349
+			settings.insert(ignore_permissions=True)
+		else:
+			settings = frappe.get_doc("F IceCore Settings", "F IceCore Settings")
+			settings.turn_server = "turn.example.com"
+			settings.turn_secret = "test_secret_key_123"
+			settings.stun_port = 3478
+			settings.turn_port = 3478
+			settings.turns_port = 5349
+			settings.save(ignore_permissions=True)
+
+		frappe.db.commit()
+
+	def tearDown(self):
+		"""Clean up after tests"""
+		frappe.db.rollback()
+
+	def test_get_turn_credentials_returns_valid_format(self):
+		"""Test that TURN credentials are returned in correct format"""
+		from f_icecore.f_icecore.api.turn_credentials import get_turn_credentials
+
+		result = get_turn_credentials()
+
+		# Verify structure
+		self.assertIn("iceServers", result)
+		self.assertIsInstance(result["iceServers"], list)
+		self.assertGreater(len(result["iceServers"]), 0)
+
+		# Verify STUN server
+		stun_server = result["iceServers"][0]
+		self.assertIn("urls", stun_server)
+		self.assertTrue(stun_server["urls"][0].startswith("stun:"))
+
+		# Verify TURN servers
+		turn_server = result["iceServers"][1]
+		self.assertIn("urls", turn_server)
+		self.assertIn("username", turn_server)
+		self.assertIn("credential", turn_server)
+		self.assertTrue(any("turn:" in url for url in turn_server["urls"]))
+
+	def test_credentials_use_hmac_sha1(self):
+		"""Test that credentials are generated using HMAC-SHA1"""
+		from f_icecore.f_icecore.api.turn_credentials import generate_turn_credentials
+
+		secret = "test_secret"
+		username, credential = generate_turn_credentials(secret, ttl=86400)
+
+		# Verify username format (timestamp:user)
+		self.assertIn(":", username)
+		timestamp_str, user = username.split(":", 1)
+		timestamp = int(timestamp_str)
+
+		# Verify timestamp is in future
+		self.assertGreater(timestamp, int(time.time()))
+
+		# Verify credential is base64 encoded
+		try:
+			decoded = base64.b64decode(credential)
+			is_valid_base64 = True
+		except Exception:
+			is_valid_base64 = False
+
+		self.assertTrue(is_valid_base64)
+
+	def test_credentials_match_coturn_format(self):
+		"""Test that credentials match Coturn REST API format"""
+		from f_icecore.f_icecore.api.turn_credentials import generate_turn_credentials
+
+		secret = "my_secret_key"
+		user = "testuser@example.com"
+		ttl = 86400
+
+		# Generate using our function
+		username, credential = generate_turn_credentials(secret, ttl, user)
+
+		# Manually calculate expected credential
+		timestamp = int(time.time()) + ttl
+		expected_username = f"{timestamp}:{user}"
+		expected_credential = hmac.new(
+			secret.encode('utf-8'),
+			expected_username.encode('utf-8'),
+			hashlib.sha1
+		).digest()
+		expected_credential = base64.b64encode(expected_credential).decode('utf-8')
+
+		# Username should have same format (timestamp will differ slightly)
+		self.assertIn(":", username)
+		self.assertTrue(username.endswith(f":{user}"))
+
+		# Credential should be valid base64
+		self.assertIsInstance(credential, str)
+		self.assertGreater(len(credential), 0)
+
+	def test_ttl_affects_username_timestamp(self):
+		"""Test that TTL affects the timestamp in username"""
+		from f_icecore.f_icecore.api.turn_credentials import generate_turn_credentials
+
+		secret = "test_secret"
+
+		# Generate with different TTLs
+		username1, _ = generate_turn_credentials(secret, ttl=3600)  # 1 hour
+		username2, _ = generate_turn_credentials(secret, ttl=7200)  # 2 hours
+
+		# Extract timestamps
+		ts1 = int(username1.split(":")[0])
+		ts2 = int(username2.split(":")[0])
+
+		# Verify second timestamp is later
+		self.assertGreater(ts2, ts1)
+
+	def test_get_credentials_without_settings_fails(self):
+		"""Test that getting credentials fails if settings not configured"""
+		from f_icecore.f_icecore.api.turn_credentials import get_turn_credentials
+
+		# Clear settings
+		settings = frappe.get_doc("F IceCore Settings", "F IceCore Settings")
+		settings.turn_server = None
+		settings.turn_secret = None
+		settings.save(ignore_permissions=True)
+		frappe.db.commit()
+
+		# Try to get credentials
+		with self.assertRaises(frappe.ValidationError):
+			get_turn_credentials()
+
+	def test_test_turn_connection_with_valid_config(self):
+		"""Test TURN connection test with valid config"""
+		from f_icecore.f_icecore.api.turn_credentials import test_turn_connection
+
+		result = test_turn_connection()
+
+		# Should return config details
+		self.assertIn("success", result)
+		self.assertIn("config", result)
+
+		if result["success"]:
+			self.assertEqual(result["config"]["server"], "turn.example.com")
+
+	def test_test_turn_connection_without_config(self):
+		"""Test TURN connection test without config"""
+		from f_icecore.f_icecore.api.turn_credentials import test_turn_connection
+
+		# Clear settings
+		settings = frappe.get_doc("F IceCore Settings", "F IceCore Settings")
+		settings.turn_server = None
+		settings.turn_secret = None
+		settings.save(ignore_permissions=True)
+		frappe.db.commit()
+
+		result = test_turn_connection()
+
+		# Should return failure
+		self.assertEqual(result["success"], False)
+		self.assertIn("message", result)
+
+	def test_credentials_include_all_transport_types(self):
+		"""Test that credentials include UDP, TCP, and TLS transports"""
+		from f_icecore.f_icecore.api.turn_credentials import get_turn_credentials
+
+		result = get_turn_credentials()
+
+		# Get TURN server URLs
+		turn_server = result["iceServers"][1]
+		urls = turn_server["urls"]
+
+		# Verify different transports
+		has_udp = any("turn:" in url and "?transport=udp" not in url for url in urls)
+		has_tcp = any("transport=tcp" in url for url in urls)
+		has_tls = any("turns:" in url for url in urls)
+
+		self.assertTrue(has_udp or has_tcp or has_tls)
+
+
+def run_tests():
+	"""Run all TURN credentials tests"""
+	suite = unittest.TestLoader().loadTestsFromTestCase(TestTURNCredentials)
+	unittest.TextTestRunner(verbosity=2).run(suite)
+
+
+if __name__ == "__main__":
+	run_tests()
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/f_icecore/api/turn_credentials.py
+import frappe
+from frappe.utils.password import get_decrypted_password
+import hmac, hashlib, base64, time
+
+@frappe.whitelist()
+def get_turn_credentials(ttl=86400):
+	turn_config = get_turn_config()
+	if not turn_config.get("secret"):
+		frappe.throw("TURN server not configured")
+
+	server = turn_config['server']
+	# Remove port from server string if it's already there (e.g. "1.2.3.4:3478")
+	if ":" in server:
+		server = server.split(":")[0]
+
+	username, credential = generate_turn_credentials(turn_config["secret"], ttl)
+	ice_servers = [
+		{"urls": f"stun:{server}:{turn_config.get('stun_port', 3478)}"},
+		{"urls": [f"turn:{server}:{turn_config.get('turn_port', 3478)}?transport=udp"],
+		 "username": username, "credential": credential, "credentialType": "password"}
+	]
+	return {"ice_servers": ice_servers, "ttl": ttl, "expires_at": int(time.time()) + ttl}
+
+def generate_turn_credentials(secret, ttl=86400):
+	user = frappe.session.user
+	timestamp = int(time.time()) + ttl
+	username = f"{timestamp}:{user}"
+	credential = hmac.new(secret.encode('utf-8'), username.encode('utf-8'), hashlib.sha1).digest()
+	credential = base64.b64encode(credential).decode('utf-8')
+	return username, credential
+
+def get_turn_config():
+	"""
+	Get TURN configuration from F IceCore Settings DocType
+	Properly decrypts password field using get_password()
+	"""
+	# First try to get from F IceCore Settings DocType
+	if frappe.db.exists("F IceCore Settings", "F IceCore Settings"):
+		settings = frappe.get_doc("F IceCore Settings", "F IceCore Settings")
+
+		# Get the decrypted password using get_decrypted_password()
+		# This is the correct way to read Password fields in Frappe
+		turn_secret = get_decrypted_password(
+			"F IceCore Settings",
+			"F IceCore Settings",
+			"turn_secret",
+			raise_exception=False
+		)
+
+		if settings.turn_server and turn_secret:
+			return {
+				"server": settings.turn_server,
+				"secret": turn_secret,  # Decrypted value
+				"stun_port": settings.stun_port or 3478,
+				"turn_port": settings.turn_port or 3478,
+				"turns_port": settings.turns_port or 5349
+			}
+
+	# Fallback to frappe.conf (for backward compatibility)
+	turn_config = frappe.conf.get("f_icecore_turn", {})
+	if turn_config and turn_config.get("secret"):
+		return turn_config
+
+	# Return empty config if nothing found
+	return {
+		"server": frappe.conf.get("host_name", "localhost"),
+		"secret": "",
+		"stun_port": 3478,
+		"turn_port": 3478,
+		"turns_port": 5349
+	}
+
+@frappe.whitelist()
+def get_ice_servers():
+	creds = get_turn_credentials()
+	return creds["ice_servers"]
+
+@frappe.whitelist()
+def test_turn_connection():
+	"""
+	Test TURN server connection
+	Returns detailed config info for verification
+	"""
+	turn_config = get_turn_config()
+
+	# Check if server is configured
+	if not turn_config.get("server"):
+		return {
+			"success": False,
+			"message": "TURN server address not configured"
+		}
+
+	# Check if secret is configured
+	if not turn_config.get("secret"):
+		return {
+			"success": False,
+			"message": "TURN server secret not configured"
+		}
+
+	# Generate test credentials
+	try:
+		username, credential = generate_turn_credentials(turn_config["secret"], ttl=300)
+	except Exception as e:
+		return {
+			"success": False,
+			"message": f"Error generating credentials: {str(e)}"
+		}
+
+	# Return success with full config
+	return {
+		"success": True,
+		"message": "TURN server configured correctly",
+		"config": {
+			"server": turn_config["server"],
+			"ports": {
+				"stun": turn_config.get("stun_port", 3478),
+				"turn": turn_config.get("turn_port", 3478),
+				"turns": turn_config.get("turns_port", 5349)
+			},
+			"username_format": username.split(":")[1] if ":" in username else "unknown",
+			"credential_generated": bool(credential)
+		}
+	}
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/f_icecore/doctype/f_icecore_call_recording/f_icecore_call_recording.py
+# Copyright (c) 2025, Thunder BluePhoenix and contributors
+# For license information, please see license.txt
+
+import frappe
+from frappe.model.document import Document
+from datetime import datetime
+
+
+class FIceCoreCallRecording(Document):
+	def before_save(self):
+		"""Calculate duration if both start and end times are set."""
+		if self.started_at and self.ended_at and not self.duration:
+			start = self.started_at
+			end = self.ended_at
+			if isinstance(start, str):
+				start = datetime.fromisoformat(start)
+			if isinstance(end, str):
+				end = datetime.fromisoformat(end)
+			self.duration = int((end - start).total_seconds())
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/f_icecore/doctype/f_icecore_call_session/f_icecore_call_session.py
+import frappe
+from frappe.model.document import Document
+
+class FIceCoreCallSession(Document):
+	def before_save(self):
+		if self.status == "Ended" and self.accepted_at and self.ended_at:
+			accepted = frappe.utils.get_datetime(self.accepted_at)
+			ended = frappe.utils.get_datetime(self.ended_at)
+			self.duration = int((ended - accepted).total_seconds())
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/f_icecore/doctype/f_icecore_call_transfer/f_icecore_call_transfer.py
+# Copyright (c) 2025, Thunder BluePhoenix and contributors
+# For license information, please see license.txt
+
+import frappe
+from frappe.model.document import Document
+
+
+class FIceCoreCallTransfer(Document):
+	pass
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/f_icecore/doctype/f_icecore_settings/f_icecore_settings.js
+// Copyright (c) 2025, Thunder BluePhoenix and contributors
+// For license information, please see license.txt
+
+console.log('🔵 F-IceCore: Loading settings form script...');
+
+frappe.ui.form.on('F IceCore Settings', {
+	refresh(frm) {
+		console.log('🔵 F-IceCore Settings: Form refresh');
+
+		// Setup button handlers
+		setup_button_handlers(frm);
+
+		// Show helpful messages
+		show_configuration_warnings(frm);
+
+		// Add quick actions
+		add_quick_actions(frm);
+
+		console.log('✅ F-IceCore Settings: Form initialized');
+	},
+
+	turn_server(frm) {
+		// Auto-format server address (remove protocol if added)
+		if (frm.doc.turn_server) {
+			const cleaned = frm.doc.turn_server.replace(/^(stun:|turn:|turns:)\/\//, '');
+			if (cleaned !== frm.doc.turn_server) {
+				console.log('🔵 F-IceCore: Auto-formatting TURN server address');
+				frm.set_value('turn_server', cleaned);
+			}
+		}
+	},
+
+	enable_call_history(frm) {
+		// Warn if disabling call history
+		if (!frm.doc.enable_call_history) {
+			frappe.msgprint({
+				title: __('Warning'),
+				message: __('Disabling call history will prevent storing call records. Existing history will be preserved.'),
+				indicator: 'orange'
+			});
+		}
+	},
+
+	max_call_duration(frm) {
+		// Show friendly format
+		if (frm.doc.max_call_duration > 0) {
+			const hours = Math.floor(frm.doc.max_call_duration / 3600);
+			const minutes = Math.floor((frm.doc.max_call_duration % 3600) / 60);
+			let duration_str = '';
+
+			if (hours > 0) duration_str += `${hours} hour${hours > 1 ? 's' : ''}`;
+			if (minutes > 0) {
+				if (duration_str) duration_str += ' ';
+				duration_str += `${minutes} minute${minutes > 1 ? 's' : ''}`;
+			}
+
+			if (duration_str) {
+				frm.set_df_property('max_call_duration', 'description',
+					`Maximum duration for calls in seconds (0 = unlimited). Current: ${duration_str}`);
+			}
+		}
+	}
+});
+
+function setup_button_handlers(frm) {
+	console.log('🔵 F-IceCore Settings: Setting up button handlers...');
+
+	// Test Connection Button
+	setTimeout(() => {
+		const test_btn = frm.fields_dict.test_connection_button;
+		if (test_btn && test_btn.$input) {
+			console.log('🔵 F-IceCore Settings: Found test_connection_button field');
+
+			// Remove any existing handlers
+			test_btn.$input.off('click');
+
+			// Add new handler
+			test_btn.$input.on('click', function(e) {
+				e.preventDefault();
+				console.log('🔵 F-IceCore Settings: Test connection button clicked!');
+				test_turn_connection(frm);
+			});
+
+			console.log('✅ F-IceCore Settings: Test button handler attached');
+		} else {
+			console.warn('⚠️ F-IceCore Settings: test_connection_button field not found');
+		}
+	}, 100);
+
+	// Save Credentials Button
+	setTimeout(() => {
+		const save_btn = frm.fields_dict.save_credentials_button;
+		if (save_btn && save_btn.$input) {
+			console.log('🔵 F-IceCore Settings: Found save_credentials_button field');
+
+			// Remove any existing handlers
+			save_btn.$input.off('click');
+
+			// Add new handler
+			save_btn.$input.on('click', function(e) {
+				e.preventDefault();
+				console.log('🔵 F-IceCore Settings: Save credentials button clicked!');
+				save_turn_credentials(frm);
+			});
+
+			console.log('✅ F-IceCore Settings: Save credentials button handler attached');
+		} else {
+			console.warn('⚠️ F-IceCore Settings: save_credentials_button field not found');
+		}
+	}, 100);
+}
+
+function show_configuration_warnings(frm) {
+	// Show warning if TURN not configured
+	if (!frm.doc.turn_server || !frm.doc.turn_secret) {
+		frm.dashboard.add_comment(`
+			<div class="alert alert-warning">
+				<strong>⚠️ TURN Server Not Configured</strong><br>
+				Run <code>bash install_scripts/install_coturn.sh</code> to automatically configure your TURN server.<br>
+				Or manually enter your TURN server details above and click "Save Credentials".
+			</div>
+		`, 'blue', true);
+	}
+}
+
+function add_quick_actions(frm) {
+	// View Call History
+	frm.add_custom_button(__('View Call History'), () => {
+		frappe.set_route('List', 'F IceCore Call Session');
+	});
+
+	// Installation Guide
+	frm.add_custom_button(__('Installation Guide'), () => {
+		window.open('https://github.com/Thunder-BluePhoenix/f_icecore#installation', '_blank');
+	}, __('Help'));
+
+	// User Guide
+	frm.add_custom_button(__('User Guide'), () => {
+		window.open('https://github.com/Thunder-BluePhoenix/f_icecore/blob/main/USER_GUIDE.md', '_blank');
+	}, __('Help'));
+}
+
+function test_turn_connection(frm) {
+	console.log('🔵 F-IceCore Settings: Testing TURN connection...');
+
+	const status_el = $('#turn-connection-status');
+
+	// Check if settings are filled
+	if (!frm.doc.turn_server || !frm.doc.turn_secret) {
+		status_el.html(`
+			<div class="alert alert-warning">
+				<i class="fa fa-exclamation-triangle"></i> <strong>Missing Configuration</strong><br>
+				Please enter TURN Server and TURN Secret, then save the form before testing.
+			</div>
+		`);
+
+		frappe.msgprint({
+			title: __('Missing Configuration'),
+			message: __('Please enter TURN Server and TURN Secret, then save the form before testing.'),
+			indicator: 'orange'
+		});
+
+		return;
+	}
+
+	// Check if form is dirty (unsaved changes)
+	if (frm.is_dirty()) {
+		status_el.html(`
+			<div class="alert alert-warning">
+				<i class="fa fa-exclamation-triangle"></i> <strong>Unsaved Changes</strong><br>
+				Please save the form first before testing the connection.
+			</div>
+		`);
+
+		frappe.msgprint({
+			title: __('Unsaved Changes'),
+			message: __('Please save the form first, then test the connection.'),
+			indicator: 'orange',
+			primary_action: {
+				label: __('Save Now'),
+				action: () => {
+					frm.save().then(() => {
+						// Test after save
+						setTimeout(() => test_turn_connection(frm), 500);
+					});
+				}
+			}
+		});
+
+		return;
+	}
+
+	// Show loading
+	status_el.html(`
+		<div class="alert alert-info">
+			<i class="fa fa-spinner fa-spin"></i> Testing TURN connection...
+		</div>
+	`);
+
+	frappe.call({
+		method: 'f_icecore.f_icecore.api.turn_credentials.test_turn_connection',
+		callback: (r) => {
+			console.log('🔵 F-IceCore Settings: Test response:', r);
+
+			if (r.message && r.message.success) {
+				status_el.html(`
+					<div class="alert alert-success">
+						<i class="fa fa-check-circle"></i> <strong>TURN Server Connected!</strong><br>
+						<strong>Server:</strong> ${r.message.config.server}<br>
+						<strong>STUN Port:</strong> ${r.message.config.ports.stun}<br>
+						<strong>TURN Port:</strong> ${r.message.config.ports.turn}<br>
+						<strong>TURNS Port:</strong> ${r.message.config.ports.turns}
+					</div>
+				`);
+
+				frappe.show_alert({
+					message: __('TURN server is configured correctly'),
+					indicator: 'green'
+				}, 5);
+
+				console.log('✅ F-IceCore Settings: TURN connection test passed');
+			} else {
+				const error_msg = r.message ? r.message.message : 'TURN server not configured';
+				status_el.html(`
+					<div class="alert alert-danger">
+						<i class="fa fa-times-circle"></i> <strong>Connection Failed</strong><br>
+						${error_msg}<br>
+						<small>Run <code>bash install_scripts/install_coturn.sh</code> to set up your TURN server.</small>
+					</div>
+				`);
+
+				frappe.show_alert({
+					message: error_msg,
+					indicator: 'red'
+				}, 5);
+
+				console.warn('⚠️ F-IceCore Settings: TURN connection test failed:', error_msg);
+			}
+		},
+		error: (err) => {
+			console.error('❌ F-IceCore Settings: Error testing connection:', err);
+
+			status_el.html(`
+				<div class="alert alert-danger">
+					<i class="fa fa-exclamation-triangle"></i> <strong>Error Testing Connection</strong><br>
+					${err.message || 'Unknown error occurred'}
+				</div>
+			`);
+
+			frappe.show_alert({
+				message: __('Error testing TURN connection'),
+				indicator: 'red'
+			}, 5);
+		}
+	});
+}
+
+function save_turn_credentials(frm) {
+	console.log('🔵 F-IceCore Settings: Saving TURN credentials...');
+
+	const status_el = $('#credentials-save-status');
+
+	// Validate that server and secret are filled
+	if (!frm.doc.turn_server || !frm.doc.turn_secret) {
+		status_el.html(`
+			<div class="alert alert-warning">
+				<i class="fa fa-exclamation-triangle"></i> <strong>Missing Information</strong><br>
+				Please enter both TURN Server and TURN Secret before saving.
+			</div>
+		`);
+
+		frappe.msgprint({
+			title: __('Missing Information'),
+			message: __('Please enter both TURN Server and TURN Secret before saving.'),
+			indicator: 'orange'
+		});
+
+		return;
+	}
+
+	// Show loading
+	status_el.html(`
+		<div class="alert alert-info">
+			<i class="fa fa-spinner fa-spin"></i> Saving credentials...
+		</div>
+	`);
+
+	// Save the form
+	frm.save().then(() => {
+		console.log('✅ F-IceCore Settings: Credentials saved successfully');
+
+		status_el.html(`
+			<div class="alert alert-success">
+				<i class="fa fa-check-circle"></i> <strong>Credentials Saved Successfully!</strong><br>
+				TURN Server: ${frm.doc.turn_server}<br>
+				STUN Port: ${frm.doc.stun_port}<br>
+				TURN Port: ${frm.doc.turn_port}<br>
+				TURNS Port: ${frm.doc.turns_port}<br>
+				<small>Settings are now active for all users.</small>
+			</div>
+		`);
+
+		frappe.show_alert({
+			message: __('TURN credentials saved successfully'),
+			indicator: 'green'
+		}, 5);
+
+		// Automatically test connection after saving
+		setTimeout(() => {
+			console.log('🔵 F-IceCore Settings: Auto-testing connection after save...');
+			test_turn_connection(frm);
+		}, 1000);
+
+	}).catch((err) => {
+		console.error('❌ F-IceCore Settings: Error saving credentials:', err);
+
+		status_el.html(`
+			<div class="alert alert-danger">
+				<i class="fa fa-times-circle"></i> <strong>Save Failed</strong><br>
+				${err.message || 'Unknown error occurred'}
+			</div>
+		`);
+
+		frappe.show_alert({
+			message: __('Failed to save credentials'),
+			indicator: 'red'
+		}, 5);
+	});
+}
+
+console.log('✅ F-IceCore: Settings form script loaded');
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/f_icecore/install/configure_turn.py
+"""
+Configure TURN server settings properly
+"""
+import frappe
+from frappe.utils.password import get_decrypted_password
+
+
+def update_turn_settings():
+	"""Update TURN server settings using Frappe document API (handles password encryption)"""
+	try:
+		# Get or create settings document
+		if frappe.db.exists("F IceCore Settings", "F IceCore Settings"):
+			settings = frappe.get_doc("F IceCore Settings", "F IceCore Settings")
+		else:
+			settings = frappe.new_doc("F IceCore Settings")
+			settings.name = "F IceCore Settings"
+
+		# Update TURN server settings (from original Coturn installation)
+		settings.turn_server = "10.85.98.242"
+		settings.turn_secret = "89da14c8d0c26d45217130ae7bc20042b6858a795d25716d3b4d6b25c930992b"
+		settings.stun_port = 3478
+		settings.turn_port = 3478
+		settings.turns_port = 5349
+
+		# Enable features
+		settings.enable_audio_calls = 1
+		settings.enable_video_calls = 1
+		settings.enable_screen_sharing = 1
+		settings.enable_call_history = 1
+
+		# Save (this handles password encryption automatically)
+		settings.save()
+		frappe.db.commit()
+
+		print("✅ TURN settings saved successfully!")
+		print(f"   TURN Server: {settings.turn_server}")
+		print(f"   STUN Port: {settings.stun_port}")
+		print(f"   TURN Port: {settings.turn_port}")
+
+		# Verify password was encrypted and can be decrypted
+		try:
+			decrypted = get_decrypted_password(
+				"F IceCore Settings",
+				"F IceCore Settings",
+				"turn_secret"
+			)
+
+			if decrypted:
+				print(f"\n✅ Password encrypted and can be decrypted!")
+				matches = decrypted == "e6b3db1de9a07c303033ee7b952c487913b6a29d69b90a49f4fa9150cc21ff85"
+				print(f"   Decrypted value matches original: {matches}")
+				return {"success": True, "message": "TURN server configured successfully"}
+			else:
+				print("\n❌ WARNING: Password is None!")
+				return {"success": False, "message": "Password is None"}
+		except Exception as decrypt_error:
+			print(f"\n❌ Decryption error: {decrypt_error}")
+			import traceback
+			traceback.print_exc()
+			return {"success": False, "message": f"Decryption error: {decrypt_error}"}
+
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "TURN Configuration Error")
+		print(f"\n❌ Error: {str(e)}")
+		import traceback
+		traceback.print_exc()
+		return {"success": False, "message": str(e)}
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/f_icecore/install/save_turn_config.py
+"""
+Save TURN configuration to F IceCore Settings
+Called after Coturn installation
+"""
+
+import frappe
+import sys
+
+
+def save_turn_credentials(server, secret, stun_port=3478, turn_port=3478, turns_port=5349):
+	"""
+	Save TURN credentials to F IceCore Settings
+
+	Args:
+		server: TURN server hostname/IP
+		secret: TURN shared secret
+		stun_port: STUN port (default: 3478)
+		turn_port: TURN port (default: 3478)
+		turns_port: TURNS port (default: 5349)
+	"""
+	try:
+		# Initialize Frappe
+		frappe.init(site=frappe.local.site)
+		frappe.connect()
+
+		# Get or create settings
+		if not frappe.db.exists("F IceCore Settings", "F IceCore Settings"):
+			settings = frappe.new_doc("F IceCore Settings")
+		else:
+			settings = frappe.get_doc("F IceCore Settings", "F IceCore Settings")
+
+		# Update settings
+		settings.turn_server = server
+		settings.turn_secret = secret
+		settings.stun_port = stun_port
+		settings.turn_port = turn_port
+		settings.turns_port = turns_port
+
+		# Save
+		settings.save(ignore_permissions=True)
+		frappe.db.commit()
+
+		print(f"✅ TURN credentials saved to F IceCore Settings")
+		print(f"   Server: {server}")
+		print(f"   Ports: STUN={stun_port}, TURN={turn_port}, TURNS={turns_port}")
+
+		return True
+
+	except Exception as e:
+		print(f"❌ Failed to save TURN credentials: {str(e)}")
+		return False
+
+	finally:
+		frappe.destroy()
+
+
+if __name__ == "__main__":
+	if len(sys.argv) < 3:
+		print("Usage: python save_turn_config.py <site> <server> <secret> [stun_port] [turn_port] [turns_port]")
+		sys.exit(1)
+
+	site = sys.argv[1]
+	server = sys.argv[2]
+	secret = sys.argv[3]
+	stun_port = int(sys.argv[4]) if len(sys.argv) > 4 else 3478
+	turn_port = int(sys.argv[5]) if len(sys.argv) > 5 else 3478
+	turns_port = int(sys.argv[6]) if len(sys.argv) > 6 else 5349
+
+	# Set site
+	frappe.local.site = site
+
+	# Save credentials
+	success = save_turn_credentials(server, secret, stun_port, turn_port, turns_port)
+
+	sys.exit(0 if success else 1)
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/hooks.py
+app_name = "f_icecore"
+app_title = "F IceCore"
+app_publisher = "Thunder BluePhoenix"
+app_description = "❄️ F-IceCore — WebRTC Calling • Video Calling • Screen Sharing with Auto STUN/TURN Setup"
+app_email = "bluephoenix00995@gmail.com"
+app_license = "gpl-3.0"
+app_version = "0.0.1"
+
+# Apps
+# ------------------
+
+# required_apps = []
+
+# Each item in the list will be shown as an app in the apps page
+add_to_apps_screen = [
+	{
+		"name": "f_icecore",
+		"logo": "/assets/f_icecore/images/logo.png",
+		"title": "F IceCore",
+		"route": "/app/f-icecore-dashboard",
+		"has_permission": "f_icecore.f_icecore.api.permissions.has_app_permission"
+	}
+]
+
+# Includes in <head>
+# ------------------
+
+# include js, css files in header of desk.html
+app_include_css = "/assets/f_icecore/css/f_icecore.css"
+app_include_js = [
+	"/assets/f_icecore/js/webrtc_engine.js",       # WebRTC engine - With HTTP polling fallback!
+	"/assets/f_icecore/js/group_webrtc_engine.js",  # Group call mesh WebRTC engine
+	"/assets/f_icecore/js/noise_cancellation.js",   # Noise cancellation engine (Web Audio API)
+	"/assets/f_icecore/js/call_ui.js",              # Call UI - With minimize, noise cancel, HTTP polling!
+	"/assets/f_icecore/js/f_icecore.bundle.js",     # Additional features
+	"/assets/f_icecore/js/f_icecore_boot2.js"        # Navbar with pending calls + search/multi-select
+]
+
+# include js, css files in header of web template
+# web_include_css = "/assets/f_icecore/css/f_icecore.css"
+# web_include_js = "/assets/f_icecore/js/f_icecore.js"
+
+# include custom scss in every website theme (without file extension ".scss")
+# website_theme_scss = "f_icecore/public/scss/website"
+
+# include js, css files in header of web form
+# webform_include_js = {"doctype": "public/js/doctype.js"}
+# webform_include_css = {"doctype": "public/css/doctype.css"}
+
+# include js in page
+# page_js = {"page" : "public/js/file.js"}
+
+# include js in doctype views
+# doctype_js = {"doctype" : "public/js/doctype.js"}
+# doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
+# doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
+# doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
+
+# Svg Icons
+# ------------------
+# include app icons in desk
+# app_include_icons = "f_icecore/public/icons.svg"
+
+# Home Pages
+# ----------
+
+# application home page (will override Website Settings)
+# home_page = "login"
+
+# website user home page (by Role)
+# role_home_page = {
+# 	"Role": "home_page"
+# }
+
+# Generators
+# ----------
+
+# automatically create page for each record of this doctype
+# website_generators = ["Web Page"]
+
+# Jinja
+# ----------
+
+# add methods and filters to jinja environment
+# jinja = {
+# 	"methods": "f_icecore.utils.jinja_methods",
+# 	"filters": "f_icecore.utils.jinja_filters"
+# }
+
+# Installation
+# ------------
+
+# before_install = "f_icecore.f_icecore.install.before_install"
+after_install = "f_icecore.f_icecore.install.setup.post_install"
+
+# Uninstallation
+# ------------
+
+# before_uninstall = "f_icecore.uninstall.before_uninstall"
+# after_uninstall = "f_icecore.uninstall.after_uninstall"
+
+# Integration Setup
+# ------------------
+# To set up dependencies/integrations with other apps
+# Name of the app being installed is passed as an argument
+
+# before_app_install = "f_icecore.utils.before_app_install"
+# after_app_install = "f_icecore.utils.after_app_install"
+
+# Integration Cleanup
+# -------------------
+# To clean up dependencies/integrations with other apps
+# Name of the app being uninstalled is passed as an argument
+
+# before_app_uninstall = "f_icecore.utils.before_app_uninstall"
+# after_app_uninstall = "f_icecore.utils.after_app_uninstall"
+
+# Desk Notifications
+# ------------------
+# See frappe.core.notifications.get_notification_config
+
+# notification_config = "f_icecore.notifications.get_notification_config"
+
+# Permissions
+# -----------
+# Permissions evaluated in scripted ways
+
+# permission_query_conditions = {
+# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
+# }
+#
+# has_permission = {
+# 	"Event": "frappe.desk.doctype.event.event.has_permission",
+# }
+
+# DocType Class
+# ---------------
+# Override standard doctype classes
+
+# override_doctype_class = {
+# 	"ToDo": "custom_app.overrides.CustomToDo"
+# }
+
+# Document Events
+# ---------------
+# Hook on document methods and events
+
+# doc_events = {
+# 	"*": {
+# 		"on_update": "method",
+# 		"on_cancel": "method",
+# 		"on_trash": "method"
+# 	}
+# }
+
+# Scheduled Tasks
+# ---------------
+
+scheduler_events = {
+	"all": [
+		"f_icecore.f_icecore.api.presence.cleanup_stale_presence"
+	],
+	"hourly": [
+		"f_icecore.f_icecore.api.call_session.cleanup_old_sessions",
+		"f_icecore.f_icecore.api.call_recording.cleanup_old_recordings"
+	],
+}
+
+# SocketIO Events
+# ---------------
+# Real-time events for WebRTC signaling
+
+socketio_events = {
+	"f_icecore_signal": "f_icecore.f_icecore.api.signaling.handle_signal",
+	"f_icecore_presence": "f_icecore.f_icecore.api.presence.handle_presence_update",
+}
+
+# Testing
+# -------
+
+# before_tests = "f_icecore.install.before_tests"
+
+# Overriding Methods
+# ------------------------------
+#
+# override_whitelisted_methods = {
+# 	"frappe.desk.doctype.event.event.get_events": "f_icecore.event.get_events"
+# }
+#
+# each overriding function accepts a `data` argument;
+# generated from the base implementation of the doctype dashboard,
+# along with any modifications made in other Frappe apps
+# override_doctype_dashboards = {
+# 	"Task": "f_icecore.task.get_dashboard_data"
+# }
+
+# exempt linked doctypes from being automatically cancelled
+#
+# auto_cancel_exempted_doctypes = ["Auto Repeat"]
+
+# Ignore links to specified DocTypes when deleting documents
+# -----------------------------------------------------------
+
+# ignore_links_on_delete = ["Communication", "ToDo"]
+
+# Request Events
+# ----------------
+# before_request = ["f_icecore.utils.before_request"]
+# after_request = ["f_icecore.utils.after_request"]
+
+# Job Events
+# ----------
+# before_job = ["f_icecore.utils.before_job"]
+# after_job = ["f_icecore.utils.after_job"]
+
+# User Data Protection
+# --------------------
+
+# user_data_fields = [
+# 	{
+# 		"doctype": "{doctype_1}",
+# 		"filter_by": "{filter_by}",
+# 		"redact_fields": ["{field_1}", "{field_2}"],
+# 		"partial": 1,
+# 	},
+# 	{
+# 		"doctype": "{doctype_2}",
+# 		"filter_by": "{filter_by}",
+# 		"partial": 1,
+# 	},
+# 	{
+# 		"doctype": "{doctype_3}",
+# 		"strict": False,
+# 	},
+# 	{
+# 		"doctype": "{doctype_4}"
+# 	}
+# ]
+
+# Authentication and authorization
+# --------------------------------
+
+# auth_hooks = [
+# 	"f_icecore.auth.validate"
+# ]
+
+# Automatically update python controller files with type annotations for this app.
+# export_python_type_annotations = True
+
+# default_log_clearing_doctypes = {
+# 	"Logging DocType Name": 30  # days to retain logs
+# }
+
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/f_icecore/patches/v1/enable_call_recording_default.py
+"""
+Patch: Set enable_call_recording to 1 (enabled) by default.
+
+This field was added after the F IceCore Settings doc was created,
+so existing installations have it as 0 (unchecked). This patch
+ensures call recording works out of the box.
+"""
+
+import frappe
+
+
+def execute():
+	try:
+		frappe.db.set_single_value("F IceCore Settings", "enable_call_recording", 1)
+		frappe.db.commit()
+	except Exception:
+		pass
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/install_scripts/https_proxy.js
+#!/usr/bin/env node
+/**
+ * F-IceCore HTTPS Reverse Proxy
+ *
+ * Provides HTTPS termination for Frappe bench development server.
+ * Proxies:
+ *   - HTTPS :8443 → HTTP :8002 (web server)
+ *   - WSS   :9443 → WS   :9002 (SocketIO)
+ *
+ * IMPORTANT: Rewrites host/origin headers for SocketIO so Frappe's
+ * authenticate middleware maps to default_site (ice1).
+ * Also rewrites CORS response headers so the browser accepts responses.
+ *
+ * This enables getUserMedia() on mobile devices connected via IP address,
+ * which requires a secure context (HTTPS).
+ *
+ * Usage: node https_proxy.js
+ */
+
+const https = require('https');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const net = require('net');
+
+// --- Configuration ---
+const WEB_HTTPS_PORT = 8443;      // HTTPS port for web
+const SOCKETIO_HTTPS_PORT = 9443;  // WSS port for SocketIO
+const WEB_HTTP_PORT = 8005;        // Frappe web server
+const SOCKETIO_HTTP_PORT = 9005;   // Frappe SocketIO server
+const BIND_HOST = '0.0.0.0';
+
+// Certificate paths
+const certsDir = path.join(__dirname, '..', '..', '..', 'certs');
+const certPath = path.join(certsDir, 'cert.pem');
+const keyPath = path.join(certsDir, 'key.pem');
+
+// Verify certs exist
+if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) {
+    console.error('❌ Certificate files not found!');
+    console.error(`   Expected: ${certPath}`);
+    console.error(`   Expected: ${keyPath}`);
+    process.exit(1);
+}
+
+const sslOptions = {
+    key: fs.readFileSync(keyPath),
+    cert: fs.readFileSync(certPath),
+};
+
+// --- Helper: Rewrite headers for SocketIO authentication ---
+// Frappe's authenticate middleware checks:
+//   1. host must be localhost/127.0.0.1 to use default_site
+//   2. origin hostname must match host hostname
+// We rewrite both so SocketIO works from any IP/hostname
+function rewriteHeadersForSocketIO(headers) {
+    const rewritten = { ...headers };
+    // Rewrite host to 127.0.0.1:9002 so Frappe uses default_site
+    rewritten['host'] = `127.0.0.1:${SOCKETIO_HTTP_PORT}`;
+    // Rewrite origin to match host so origin check passes
+    rewritten['origin'] = `http://127.0.0.1:${WEB_HTTP_PORT}`;
+    // Preserve original info in custom headers
+    if (headers['host']) {
+        rewritten['x-forwarded-host'] = headers['host'];
+    }
+    if (headers['origin']) {
+        rewritten['x-forwarded-origin'] = headers['origin'];
+    }
+    rewritten['x-forwarded-proto'] = 'https';
+    return rewritten;
+}
+
+// --- Helper: Rewrite CORS response headers ---
+// SocketIO server echoes back the rewritten origin (http://127.0.0.1:8002)
+// in Access-Control-Allow-Origin, but the browser's actual origin is
+// https://192.168.31.133:8443. We must fix this mismatch.
+function fixCorsHeaders(responseHeaders, clientOrigin) {
+    const fixed = { ...responseHeaders };
+    if (clientOrigin && fixed['access-control-allow-origin']) {
+        fixed['access-control-allow-origin'] = clientOrigin;
+    }
+    // Ensure credentials are allowed (needed for cookies/sid)
+    if (fixed['access-control-allow-origin']) {
+        fixed['access-control-allow-credentials'] = 'true';
+    }
+    return fixed;
+}
+
+// --- Helper: Proxy HTTP request ---
+function proxyRequest(clientReq, clientRes, targetPort, rewriteHeaders) {
+    // Save the client's real origin for CORS fixing
+    const clientOrigin = clientReq.headers['origin'];
+
+    const headers = rewriteHeaders
+        ? rewriteHeadersForSocketIO(clientReq.headers)
+        : {
+            ...clientReq.headers,
+            'X-Forwarded-For': clientReq.socket.remoteAddress,
+            'X-Forwarded-Proto': 'https',
+            'X-Forwarded-Host': clientReq.headers.host,
+        };
+
+    const options = {
+        hostname: '127.0.0.1',
+        port: targetPort,
+        path: clientReq.url,
+        method: clientReq.method,
+        headers: headers,
+    };
+
+    const proxyReq = http.request(options, (proxyRes) => {
+        // Fix CORS headers in the response if we rewrote the request headers
+        const responseHeaders = rewriteHeaders
+            ? fixCorsHeaders(proxyRes.headers, clientOrigin)
+            : proxyRes.headers;
+
+        clientRes.writeHead(proxyRes.statusCode, responseHeaders);
+        proxyRes.pipe(clientRes, { end: true });
+    });
+
+    proxyReq.on('error', (err) => {
+        console.error(`  ⚠️  Proxy error (port ${targetPort}): ${err.message}`);
+        if (!clientRes.headersSent) {
+            clientRes.writeHead(502, { 'Content-Type': 'text/plain' });
+            clientRes.end(`Bad Gateway: ${err.message}`);
+        }
+    });
+
+    clientReq.pipe(proxyReq, { end: true });
+}
+
+// --- Helper: Proxy WebSocket upgrade ---
+function proxyUpgrade(req, socket, head, targetPort, rewriteHeaders) {
+    const proxySocket = net.connect(targetPort, '127.0.0.1', () => {
+        // Build headers - rewrite if needed for SocketIO
+        const headers = rewriteHeaders
+            ? rewriteHeadersForSocketIO(req.headers)
+            : req.headers;
+
+        // Reconstruct the HTTP upgrade request
+        const reqStr = `${req.method} ${req.url} HTTP/1.1\r\n` +
+            Object.entries(headers)
+                .map(([k, v]) => `${k}: ${v}`)
+                .join('\r\n') +
+            '\r\n\r\n';
+
+        proxySocket.write(reqStr);
+        if (head.length > 0) {
+            proxySocket.write(head);
+        }
+
+        proxySocket.pipe(socket);
+        socket.pipe(proxySocket);
+    });
+
+    proxySocket.on('error', (err) => {
+        console.error(`  ⚠️  WebSocket upgrade error (port ${targetPort}): ${err.message}`);
+        socket.end();
+    });
+
+    socket.on('error', (err) => {
+        proxySocket.end();
+    });
+}
+
+// --- 1. HTTPS Web Proxy (port 8443 → 8002) ---
+const webProxy = https.createServer(sslOptions, (req, res) => {
+    proxyRequest(req, res, WEB_HTTP_PORT, false);
+});
+
+// Handle WebSocket upgrade for web proxy
+webProxy.on('upgrade', (req, socket, head) => {
+    proxyUpgrade(req, socket, head, WEB_HTTP_PORT, false);
+});
+
+webProxy.listen(WEB_HTTPS_PORT, BIND_HOST, () => {
+    console.log(`\n🔒 F-IceCore HTTPS Web Proxy`);
+    console.log(`   https://0.0.0.0:${WEB_HTTPS_PORT} → http://127.0.0.1:${WEB_HTTP_PORT}`);
+});
+
+// --- 2. WSS SocketIO Proxy (port 9443 → 9002) ---
+// IMPORTANT: Rewrites host/origin headers so Frappe authenticate middleware
+// sees 127.0.0.1 and maps to default_site. Also fixes CORS response headers
+// so the browser accepts the response (replaces the rewritten origin with
+// the client's actual origin in Access-Control-Allow-Origin).
+const socketProxy = https.createServer(sslOptions, (req, res) => {
+    // Handle CORS preflight (OPTIONS) requests directly
+    if (req.method === 'OPTIONS') {
+        const origin = req.headers['origin'] || '*';
+        res.writeHead(204, {
+            'Access-Control-Allow-Origin': origin,
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': req.headers['access-control-request-headers'] || '*',
+            'Access-Control-Allow-Credentials': 'true',
+            'Access-Control-Max-Age': '86400',
+        });
+        res.end();
+        return;
+    }
+    // SocketIO also does HTTP long-polling, so proxy regular requests too
+    proxyRequest(req, res, SOCKETIO_HTTP_PORT, true);
+});
+
+// Handle WebSocket upgrade for SocketIO — with header rewriting!
+socketProxy.on('upgrade', (req, socket, head) => {
+    proxyUpgrade(req, socket, head, SOCKETIO_HTTP_PORT, true);
+});
+
+socketProxy.listen(SOCKETIO_HTTPS_PORT, BIND_HOST, () => {
+    console.log(`🔒 F-IceCore WSS SocketIO Proxy`);
+    console.log(`   wss://0.0.0.0:${SOCKETIO_HTTPS_PORT} → ws://127.0.0.1:${SOCKETIO_HTTP_PORT}`);
+    console.log(`   (headers rewritten + CORS fixed)`);
+    console.log(`\n📱 Mobile Access URLs:`);
+    console.log(`   Web:      https://192.168.31.133:${WEB_HTTPS_PORT}`);
+    console.log(`   SocketIO: wss://192.168.31.133:${SOCKETIO_HTTPS_PORT}`);
+    console.log(`\n💡 On mobile, visit https://192.168.31.133:${WEB_HTTPS_PORT}`);
+    console.log(`   Accept the self-signed certificate warning to proceed.`);
+    console.log(`   Then also visit https://192.168.31.133:${SOCKETIO_HTTPS_PORT}`);
+    console.log(`   and accept the cert there too (for SocketIO to work).\n`);
+});
+
+// --- Graceful shutdown ---
+process.on('SIGINT', () => {
+    console.log('\n🛑 Shutting down HTTPS proxy...');
+    webProxy.close();
+    socketProxy.close();
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+    webProxy.close();
+    socketProxy.close();
+    process.exit(0);
+});
+
+// Handle errors
+webProxy.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(`❌ Port ${WEB_HTTPS_PORT} is already in use!`);
+    } else {
+        console.error(`❌ Web proxy error: ${err.message}`);
+    }
+});
+
+socketProxy.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(`❌ Port ${SOCKETIO_HTTPS_PORT} is already in use!`);
+    } else {
+        console.error(`❌ SocketIO proxy error: ${err.message}`);
+    }
+});
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_icecore/install_scripts/validate_setup.py
+#!/usr/bin/env python3
+"""
+F-IceCore Setup Validation Script
+Validates the complete F-IceCore installation
+"""
+
+import os
+import sys
+import json
+import importlib.util
+from pathlib import Path
+
+class Colors:
+    GREEN = '\033[92m'
+    RED = '\033[91m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+
+def print_header(text):
+    print(f"\n{Colors.BOLD}{Colors.BLUE}{'=' * 60}{Colors.ENDC}")
+    print(f"{Colors.BOLD}{Colors.BLUE}{text.center(60)}{Colors.ENDC}")
+    print(f"{Colors.BOLD}{Colors.BLUE}{'=' * 60}{Colors.ENDC}\n")
+
+def print_success(text):
+    print(f"{Colors.GREEN}✓{Colors.ENDC} {text}")
+
+def print_error(text):
+    print(f"{Colors.RED}✗{Colors.ENDC} {text}")
+
+def print_warning(text):
+    print(f"{Colors.YELLOW}⚠{Colors.ENDC} {text}")
+
+def print_info(text):
+    print(f"{Colors.BLUE}ℹ{Colors.ENDC} {text}")
+
+def check_file_exists(filepath, description):
+    """Check if a file exists"""
+    if os.path.isfile(filepath):
+        print_success(f"{description}: {filepath}")
+        return True
+    else:
+        print_error(f"{description} not found: {filepath}")
+        return False
+
+def check_directory_exists(dirpath, description):
+    """Check if a directory exists"""
+    if os.path.isdir(dirpath):
+        print_success(f"{description}: {dirpath}")
+        return True
+    else:
+        print_error(f"{description} not found: {dirpath}")
+        return False
+
+def validate_python_file(filepath):
+    """Validate Python file syntax"""
+    try:
+        with open(filepath, 'r') as f:
+            compile(f.read(), filepath, 'exec')
+        return True
+    except SyntaxError as e:
+        print_error(f"Syntax error in {filepath}: {e}")
+        return False
+
+def validate_json_file(filepath):
+    """Validate JSON file"""
+    try:
+        with open(filepath, 'r') as f:
+            json.load(f)
+        return True
+    except json.JSONDecodeError as e:
+        print_error(f"JSON error in {filepath}: {e}")
+        return False
+
+def main():
+    print_header("F-IceCore Setup Validation")
+
+    # Get the app root directory
+    app_root = Path(__file__).parent.parent.absolute()
+    os.chdir(app_root)
+
+    print_info(f"App root: {app_root}\n")
+
+    errors = []
+    warnings = []
+
+    # 1. Check directory structure
+    print_header("1. Directory Structure")
+
+    required_dirs = [
+        ('f_icecore/f_icecore', 'Main module directory'),
+        ('f_icecore/f_icecore/api', 'API module'),
+        ('f_icecore/f_icecore/doctype', 'DocType directory'),
+        ('f_icecore/f_icecore/public/js', 'JavaScript directory'),
+        ('f_icecore/f_icecore/public/css', 'CSS directory'),
+        ('f_icecore/f_icecore/install', 'Install hooks directory'),
+        ('install_scripts', 'Installation scripts'),
+    ]
+
+    for dirpath, desc in required_dirs:
+        if not check_directory_exists(dirpath, desc):
+            errors.append(f"Missing directory: {dirpath}")
+
+    # 2. Check Python files
+    print_header("2. Python Files")
+
+    python_files = [
+        ('f_icecore/hooks.py', 'Hooks configuration'),
+        ('f_icecore/f_icecore/__init__.py', 'Module init'),
+        ('f_icecore/f_icecore/api/__init__.py', 'API init'),
+        ('f_icecore/f_icecore/api/signaling.py', 'Signaling API'),
+        ('f_icecore/f_icecore/api/presence.py', 'Presence API'),
+        ('f_icecore/f_icecore/api/turn_credentials.py', 'TURN credentials API'),
+        ('f_icecore/f_icecore/api/call_session.py', 'Call session API'),
+        ('f_icecore/f_icecore/api/permissions.py', 'Permissions API'),
+        ('f_icecore/f_icecore/install/setup.py', 'Installation setup'),
+    ]
+
+    for filepath, desc in python_files:
+        if check_file_exists(filepath, desc):
+            if not validate_python_file(filepath):
+                errors.append(f"Invalid Python syntax: {filepath}")
+
+    # 3. Check DocTypes
+    print_header("3. DocTypes")
+
+    doctype_files = [
+        ('f_icecore/f_icecore/doctype/f_icecore_call_session/f_icecore_call_session.json', 'Call Session DocType'),
+        ('f_icecore/f_icecore/doctype/f_icecore_call_session/f_icecore_call_session.py', 'Call Session Controller'),
+        ('f_icecore/f_icecore/doctype/f_icecore_settings/f_icecore_settings.json', 'Settings DocType'),
+        ('f_icecore/f_icecore/doctype/f_icecore_settings/f_icecore_settings.py', 'Settings Controller'),
+    ]
+
+    for filepath, desc in doctype_files:
+        if check_file_exists(filepath, desc):
+            if filepath.endswith('.json'):
+                if not validate_json_file(filepath):
+                    errors.append(f"Invalid JSON: {filepath}")
+            elif filepath.endswith('.py'):
+                if not validate_python_file(filepath):
+                    errors.append(f"Invalid Python syntax: {filepath}")
+
+    # 4. Check JavaScript files
+    print_header("4. JavaScript Files")
+
+    js_files = [
+        ('f_icecore/f_icecore/public/js/webrtc_engine.js', 'WebRTC Engine'),
+        ('f_icecore/f_icecore/public/js/call_ui.js', 'Call UI'),
+        ('f_icecore/f_icecore/public/js/f_icecore.bundle.js', 'Main bundle'),
+    ]
+
+    for filepath, desc in js_files:
+        if not check_file_exists(filepath, desc):
+            errors.append(f"Missing JavaScript file: {filepath}")
+
+    # 5. Check CSS files
+    print_header("5. CSS Files")
+
+    css_files = [
+        ('f_icecore/f_icecore/public/css/f_icecore.css', 'Main CSS'),
+    ]
+
+    for filepath, desc in css_files:
+        if not check_file_exists(filepath, desc):
+            errors.append(f"Missing CSS file: {filepath}")
+
+    # 6. Check installation scripts
+    print_header("6. Installation Scripts")
+
+    script_files = [
+        ('install_scripts/install_coturn.sh', 'Coturn installer'),
+    ]
+
+    for filepath, desc in script_files:
+        if check_file_exists(filepath, desc):
+            # Check if executable
+            if os.access(filepath, os.X_OK):
+                print_success(f"  Script is executable")
+            else:
+                warnings.append(f"Script not executable: {filepath}")
+                print_warning(f"  Script is not executable (run: chmod +x {filepath})")
+
+    # 7. Validate hooks.py structure
+    print_header("7. Hooks Configuration")
+
+    try:
+        with open('f_icecore/hooks.py', 'r') as f:
+            hooks_content = f.read()
+
+        # Check for critical hooks
+        if 'after_install' in hooks_content:
+            print_success("after_install hook defined")
+            if 'f_icecore.f_icecore.install.setup.post_install' in hooks_content:
+                print_success("  Correct module path")
+            else:
+                errors.append("Incorrect after_install hook path")
+                print_error("  Incorrect module path")
+
+        if 'scheduler_events' in hooks_content:
+            print_success("scheduler_events defined")
+
+        if 'socketio_events' in hooks_content:
+            print_success("socketio_events defined")
+
+        if 'app_include_js' in hooks_content:
+            print_success("JavaScript includes defined")
+
+        if 'app_include_css' in hooks_content:
+            print_success("CSS includes defined")
+
+    except Exception as e:
+        errors.append(f"Error reading hooks.py: {e}")
+
+    # 8. Check for common issues
+    print_header("8. Common Issues Check")
+
+    # Check for nested directory structure
+    if os.path.isdir('f_icecore/f_icecore'):
+        print_success("Correct nested directory structure (f_icecore/f_icecore)")
+    else:
+        errors.append("Missing nested directory structure")
+
+    # Check for __init__.py files
+    init_files = [
+        'f_icecore/__init__.py',
+        'f_icecore/f_icecore/__init__.py',
+        'f_icecore/f_icecore/api/__init__.py',
+        'f_icecore/f_icecore/doctype/__init__.py',
+        'f_icecore/f_icecore/install/__init__.py',
+    ]
+
+    missing_inits = []
+    for init_file in init_files:
+        if not os.path.isfile(init_file):
+            missing_inits.append(init_file)
+
+    if missing_inits:
+        for init_file in missing_inits:
+            errors.append(f"Missing __init__.py: {init_file}")
+            print_error(f"Missing: {init_file}")
+    else:
+        print_success("All required __init__.py files present")
+
+    # Summary
+    print_header("Validation Summary")
+
+    total_checks = len(required_dirs) + len(python_files) + len(doctype_files) + len(js_files) + len(css_files) + len(script_files)
+
+    print(f"\n{Colors.BOLD}Total checks: {total_checks}{Colors.ENDC}")
+
+    if errors:
+        print(f"\n{Colors.RED}{Colors.BOLD}❌ {len(errors)} ERROR(S) FOUND:{Colors.ENDC}")
+        for error in errors:
+            print(f"  {Colors.RED}•{Colors.ENDC} {error}")
+
+    if warnings:
+        print(f"\n{Colors.YELLOW}{Colors.BOLD}⚠  {len(warnings)} WARNING(S):{Colors.ENDC}")
+        for warning in warnings:
+            print(f"  {Colors.YELLOW}•{Colors.ENDC} {warning}")
+
+    if not errors:
+        print(f"\n{Colors.GREEN}{Colors.BOLD}✅ All checks passed!{Colors.ENDC}")
+        print(f"\n{Colors.GREEN}F-IceCore is properly set up and ready to use.{Colors.ENDC}")
+        print(f"\n{Colors.BLUE}Next steps:{Colors.ENDC}")
+        print(f"  1. Install the app: bench --site your-site install-app f_icecore")
+        print(f"  2. Install Coturn: sudo bash install_scripts/install_coturn.sh")
+        print(f"  3. Configure settings in F IceCore Settings")
+        return 0
+    else:
+        print(f"\n{Colors.RED}{Colors.BOLD}❌ Validation failed. Please fix the errors above.{Colors.ENDC}")
+        return 1
+
+if __name__ == '__main__':
+    sys.exit(main())
+

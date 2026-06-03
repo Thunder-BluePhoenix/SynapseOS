@@ -1,0 +1,20 @@
+# DOCTYPE: RPG Benchmark
+# Module: Frappe Rpg  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  function_name (Data): Function Name [required]
+  module (Data): Module
+  duration_ms (Float): Total Duration (ms) [required]
+  avg_us (Float): Avg per Call (us)
+  runs (Int): Runs [required]
+  input_size (Int): Input Size
+  python_version (Data): Python Version
+  rust_version (Data): frappe_rs Version
+  site (Data): Site
+  cpu_threads (Int): CPU Threads
+  notes (Small Text): Notes
+
+## Permissions
+  System Manager: read, write, create, delete
+  All: read
+

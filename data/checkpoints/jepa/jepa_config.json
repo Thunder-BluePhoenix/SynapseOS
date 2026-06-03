@@ -1,0 +1,16 @@
+{
+  "input_dim": 128,
+  "hidden_dim": 128,
+  "latent_dim": 128,
+  "num_encoder_layers": 2,
+  "num_heads": 4,
+  "context_len": 3,
+  "data_path": "data/jepa/transitions.json",
+  "output_dir": "data/checkpoints/jepa",
+  "num_epochs": 10,
+  "batch_size": 128,
+  "learning_rate": 0.001,
+  "val_split": 0.1,
+  "ema_decay": 0.996,
+  "save_every": 5
+}

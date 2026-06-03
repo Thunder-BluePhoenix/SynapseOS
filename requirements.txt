@@ -1,0 +1,32 @@
+# Core (already installed)
+torch>=2.0.0
+networkx>=3.0
+
+# Phase 1 — Knowledge Graph
+# No additional installs needed for graph_extractor.py and rules_extractor.py
+
+# Phase 2 — Neural Components
+mamba-ssm>=2.0.0          # Mamba sequence engine
+peft>=0.10.0               # LoRA fine-tuning
+transformers>=4.40.0       # HuggingFace model loading
+datasets>=2.19.0           # Corpus dataset management
+torchdiffeq>=0.2.3         # ODE solver for Liquid NN
+ncps>=0.0.7                # Neural Circuit Policies (LTC/LNN)
+pykan>=0.2.0               # KAN (Kolmogorov-Arnold Networks)
+
+# Phase 3 — Integration + Output Synthesizer
+trl>=0.8.0                 # SFT trainer for output synthesizer
+accelerate>=0.29.0         # Multi-GPU training
+
+# Phase 4 — Multimodal
+# openai-whisper            # Audio encoder (install separately: pip install openai-whisper)
+# clip @ git+https://github.com/openai/CLIP.git  # Vision encoder
+
+# Graph DB (optional — NetworkX used by default)
+# neo4j>=5.0.0             # For production-scale graph storage
+
+# Utilities
+tqdm>=4.66.0
+numpy>=1.26.0
+scipy>=1.13.0
+scikit-learn>=1.4.0

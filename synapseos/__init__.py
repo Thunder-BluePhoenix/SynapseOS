@@ -1,0 +1,1 @@
+# SynapseOS — General Cognitive Architecture

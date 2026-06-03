@@ -1,0 +1,632 @@
+[
+  {
+    "id": "F Watcher Alert Log|User|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "F Watcher Alert Log",
+    "concept_b": "User",
+    "description": "Potential cross-domain pattern: F Watcher Alert Log (F Watcher) \u2192 User (Core) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:17:57.567609",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Integration Request|Currency|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Integration Request",
+    "concept_b": "Currency",
+    "description": "Potential cross-domain pattern: Integration Request (Integrations) \u2192 Currency (Geo) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:17:58.573067",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Sales Order|Payment Term|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Sales Order",
+    "concept_b": "Payment Term",
+    "description": "Potential cross-domain pattern: Sales Order (Selling) \u2192 Payment Term (Accounts) via 5 hops",
+    "confidence": 0.30000000000000004,
+    "observed_at": "2026-05-24T00:17:59.575884",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "FB Cross Site Log|Monthly Distribution Percentage|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "FB Cross Site Log",
+    "concept_b": "Monthly Distribution Percentage",
+    "description": "Potential cross-domain pattern: FB Cross Site Log (Flowbridge) \u2192 Monthly Distribution Percentage (Accounts) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:18:00.580058",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "scheduler::frappe_rpg::frappe_rpg.tasks.daily_cache_prune|Customer|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "scheduler::frappe_rpg::frappe_rpg.tasks.daily_cache_prune",
+    "concept_b": "Customer",
+    "description": "Potential cross-domain pattern: scheduler::frappe_rpg::frappe_rpg.tasks.daily_cache_prune (?) \u2192 Customer (Selling) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:18:01.583778",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "TN Settings|Print Style|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "TN Settings",
+    "concept_b": "Print Style",
+    "description": "Potential cross-domain pattern: TN Settings (TallyNext) \u2192 Print Style (Printing) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:18:02.587837",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "scheduler::f_printnebula::f_printnebula.f_printnebula.api.scheduler.run_weekly|Role Profile|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "scheduler::f_printnebula::f_printnebula.f_printnebula.api.scheduler.run_weekly",
+    "concept_b": "Role Profile",
+    "description": "Potential cross-domain pattern: scheduler::f_printnebula::f_printnebula.f_printnebula.api.scheduler.run_weekly (?) \u2192 Role Profile (Core) via 5 hops",
+    "confidence": 0.5,
+    "observed_at": "2026-05-24T00:18:03.590192",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "scheduler::frappe::frappe.utils.global_search.sync_global_search|Party Account|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "scheduler::frappe::frappe.utils.global_search.sync_global_search",
+    "concept_b": "Party Account",
+    "description": "Potential cross-domain pattern: scheduler::frappe::frappe.utils.global_search.sync_global_search (?) \u2192 Party Account (Accounts) via 5 hops",
+    "confidence": 0.5,
+    "observed_at": "2026-05-24T00:18:04.595658",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Journal Entry Template|scheduler::frappe_flowbridge::frappe_flowbridge.flowbridge.api.finance.fetch_rbi_forex_rates|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Journal Entry Template",
+    "concept_b": "scheduler::frappe_flowbridge::frappe_flowbridge.flowbridge.api.finance.fetch_rbi_forex_rates",
+    "description": "Potential cross-domain pattern: Journal Entry Template (Accounts) \u2192 scheduler::frappe_flowbridge::frappe_flowbridge.flowbridge.api.finance.fetch_rbi_forex_rates (?) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:18:05.600865",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Standard Operating Procedure|frappe.integrations.doctype.google_contacts.google_contacts.insert_contacts_to_google_contacts|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Standard Operating Procedure",
+    "concept_b": "frappe.integrations.doctype.google_contacts.google_contacts.insert_contacts_to_google_contacts",
+    "description": "Potential cross-domain pattern: Standard Operating Procedure (Nextai) \u2192 frappe.integrations.doctype.google_contacts.google_contacts.insert_contacts_to_google_contacts (?) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:18:06.606303",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Stock Reposting Settings|Global Search DocType|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Stock Reposting Settings",
+    "concept_b": "Global Search DocType",
+    "description": "Potential cross-domain pattern: Stock Reposting Settings (Stock) \u2192 Global Search DocType (Desk) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:19:58.151960",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Connected App|UOM|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Connected App",
+    "concept_b": "UOM",
+    "description": "Potential cross-domain pattern: Connected App (Integrations) \u2192 UOM (Setup) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:19:58.657181",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Roles|Module Def|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Roles",
+    "concept_b": "Module Def",
+    "description": "Potential cross-domain pattern: Roles (Nextai) \u2192 Module Def (Core) via 5 hops",
+    "confidence": 0.35000000000000003,
+    "observed_at": "2026-05-24T00:19:59.160961",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "india_compliance.audit_trail.overrides.accounts_settings.validate|FB Connector|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "india_compliance.audit_trail.overrides.accounts_settings.validate",
+    "concept_b": "FB Connector",
+    "description": "Potential cross-domain pattern: india_compliance.audit_trail.overrides.accounts_settings.validate (?) \u2192 FB Connector (Flowbridge) via 5 hops",
+    "confidence": 0.35000000000000003,
+    "observed_at": "2026-05-24T00:19:59.665140",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Note|Mode of Payment Account|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Note",
+    "concept_b": "Mode of Payment Account",
+    "description": "Potential cross-domain pattern: Note (Desk) \u2192 Mode of Payment Account (Accounts) via 5 hops",
+    "confidence": 0.35000000000000003,
+    "observed_at": "2026-05-24T00:20:00.166915",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Payment Reconciliation Payment|DocType|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Payment Reconciliation Payment",
+    "concept_b": "DocType",
+    "description": "Potential cross-domain pattern: Payment Reconciliation Payment (Accounts) \u2192 DocType (Core) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:20:00.669723",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Knowledgebase Sources|User Session Display|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Knowledgebase Sources",
+    "concept_b": "User Session Display",
+    "description": "Potential cross-domain pattern: Knowledgebase Sources (Nextai) \u2192 User Session Display (Core) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:20:01.172945",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "RPG Benchmark|Mode of Payment|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "RPG Benchmark",
+    "concept_b": "Mode of Payment",
+    "description": "Potential cross-domain pattern: RPG Benchmark (Frappe Rpg) \u2192 Mode of Payment (Accounts) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:20:01.676940",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Process Payment Reconciliation Log Allocations|Operation|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Process Payment Reconciliation Log Allocations",
+    "concept_b": "Operation",
+    "description": "Potential cross-domain pattern: Process Payment Reconciliation Log Allocations (Accounts) \u2192 Operation (Manufacturing) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:02.180304",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "LDAP Group Mapping|DocType Link|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "LDAP Group Mapping",
+    "concept_b": "DocType Link",
+    "description": "Potential cross-domain pattern: LDAP Group Mapping (Integrations) \u2192 DocType Link (Core) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:02.681894",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Personal Data Deletion Request|Account|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Personal Data Deletion Request",
+    "concept_b": "Account",
+    "description": "Potential cross-domain pattern: Personal Data Deletion Request (Website) \u2192 Account (Accounts) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:03.164176",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Quality Inspection Parameter|Fiscal Year Company|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Quality Inspection Parameter",
+    "concept_b": "Fiscal Year Company",
+    "description": "Potential cross-domain pattern: Quality Inspection Parameter (Stock) \u2192 Fiscal Year Company (Accounts) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:04.174045",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Serial and Batch Entry|DocType|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Serial and Batch Entry",
+    "concept_b": "DocType",
+    "description": "Potential cross-domain pattern: Serial and Batch Entry (Stock) \u2192 DocType (Core) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:04.676529",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Customer|Item|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Customer",
+    "concept_b": "Item",
+    "description": "Potential cross-domain pattern: Customer (Selling) \u2192 Item (Stock) via 5 hops",
+    "confidence": 0.5,
+    "observed_at": "2026-05-24T00:20:05.181746",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "PrintNebula Log|Company|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "PrintNebula Log",
+    "concept_b": "Company",
+    "description": "Potential cross-domain pattern: PrintNebula Log (F Printnebula) \u2192 Company (Setup) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:20:05.685949",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Ledger Merge Accounts|CRM Settings|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Ledger Merge Accounts",
+    "concept_b": "CRM Settings",
+    "description": "Potential cross-domain pattern: Ledger Merge Accounts (Accounts) \u2192 CRM Settings (CRM) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:06.692072",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "frappe_pulse.events.capture.on_submit|Company|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "frappe_pulse.events.capture.on_submit",
+    "concept_b": "Company",
+    "description": "Potential cross-domain pattern: frappe_pulse.events.capture.on_submit (?) \u2192 Company (Setup) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:20:07.197608",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Maintenance Team Member|Email Template|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Maintenance Team Member",
+    "concept_b": "Email Template",
+    "description": "Potential cross-domain pattern: Maintenance Team Member (Assets) \u2192 Email Template (Email) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:20:07.700981",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "scheduler::frappe::frappe.twofactor.delete_all_barcodes_for_users|Ledger Health|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "scheduler::frappe::frappe.twofactor.delete_all_barcodes_for_users",
+    "concept_b": "Ledger Health",
+    "description": "Potential cross-domain pattern: scheduler::frappe::frappe.twofactor.delete_all_barcodes_for_users (?) \u2192 Ledger Health (Accounts) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:08.177613",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Work Order Item|Finance Book|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Work Order Item",
+    "concept_b": "Finance Book",
+    "description": "Potential cross-domain pattern: Work Order Item (Manufacturing) \u2192 Finance Book (Accounts) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:20:09.182011",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Event|Company|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Event",
+    "concept_b": "Company",
+    "description": "Potential cross-domain pattern: Event (Desk) \u2192 Company (Setup) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:20:09.686486",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "CN Microapp|Finance Book|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "CN Microapp",
+    "concept_b": "Finance Book",
+    "description": "Potential cross-domain pattern: CN Microapp (Nextai) \u2192 Finance Book (Accounts) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:10.690245",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Accounts Settings|DocType Link|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Accounts Settings",
+    "concept_b": "DocType Link",
+    "description": "Potential cross-domain pattern: Accounts Settings (Accounts) \u2192 DocType Link (Core) via 5 hops",
+    "confidence": 0.35000000000000003,
+    "observed_at": "2026-05-24T00:20:11.195660",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "scheduler::frappe::frappe.desk.form.document_follow.send_daily_updates|Role|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "scheduler::frappe::frappe.desk.form.document_follow.send_daily_updates",
+    "concept_b": "Role",
+    "description": "Potential cross-domain pattern: scheduler::frappe::frappe.desk.form.document_follow.send_daily_updates (?) \u2192 Role (Core) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:20:11.701173",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Brand|Email Template|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Brand",
+    "concept_b": "Email Template",
+    "description": "Potential cross-domain pattern: Brand (Setup) \u2192 Email Template (Email) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:20:12.202680",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Ai Employee|Opportunity Item|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Ai Employee",
+    "concept_b": "Opportunity Item",
+    "description": "Potential cross-domain pattern: Ai Employee (Nextai) \u2192 Opportunity Item (CRM) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:12.707843",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Downtime Entry|FB MQTT Sink|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Downtime Entry",
+    "concept_b": "FB MQTT Sink",
+    "description": "Potential cross-domain pattern: Downtime Entry (Manufacturing) \u2192 FB MQTT Sink (Flowbridge) via 5 hops",
+    "confidence": 0.5,
+    "observed_at": "2026-05-24T00:20:41.178599",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Dashboard|Country|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Dashboard",
+    "concept_b": "Country",
+    "description": "Potential cross-domain pattern: Dashboard (Desk) \u2192 Country (Geo) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:41.683710",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Activity Type|scheduler::india_compliance::india_compliance.gst_india.utils.gstr_utils.download_queued_request|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Activity Type",
+    "concept_b": "scheduler::india_compliance::india_compliance.gst_india.utils.gstr_utils.download_queued_request",
+    "description": "Potential cross-domain pattern: Activity Type (Projects) \u2192 scheduler::india_compliance::india_compliance.gst_india.utils.gstr_utils.download_queued_request (?) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:42.187865",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "india_compliance.gst_india.overrides.payment_entry.validate|Item|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "india_compliance.gst_india.overrides.payment_entry.validate",
+    "concept_b": "Item",
+    "description": "Potential cross-domain pattern: india_compliance.gst_india.overrides.payment_entry.validate (?) \u2192 Item (Stock) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:42.692457",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Web Form Field|Company|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Web Form Field",
+    "concept_b": "Company",
+    "description": "Potential cross-domain pattern: Web Form Field (Website) \u2192 Company (Setup) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:20:43.196216",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Dynamic User Assignment|UPEOSight DB Storage Snapshot|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Dynamic User Assignment",
+    "concept_b": "UPEOSight DB Storage Snapshot",
+    "description": "Potential cross-domain pattern: Dynamic User Assignment (Nextai) \u2192 UPEOSight DB Storage Snapshot (UPEOSight) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:20:43.701459",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Workflow Action Permitted Role|Company|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Workflow Action Permitted Role",
+    "concept_b": "Company",
+    "description": "Potential cross-domain pattern: Workflow Action Permitted Role (Workflow) \u2192 Company (Setup) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:20:44.203174",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "TN Settings|Quotation Lost Reason Detail|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "TN Settings",
+    "concept_b": "Quotation Lost Reason Detail",
+    "description": "Potential cross-domain pattern: TN Settings (TallyNext) \u2192 Quotation Lost Reason Detail (Setup) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:20:44.705250",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Native App Config|Warehouse|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Native App Config",
+    "concept_b": "Warehouse",
+    "description": "Potential cross-domain pattern: Native App Config (Frappe Native) \u2192 Warehouse (Stock) via 5 hops",
+    "confidence": 0.5,
+    "observed_at": "2026-05-24T00:20:45.210780",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "FB Webhook Log|Subcontracting Receipt|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "FB Webhook Log",
+    "concept_b": "Subcontracting Receipt",
+    "description": "Potential cross-domain pattern: FB Webhook Log (Flowbridge) \u2192 Subcontracting Receipt (Subcontracting) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:45.716086",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Integration Request|FB API Usage|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Integration Request",
+    "concept_b": "FB API Usage",
+    "description": "Potential cross-domain pattern: Integration Request (Integrations) \u2192 FB API Usage (Flowbridge) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:20:46.194453",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Sales Invoice Item|Country|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Sales Invoice Item",
+    "concept_b": "Country",
+    "description": "Potential cross-domain pattern: Sales Invoice Item (Accounts) \u2192 Country (Geo) via 5 hops",
+    "confidence": 0.5,
+    "observed_at": "2026-05-24T00:20:46.698294",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "scheduler::f_genbi::f_genbi.excel_view_tasks.hourly|Quality Feedback Template|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "scheduler::f_genbi::f_genbi.excel_view_tasks.hourly",
+    "concept_b": "Quality Feedback Template",
+    "description": "Potential cross-domain pattern: scheduler::f_genbi::f_genbi.excel_view_tasks.hourly (?) \u2192 Quality Feedback Template (Quality Management) via 5 hops",
+    "confidence": 0.45,
+    "observed_at": "2026-05-24T00:20:47.202754",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "scheduler::frappe_file_merge::frappe_file_merge.tasks.daily|User Select Document Type|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "scheduler::frappe_file_merge::frappe_file_merge.tasks.daily",
+    "concept_b": "User Select Document Type",
+    "description": "Potential cross-domain pattern: scheduler::frappe_file_merge::frappe_file_merge.tasks.daily (?) \u2192 User Select Document Type (Core) via 5 hops",
+    "confidence": 0.35000000000000003,
+    "observed_at": "2026-05-24T00:20:47.707826",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "TN Transfer Pricing Log|Native Print Template|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "TN Transfer Pricing Log",
+    "concept_b": "Native Print Template",
+    "description": "Potential cross-domain pattern: TN Transfer Pricing Log (TallyNext) \u2192 Native Print Template (Frappe Native) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:48.213137",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Appointment Booking Settings|Company|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Appointment Booking Settings",
+    "concept_b": "Company",
+    "description": "Potential cross-domain pattern: Appointment Booking Settings (CRM) \u2192 Company (Setup) via 5 hops",
+    "confidence": 0.35000000000000003,
+    "observed_at": "2026-05-24T00:20:48.718551",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "OAuth Bearer Token|Cost Center|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "OAuth Bearer Token",
+    "concept_b": "Cost Center",
+    "description": "Potential cross-domain pattern: OAuth Bearer Token (Integrations) \u2192 Cost Center (Accounts) via 5 hops",
+    "confidence": 0.35000000000000003,
+    "observed_at": "2026-05-24T00:20:49.223463",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Asset Repair|Account|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Asset Repair",
+    "concept_b": "Account",
+    "description": "Potential cross-domain pattern: Asset Repair (Assets) \u2192 Account (Accounts) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:49.728900",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "scheduler::f_watcher::f_watcher.collectors.integration.collect|Account|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "scheduler::f_watcher::f_watcher.collectors.integration.collect",
+    "concept_b": "Account",
+    "description": "Potential cross-domain pattern: scheduler::f_watcher::f_watcher.collectors.integration.collect (?) \u2192 Account (Accounts) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:50.230332",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "scheduler::frappe_native::frappe_native.tasks.daily|CN PW Contact Access|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "scheduler::frappe_native::frappe_native.tasks.daily",
+    "concept_b": "CN PW Contact Access",
+    "description": "Potential cross-domain pattern: scheduler::frappe_native::frappe_native.tasks.daily (?) \u2192 CN PW Contact Access (Personal Whatsapp Integration) via 5 hops",
+    "confidence": 0.35000000000000003,
+    "observed_at": "2026-05-24T00:20:51.208690",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Landed Cost Item|erpnext.portal.utils.set_default_role|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Landed Cost Item",
+    "concept_b": "erpnext.portal.utils.set_default_role",
+    "description": "Potential cross-domain pattern: Landed Cost Item (Stock) \u2192 erpnext.portal.utils.set_default_role (?) via 5 hops",
+    "confidence": 0.5,
+    "observed_at": "2026-05-24T00:20:52.219223",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Payment Terms Template|Currency|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Payment Terms Template",
+    "concept_b": "Currency",
+    "description": "Potential cross-domain pattern: Payment Terms Template (Accounts) \u2192 Currency (Geo) via 5 hops",
+    "confidence": 0.35000000000000003,
+    "observed_at": "2026-05-24T00:20:52.724608",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Assigned Users|india_compliance.gst_india.overrides.item_tax_template.validate|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Assigned Users",
+    "concept_b": "india_compliance.gst_india.overrides.item_tax_template.validate",
+    "description": "Potential cross-domain pattern: Assigned Users (Nextai) \u2192 india_compliance.gst_india.overrides.item_tax_template.validate (?) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:53.229237",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "CN PW Archived|Has Role|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "CN PW Archived",
+    "concept_b": "Has Role",
+    "description": "Potential cross-domain pattern: CN PW Archived (Personal Whatsapp Integration) \u2192 Has Role (Core) via 5 hops",
+    "confidence": 0.30000000000000004,
+    "observed_at": "2026-05-24T00:20:53.733213",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "scheduler::f_lightning::f_lightning.tasks.monthly|Payment Terms Template|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "scheduler::f_lightning::f_lightning.tasks.monthly",
+    "concept_b": "Payment Terms Template",
+    "description": "Potential cross-domain pattern: scheduler::f_lightning::f_lightning.tasks.monthly (?) \u2192 Payment Terms Template (Accounts) via 5 hops",
+    "confidence": 0.5,
+    "observed_at": "2026-05-24T00:20:54.236758",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "scheduler::f_printnebula::f_printnebula.f_printnebula.api.scheduler.run_monthly|Warehouse|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "scheduler::f_printnebula::f_printnebula.f_printnebula.api.scheduler.run_monthly",
+    "concept_b": "Warehouse",
+    "description": "Potential cross-domain pattern: scheduler::f_printnebula::f_printnebula.f_printnebula.api.scheduler.run_monthly (?) \u2192 Warehouse (Stock) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:54.737320",
+    "reinforcement_count": 0
+  },
+  {
+    "id": "Financial Report Template|Role|cross_domain_link",
+    "type": "cross_domain_link",
+    "concept_a": "Financial Report Template",
+    "concept_b": "Role",
+    "description": "Potential cross-domain pattern: Financial Report Template (Accounts) \u2192 Role (Core) via 5 hops",
+    "confidence": 0.4,
+    "observed_at": "2026-05-24T00:20:55.745085",
+    "reinforcement_count": 0
+  }
+]

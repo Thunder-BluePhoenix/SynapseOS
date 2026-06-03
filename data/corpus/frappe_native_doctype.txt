@@ -1,0 +1,170 @@
+# DOCTYPE: Native App Config
+# Module: Frappe Native  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  app_name (Data): App Name [required, unique]
+  app_title (Data): App Title (Display) [required]
+  enabled (Check): Enabled
+  bundle_id (Data): Bundle ID
+  app_mode (Select): App Mode → Live Config
+Generated APK
+  schema_version (Int): Schema Version
+  primary_color (Color): Primary Color
+  secondary_color (Color): Secondary Color
+  app_icon (Attach Image): App Icon
+  splash_image (Attach Image): Splash Image
+  font_family (Select): Font Family → Roboto
+Inter
+Poppins
+Nunito
+Lato
+  sync_enabled (Check): Sync Enabled
+  pulse_node_id (Data): Pulse Node ID
+  gate_device_binding (Select): Gate Device Binding → Per User
+Shared Device
+None
+  offline_days (Int): Offline Retention (days)
+  sync_doctypes (Small Text): Sync DocTypes (one per line)
+  push_enabled (Check): Push Enabled
+  fcm_sender_id (Data): FCM Sender ID
+  apns_team_id (Data): APNs Team ID
+  apns_key_id (Data): APNs Key ID
+  push_icon (Attach Image): Notification Icon (Android)
+  created_by (Link): Created By → User
+  last_build_at (Datetime): Last Build At
+  build_count (Int): Build Count
+
+## Permissions
+  System Manager: read, write, create, delete
+  System User: read
+
+# DOCTYPE: Native Build Job
+# Module: Frappe Native  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  app (Link): App → Native App Config [required]
+  build_type (Select): Build Type → source_zip
+android_apk
+ios_ipa
+all
+  status (Select): Status → QUEUED
+RUNNING
+DONE
+FAILED
+  triggered_by (Link): Triggered By → User
+  triggered_at (Datetime): Triggered At
+  completed_at (Datetime): Completed At
+  output_zip_url (Attach): Source ZIP
+  apk_url (Attach): APK Download
+  ipa_url (Attach): IPA Download
+  build_log (Code): Build Log → Shell
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: Native Field Mapping
+# Module: Frappe Native  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  screen (Link): Screen → Native Screen [required]
+  fieldname (Data): Fieldname [required]
+  enabled (Check): Enabled
+  label_override (Data): Label Override
+  mobile_fieldtype (Select): Mobile Field Type → Auto
+Text
+Number
+Date
+Datetime
+Select
+Checkbox
+Textarea
+Link
+Attach
+Signature
+Barcode
+GPS
+Password
+  position (Int): Position
+  required (Check): Required
+  read_only (Check): Read Only
+  hidden (Check): Hidden
+  show_in_list (Check): Show in List
+  show_in_detail (Check): Show in Detail
+  show_in_form (Check): Show in Form
+  placeholder (Data): Placeholder
+  default_value (Data): Default Value
+  validation_regex (Data): Validation Regex
+  options_override (Small Text): Options Override (one per line)
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: Native Print Template
+# Module: Frappe Native  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  template_name (Data): Template Name [required, unique]
+  doctype_name (Link): DocType → DocType [required]
+  enabled (Check): Enabled
+  paper_width (Select): Paper Width → 58mm
+80mm
+  print_mode (Select): Print Mode → Bluetooth
+WiFi
+USB
+  header_text (Text Editor): Header Template (Jinja2)
+  line_items_field (Data): Line Items Fieldname
+  footer_text (Text Editor): Footer Template (Jinja2)
+  escpos_commands (Code): Raw ESC/POS Commands (hex) → Plain
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: Native Screen
+# Module: Frappe Native  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  app (Link): App → Native App Config [required]
+  screen_key (Data): Screen Key [required]
+  enabled (Check): Enabled
+  doctype_name (Link): DocType → DocType [required]
+  screen_type (Select): Screen Type → List
+Detail
+Form
+Dashboard
+Custom
+  title (Data): Screen Title
+  list_title_field (Data): Title Field
+  list_subtitle_field (Data): Subtitle Field
+  list_badge_field (Data): Badge Field (status chip)
+  list_icon_field (Data): Icon Field (attach/image)
+  sort_field (Data): Default Sort Field
+  sort_order (Select): Sort Order → DESC
+ASC
+  default_filters (Code): Default Filters (JSON) → JSON
+  offline_enabled (Check): Offline Enabled
+  sync_filter (Code): Sync Filter (JSON) → JSON
+  max_offline_records (Int): Max Offline Records
+  allow_create (Check): Allow Create
+  allow_edit (Check): Allow Edit
+  allow_delete (Check): Allow Delete
+  nav_label (Data): Navigation Label
+  nav_icon (Data): Navigation Icon (Material icon name)
+  nav_position (Int): Navigation Position
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: Native Screen Layout
+# Module: Frappe Native  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  screen (Link): Screen → Native Screen [required]
+  version (Int): Version
+  enabled (Check): Published
+  layout_hash (Data): Layout Hash (SHA256)
+  last_published_at (Datetime): Last Published At
+  dsl_json (Code): DSL JSON → JSON [required]
+
+## Permissions
+  System Manager: read, write, create, delete
+

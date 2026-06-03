@@ -1,0 +1,20 @@
+{
+  "latent_dim": 64,
+  "symbolic_feature_dim": 32,
+  "output_embed_dim": 64,
+  "hidden_dim": 128,
+  "query_types": [
+    "retrieve",
+    "reason",
+    "plan",
+    "compute",
+    "validate"
+  ],
+  "n2s_data_path": "data/bridges/n2s_pairs.json",
+  "s2n_data_path": "data/bridges/s2n_pairs.json",
+  "output_dir": "data/checkpoints/bridges",
+  "num_epochs": 50,
+  "batch_size": 64,
+  "learning_rate": 0.001,
+  "val_split": 0.15
+}

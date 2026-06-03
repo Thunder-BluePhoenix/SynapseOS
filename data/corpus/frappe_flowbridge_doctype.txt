@@ -1,0 +1,1971 @@
+# DOCTYPE: FB AI Prompt
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  prompt_name (Data): Prompt Name [required, unique]
+  feature (Select): Feature → flow_builder
+connector_builder
+copilot
+field_mapper
+error_explainer
+agent
+marketplace
+analytics
+custom [required]
+  version (Int): Version
+  is_active (Check): Active
+  provider_override (Select): Provider Override → 
+claude
+openai
+gemini
+ollama
+  system_prompt (Code): System Prompt → Markdown [required]
+  user_prompt_template (Code): User Prompt Template → Jinja
+  description (Small Text): Description
+  tags (Data): Tags (comma-separated)
+  last_test_output (Text): Last Test Output
+  last_test_at (Datetime): Last Tested At
+
+## Permissions
+  System Manager: read, write, create, delete
+  FlowBridge Developer: read
+
+# DOCTYPE: FB API Consumer
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  consumer_name (Data): Consumer Name [required]
+  consumer_type (Select): Consumer Type → Internal App
+External Developer
+Partner
+  contact_email (Data): Contact Email → Email
+  subscribed_endpoints (Small Text): Subscribed Endpoints (CSV)
+  api_key (Link): API Key → FB API Key
+  pinned_contract (Link): Pinned Contract → FB API Contract
+  pinned_contract_version (Data): Pinned Contract Version
+  is_active (Check): Is Active
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB API Contract
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  contract_name (Data): Contract Name [required]
+  endpoint (Link): Endpoint → FB API Endpoint [required]
+  version (Data): Version
+  is_active (Check): Is Active
+  expected_request_json (Code): Expected Request JSON → JSON
+  expected_response_schema (Code): Expected Response JSON Schema → JSON
+  last_test_status (Select): Last Test Status → 
+Pass
+Fail
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB API Endpoint
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  endpoint_name (Data): Endpoint Name [required, unique]
+  is_active (Check): Active
+  lifecycle_state (Select): Lifecycle State → Draft
+In Review
+Published
+Deprecated
+Retired
+  api_domain (Select): API Domain → Finance
+HR
+Inventory
+CRM
+Custom
+  api_version (Select): API Version → v1
+v2
+v3
+  endpoint_slug (Data): Slug (auto-generated)
+  endpoint_url (Data): Endpoint URL
+  primary_doctype (Link): Primary DocType → DocType [required]
+  doctype_label (Data): Label in Response
+  joined_doctypes (Table): Joined / Child DocTypes → FB API Endpoint Join
+  fields_mode (Select): Fields to Return → All Fields
+Selected Fields
+All Fields Except
+  selected_fields (Table): Fields → FB API Endpoint Field
+  computed_fields (Table): Computed Fields → FB API Endpoint Computed
+  aggregations (Table): Aggregations → FB API Endpoint Aggregation
+  enum_maps (Table): Enum Value Maps → FB API Endpoint Enum Map
+  enable_get (Check): Enable GET (Fetch / List)
+  enable_post (Check): Enable POST (Create Record)
+  enable_put (Check): Enable PUT (Full Update)
+  enable_patch (Check): Enable PATCH (Partial Update)
+  enable_delete (Check): Enable DELETE
+  get_mode (Select): GET Mode → List
+Single (by name)
+Both
+  order_by (Data): Order By Field
+  order_direction (Select): Order Direction → DESC
+ASC
+  default_limit (Int): Default Page Size
+  enable_pagination (Check): Enable Pagination
+  pagination_mode (Select): Pagination Mode → Page
+Cursor
+Keyset
+  enable_search (Check): Enable ?search= param
+  search_fields (Small Text): Searchable Fields (comma-separated)
+  or_filters (Check): Use OR Filters (search across multiple fields simultaneously)
+  include_total_by_default (Check): Include Total Count by Default
+  hierarchy_mode (Select): Hierarchy Mode → 
+Flat
+Tree
+Subtree
+Immediate Children
+  hierarchy_link_field (Data): Hierarchy Link Field (parent field name)
+  default_filters (Table): Default Filters → FB API Endpoint Filter
+  post_doctype (Link): Create Into DocType → DocType
+  post_required_fields (Small Text): Required Fields (comma-separated)
+  post_ignore_fields (Small Text): Ignore Fields from Body (comma-separated)
+  nested_child_fields (Code): Nested Child Table Mapping (JSON) → JSON
+  request_schema (Code): Request JSON Schema (draft-07) → JSON
+  put_key_field (Data): Key Field for Update
+  delete_mode (Select): Delete Mode → Hard Delete
+Soft Delete
+  soft_delete_field (Data): Soft Delete Field
+  soft_delete_value (Data): Soft Delete Value
+  enable_report_mode (Check): Enable Report Mode
+  report_name (Link): Report → Report
+  custom_logic (Code): Custom Logic → Python
+  auth_required (Check): Require Authentication
+  allowed_roles (Small Text): Allowed Roles (comma-separated)
+  rate_limit_rpm (Int): Rate Limit (requests/min, 0 = unlimited)
+  owner_filter (Check): Record-Level: Owner Filter (only own records)
+  enable_jwt (Check): Enable JWT Token Issuance
+  jwt_expiry_minutes (Int): JWT Expiry (minutes)
+  per_endpoint_keys (Table): Per-Endpoint API Keys → FB API Endpoint Key
+  record_level_permissions (Table): Role Scope Rules → FB API Endpoint Role Scope
+  role_scope_rules (Table): Role Data Scope Rules → FB API Endpoint Role Scope
+  access_from_time (Time): Access From Time
+  access_to_time (Time): Access To Time
+  access_days (Small Text): Access Days (Mon,Tue,... blank=all)
+  ip_allowlist (Small Text): IP Allowlist (CIDR or IP, one per line)
+  require_request_signing (Check): Require HMAC-SHA256 Request Signing
+  cors_origins (Small Text): Allowed Origins (comma-separated, * = all)
+  cache_ttl_seconds (Int): Cache TTL (seconds, 0 = no cache)
+  cache_scope (Select): Cache Scope → Global
+Per User
+Per User+Params
+  stale_ttl_seconds (Int): Stale-While-Revalidate TTL (seconds)
+  warm_on_startup (Check): Warm Cache on Startup
+  doc_event_invalidation (Check): Invalidate Cache on Doc Events
+  is_materialized (Check): Materialized Endpoint (pre-computed)
+  materialize_cron (Data): Materialize Cron Expression (e.g. 0 * * * *)
+  warm_params_json (Code): Warm Params (JSON array of param dicts) → JSON
+  mobile_text_truncate_chars (Int): ?_mobile=1 Text Truncate Length
+  enable_sse (Check): Enable SSE Stream
+  enable_ws (Check): Enable WebSocket
+  response_wrapper (Select): Response Wrapper → Standard {data, total, page}
+Raw list
+Raw object
+  null_policy (Select): Null Value Policy → Keep
+Omit
+Replace with default
+  date_format (Select): Date Format in Response → YYYY-MM-DD
+DD-MM-YYYY
+MM/DD/YYYY
+ISO 8601
+  response_timezone (Data): Response Timezone (e.g. Asia/Kolkata, From Request)
+  pii_mask_fields (Small Text): Mask Fields in Response (comma-separated)
+  sanitize_request (Check): Sanitize Request Body (strip HTML, trim whitespace)
+  auto_coerce (Check): Auto Type Coercion ("123"→123, "true"→True)
+  enable_i18n (Check): Enable Label Translation
+  currency_locale (Select): Currency Locale → 
+System Default
+en-IN
+en-US
+de-DE
+fr-FR
+ja-JP
+  number_locale (Data): Number Locale (e.g. en-IN)
+  response_blocks (Code): Multi-Block Response Config (JSON) → JSON
+  on_create_flow (Link): Trigger Flow on Create → FB Flow
+  on_update_flow (Link): Trigger Flow on Update → FB Flow
+  on_read_flow (Link): Trigger Flow on Read → FB Flow
+  on_read_flow_mode (Select): Read Flow Trigger Mode → Every Call
+Cache Miss
+Error
+  post_chain_endpoint (Link): Chain to Endpoint After Write → FB API Endpoint
+  notify_webhook_url (Data): Notify Webhook URL (called async after each request)
+  notify_on (Small Text): Notify On (comma: GET,POST,PUT,PATCH,DELETE)
+  post_write_notify (Check): Push Notification After Write (WhatsApp/Telegram)
+  notify_roles (Small Text): Notify Roles (comma-separated)
+  enable_push_notify (Check): FCM/APNs Push Notification After Write
+  push_notify_roles (Small Text): Push Notify Roles (comma-separated)
+  push_message_template (Small Text): Push Message Template (Jinja2)
+  enable_inbound_webhook (Check): Accept Inbound Webhooks at /fb/inbound/{slug}
+  inbound_hmac_secret (Password): HMAC Secret for Inbound Webhook Verification
+  inbound_field_mapping (Code): Inbound Field Mapping (JSON: payload_key → doctype_field) → JSON
+  doc_triggers (Table): Doc Triggers → FB API Endpoint Doc Trigger
+  endpoint_schedules (Table): Schedules → FB API Endpoint Schedule
+  allow_csv_export (Check): Allow CSV Export (?export=csv)
+  allow_xlsx_export (Check): Allow Excel Export (?export=xlsx)
+  pdf_mode (Check): Enable PDF Download (?export=pdf&name=...)
+  print_format (Link): Print Format → Print Format
+  enable_attachments (Check): Enable Attachment APIs
+  max_file_size_kb (Int): Max File Size (KB)
+  allowed_extensions (Small Text): Allowed Extensions (comma-separated, blank=all)
+  file_visibility (Select): File Visibility → Public
+Private
+From Request
+  attached_to_field (Data): Auto-update Parent Field After Upload
+  suggest_value_field (Data): Suggest Value Field
+  suggest_label_field (Data): Suggest Label Field
+  owner_user (Link): Owner User → User
+  owner_team (Data): Owner Team
+  published_at (Datetime): Published At
+  sunset_at (Date): Sunset Date
+  deprecated_at (Datetime): Deprecated At
+  deprecation_message (Small Text): Deprecation Message
+  is_breaking (Check): Is Breaking Change
+  mock_mode_enabled (Check): Mock Mode Enabled
+  mock_response (Code): Mock Response (JSON) → JSON
+  mock_mode_expires_at (Datetime): Mock Mode Expires At
+  enable_health_tracking (Check): Enable ?health=1 Endpoint
+  slow_query_threshold_ms (Int): Slow Query Alert Threshold (ms)
+  error_rate_alert_threshold (Float): Error Rate Alert Threshold (%)
+  error_rate_window_minutes (Int): Error Rate Window (minutes)
+  changelog (Table): Changelog → FB API Endpoint Changelog
+
+## Permissions
+  System Manager: read, write, create, delete
+  FlowBridge Developer: read, write, create
+
+# DOCTYPE: FB API Endpoint Aggregation
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  agg_function (Select): Function → SUM
+AVG
+COUNT
+MIN
+MAX
+COUNT DISTINCT [required]
+  fieldname (Data): Field Name [required]
+  alias (Data): Result Key (alias)
+  prorate_by (Select): Prorate By → 
+Date Range
+Fiscal Year
+
+# DOCTYPE: FB API Endpoint Changelog
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  timestamp (Datetime): Timestamp
+  changed_by (Link): Changed By → User
+  change_summary (Data): Change Summary
+  diff_json (Code): Diff JSON → JSON
+
+# DOCTYPE: FB API Endpoint Computed
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  field_name (Data): Field Name in Response [required]
+  label (Data): Human Label
+  expression (Code): Expression (Python) → Python [required]
+  on_error (Select): On Error → Return None
+Return 0
+Return Empty String
+Skip Record
+
+# DOCTYPE: FB API Endpoint Doc Trigger
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  trigger_doctype (Link): Trigger DocType → DocType [required]
+  trigger_event (Select): Trigger Event → after_insert
+on_update
+on_submit
+on_cancel
+on_trash [required]
+  is_active (Check): Is Active
+
+# DOCTYPE: FB API Endpoint Enum Map
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  fieldname (Data): Field Name [required]
+  internal_value (Data): Internal Value (Frappe) [required]
+  external_value (Data): External Value (API) [required]
+  apply_on (Select): Apply On → Both
+Response Only
+Request Only
+
+# DOCTYPE: FB API Endpoint Field
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  fieldname (Data): Field Name [required]
+  label_override (Data): Label in Response
+  include (Check): Include
+
+# DOCTYPE: FB API Endpoint Filter
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  fieldname (Data): Field Name [required]
+  operator (Select): Operator → =
+!=
+>
+>=
+<
+<=
+like
+not like
+in
+not in
+is
+is not [required]
+  value (Data): Value
+  allow_override (Check): Frontend Can Override
+
+# DOCTYPE: FB API Endpoint Join
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  join_doctype (Link): DocType to Join → DocType [required]
+  join_type (Select): Join Type → Child Table
+Linked Doc
+Linked List [required]
+  link_field (Data): Link Field (on joined DocType)
+  parent_key (Data): Parent Key Field
+  alias (Data): Key in Response (alias) [required]
+  fields_mode (Select): Fields → All Fields
+Selected Fields
+  selected_fields (Small Text): Fields to Include (comma-separated)
+  field_prefix (Data): Field Prefix in Response
+
+# DOCTYPE: FB API Endpoint Key
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  key_name (Data): Key Name [required]
+  hashed_key (Data): Hashed Key (SHA-256)
+  allowed_methods (Small Text): Allowed Methods (comma: GET,POST,...)
+  expires_at (Date): Expires At
+
+# DOCTYPE: FB API Endpoint Result
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  endpoint (Link): Endpoint → FB API Endpoint [required]
+  result_json (Long Text): Result JSON
+  status (Select): Status → Success
+Error
+Running
+  error_message (Small Text): Error Message
+  triggered_by (Select): Triggered By → Scheduler
+Manual
+Doc Event
+Inbound Webhook
+  execution_time_ms (Float): Execution Time (ms)
+
+## Permissions
+  System Manager: read
+  FlowBridge Developer: read
+
+# DOCTYPE: FB API Endpoint Role Scope
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  frappe_role (Link): Frappe Role → Role [required]
+  scope (Select): Data Scope → All
+Own
+Subtree
+None [required]
+
+# DOCTYPE: FB API Endpoint Schedule
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  cron_expression (Data): Cron Expression (e.g. 0 * * * *) [required]
+  schedule_name (Data): Schedule Name
+  is_active (Check): Active
+  params_json (Code): Params JSON (passed as query string) → JSON
+  last_run (Datetime): Last Run
+  last_status (Data): Last Status
+
+# DOCTYPE: FB API Invoice
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  developer (Link): Developer → FB Developer Account [required]
+  developer_email (Data): Developer Email
+  period_start (Date): Period Start
+  period_end (Date): Period End
+  subtotal (Currency): Subtotal
+  gst_amount (Currency): GST Amount
+  total_amount (Currency): Total Amount
+  status (Select): Status → Unpaid
+Paid
+Voided
+  razorpay_payment_link (Data): Razorpay Payment Link
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB API Key
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  key_name (Data): Key Name [required]
+  owner_user (Link): Owner → User [required]
+  status (Select): Status → Active
+Revoked
+Expired
+  key_prefix (Data): Key Prefix
+  key_hash (Data): Key Hash (SHA-256)
+  scopes (Small Text): Scopes
+  rate_limit_rpm (Int): Rate Limit (req/min)
+  rate_limit_daily (Int): Daily Request Limit
+  allowed_flows (Small Text): Allowed Flows
+  allowed_ips (Small Text): IP Allowlist
+  expires_at (Datetime): Expires At
+  last_used_at (Datetime): Last Used At
+  total_requests (Int): Total Requests
+  description (Small Text): Description
+
+## Permissions
+  System Manager: read, write, create, delete
+  FlowBridge Developer: read, write, create, delete
+
+# DOCTYPE: FB API Payout
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  partner_user (Link): Partner User → User [required]
+  period_start (Date): Period Start
+  period_end (Date): Period End
+  gross_revenue (Currency): Gross Revenue
+  partner_share (Currency): Partner Share (90%)
+  tds_deducted (Currency): TDS Deducted
+  gst_tds_deducted (Currency): GST TDS Deducted
+  net_payout (Currency): Net Payout
+  status (Select): Status → Pending
+Paid
+Failed
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB API Request Log
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  custom_api (Link): Custom API → FB Custom API
+  method (Data): Method
+  path (Data): Path
+  status_code (Int): HTTP Status
+  api_key_name (Data): API Key
+  ip_address (Data): Client IP
+  duration_ms (Int): Duration (ms)
+  request_payload (Code): Request Payload → JSON
+  response_summary (Code): Response Summary → JSON
+  error_message (Small Text): Error
+  flow_run (Link): Flow Run → FB Flow Run
+
+## Permissions
+  System Manager: read
+
+# DOCTYPE: FB API Review
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  endpoint (Link): Endpoint → FB API Endpoint [required]
+  status (Select): Status → Pending
+Approved
+Rejected
+  submitted_by (Link): Submitted By → User
+  reviewer (Link): Reviewer → User
+  notes (Text): Submitter Notes
+  reviewer_comment (Text): Reviewer Comment
+
+## Permissions
+  System Manager: read, write, create, delete
+  FlowBridge Reviewer: read, write, create
+
+# DOCTYPE: FB API Subscription
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  subscription_name (Data): Subscription Name [required]
+  customer (Link): Customer → Customer
+  tier (Select): Tier → Starter
+Pro
+Business
+Enterprise
+  status (Select): Status → Active
+Paused
+Cancelled
+  billing_cycle (Select): Billing Cycle → Monthly
+Annual
+  next_billing_date (Date): Next Billing Date
+  monthly_request_limit (Int): Monthly Request Limit (0=unlimited)
+  monthly_request_count (Int): Requests This Month
+  included_units (Int): Included Units/Month
+  price_per_extra_unit (Currency): Price per Extra Unit (INR)
+  monthly_base_price (Currency): Monthly Base Price (INR)
+  currency (Link): Currency → Currency
+  linked_api_keys (Small Text): API Key Names (one per line)
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB API Subscription Plan
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  plan_name (Data): Plan Name [required]
+  calls_per_day (Int): Calls Per Day
+  calls_per_month (Int): Calls Per Month
+  free_calls_per_month (Int): Free Calls Per Month
+  price_monthly (Currency): Price Monthly
+  allowed_endpoints (Small Text): Allowed Endpoints (CSV)
+  razorpay_plan_id (Data): Razorpay Plan ID
+  is_active (Check): Is Active
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB API Usage
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  endpoint (Link): Endpoint → FB API Endpoint
+  api_key (Data): API Key
+  call_date (Date): Call Date
+  status_code (Int): Status Code
+  price_per_call (Currency): Price Per Call
+  response_time_ms (Float): Response Time (ms)
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB Approval Request
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  flow_run (Link): Flow Run → FB Flow Run [required]
+  flow (Link): Flow → FB Flow
+  step_node_id (Data): Waiting Node ID
+  status (Select): status → Pending
+Approved
+Rejected
+Expired
+  channel (Select): channel → Email
+WhatsApp
+ERPNext Form
+  expires_at (Datetime): Expires At
+  approver_email (Data): Approver Email
+  approver_whatsapp (Data): Approver WhatsApp
+  subject (Data): Subject
+  message (Text Editor): Message
+  context_json (Code): Flow Context (JSON) → JSON
+  decision (Select): decision → 
+Approved
+Rejected
+  decided_by (Data): Decided By
+  decided_at (Datetime): Decided At
+  decision_note (Small Text): Note
+  resume_token (Data): Resume Token
+
+## Permissions
+  System Manager: read, write, create, delete
+  FlowBridge Developer: read, write
+
+# DOCTYPE: FB Audit Log
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  event_time (Datetime): Time [required]
+  actor (Data): Actor
+  ip_address (Data): IP Address
+  ref_doctype (Data): Document Type
+  ref_docname (Data): Document Name
+  action (Data): Action
+  detail (Text): Detail
+
+## Permissions
+  System Manager: read
+
+# DOCTYPE: FB BPM Instance
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  workflow (Link): Workflow → FB BPM Workflow [required]
+  status (Select): Status → Active
+Waiting
+Completed
+Cancelled
+Failed
+  current_stage (Data): Current Stage
+  started_at (Datetime): Started At
+  completed_at (Datetime): Completed At
+  started_by (Link): Started By → User
+  reference_doctype (Data): Reference DocType
+  reference_name (Data): Reference Name
+  payload_json (Code): Payload JSON → JSON
+  bpm_instance (Data): BPM Instance Ref
+
+## Permissions
+  System Manager: read, write, create
+  FlowBridge Developer: read
+
+# DOCTYPE: FB BPM Stage
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  stage_name (Data): Stage Name [required]
+  stage_type (Select): Stage Type → Flow
+Human Task
+Notification
+Condition
+Delay
+  flow_name (Link): Flow → FB Flow
+  condition_expr (Code): Condition (Jinja2)
+  true_next_stage (Data): If True → Stage
+  false_next_stage (Data): If False → Stage
+  notify_roles (Data): Notify Roles (comma-separated)
+
+# DOCTYPE: FB BPM Workflow
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  workflow_name (Data): Workflow Name [required, unique]
+  description (Small Text): Description
+  is_active (Check): Active
+  stages (Table): Stages → FB BPM Stage
+
+## Permissions
+  System Manager: read, write, create, delete
+  FlowBridge Developer: read, write, create
+
+# DOCTYPE: FB Connector
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  connector_name (Data): Connector Name [required, unique]
+  base_url (Data): Base URL [required]
+  credential (Link): Credential → FB Credential
+  is_active (Check): Active
+  version (Data): Version
+  category (Select): Category → 
+E-Commerce
+Payments
+Logistics
+CRM
+ERP
+Communication
+Cloud
+Finance
+Government
+IoT
+Custom
+  description (Small Text): Description
+  endpoints (Table): Endpoints → FB Connector Endpoint
+  default_timeout (Int): Default Timeout (seconds)
+  default_retry_count (Int): Default Retry Count
+  default_retry_on (Data): Retry on HTTP Status Codes (comma-separated)
+  rate_limit_requests (Int): Max Requests
+  rate_limit_window_seconds (Int): Per Window (seconds)
+  sandbox_mode (Check): Sandbox Mode
+  sandbox_base_url (Data): Sandbox Base URL
+  rate_limit_rpm (Int): Rate Limit (req/min)
+  is_paused (Check): Paused (Circuit Breaker)
+  icon (Attach Image): Icon
+  connector_json (Code): connector.json (exported package spec) → JSON
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB Connector Endpoint
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  endpoint_name (Data): Endpoint Name [required]
+  http_method (Select): Method → GET
+POST
+PUT
+PATCH
+DELETE [required]
+  path (Data): Path (e.g. /v1/orders/{order_id}) [required]
+  is_active (Check): Active
+  description (Small Text): Description
+  content_type (Select): Content-Type → application/json
+application/x-www-form-urlencoded
+multipart/form-data
+application/xml
+text/plain
+  request_body_template (Code): Request Body Template (JSON / Jinja2) → JSON
+  query_params (Code): Query Params (JSON object — values may use {variable} placeholders) → JSON
+  extra_headers (Code): Extra Headers (JSON object) → JSON
+  response_format (Select): Response Format → json
+xml
+auto
+  response_root_path (Data): Response Root Path
+  pagination_strategy (Select): Pagination Strategy → 
+page_number
+cursor
+offset_limit
+link_header
+  cache_ttl_seconds (Int): Cache TTL (seconds)
+  retry_on_status_codes (Data): Retry on Status Codes
+  max_retries (Int): Max Retries
+  mock_response_json (Code): Mock Response (JSON) → JSON
+
+# DOCTYPE: FB Connector Incident
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  connector (Link): Connector → FB Connector [required]
+  opened_at (Datetime): Opened At [required]
+  resolved_at (Datetime): Resolved At
+  trigger_failure_count (Int): Failures at Open
+  status (Select): Status → Open
+Resolved
+False Positive
+  detail (Text): Detail
+  resolution_note (Small Text): Resolution Note
+
+## Permissions
+  System Manager: read, write, create
+  FlowBridge Developer: read
+
+# DOCTYPE: FB Credential
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  credential_name (Data): Credential Name [required, unique]
+  auth_type (Select): Auth Type → API Key
+Basic Auth
+Bearer Token
+OAuth2
+HMAC
+AWS Signature v4
+mTLS
+Custom Headers
+No Auth [required]
+  is_active (Check): Active
+  api_key (Password): API Key
+  api_key_header (Data): Header Name
+  api_key_prefix (Data): Prefix (e.g. Bearer)
+  basic_username (Data): Username
+  basic_password (Password): Password
+  bearer_token (Password): Token
+  oauth2_grant_type (Select): Grant Type → client_credentials
+authorization_code
+password
+  oauth2_client_id (Data): Client ID
+  oauth2_client_secret (Password): Client Secret
+  oauth2_token_url (Data): Token URL
+  oauth2_auth_url (Data): Auth URL (authorization_code only)
+  oauth2_scope (Data): Scope
+  oauth2_access_token (Password): Access Token (cached)
+  oauth2_refresh_token (Password): Refresh Token (cached)
+  oauth2_token_expiry (Datetime): Token Expiry
+  hmac_secret (Password): Signing Secret
+  hmac_algorithm (Select): Algorithm → sha256
+sha512
+sha1
+md5
+  hmac_header (Data): Signature Header
+  aws_access_key_id (Data): Access Key ID
+  aws_secret_access_key (Password): Secret Access Key
+  aws_region (Data): Region
+  aws_service (Data): Service (e.g. execute-api)
+  mtls_cert (Code): Client Certificate (PEM) → Text
+  mtls_key (Password): Private Key (PEM)
+  custom_headers (Code): Headers (JSON object) → JSON
+  vault_api_key (Text): Vault: API Key
+  vault_basic_password (Text): Vault: Basic Password
+  vault_bearer_token (Text): Vault: Bearer Token
+  vault_oauth2_client_secret (Text): Vault: OAuth2 Client Secret
+  vault_oauth2_access_token (Text): Vault: OAuth2 Access Token
+  vault_oauth2_refresh_token (Text): Vault: OAuth2 Refresh Token
+  vault_hmac_secret (Text): Vault: HMAC Secret
+  vault_aws_secret_access_key (Text): Vault: AWS Secret Access Key
+  vault_mtls_key (Text): Vault: mTLS Private Key
+  last_tested (Datetime): Last Tested
+  last_test_status (Select): Last Test Result → 
+Success
+Failed
+  last_test_message (Small Text): Last Test Message
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB Credential Pool
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  pool_name (Data): Pool Name [required, unique]
+  description (Small Text): Description
+  rotation_strategy (Select): Rotation Strategy → round_robin
+least_used
+random
+  max_uses_per_credential (Int): Max Uses Per Credential
+  credentials (Table): Credentials → FB Credential Pool Entry
+  allowed_roles (Small Text): Allowed Roles (comma-separated)
+  allowed_connectors (Small Text): Allowed Connectors (comma-separated names)
+
+## Permissions
+  System Manager: read, write, create, delete
+  FlowBridge Developer: read
+
+# DOCTYPE: FB Credential Pool Entry
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  credential (Link): Credential → FB Credential [required]
+  label (Data): Label
+  is_active (Check): Active
+  use_count (Int): Use Count
+
+# DOCTYPE: FB Cross Site Log
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  site_name (Link): Site → FB Federated Site
+  flow_name (Data): Flow Name
+  action (Data): Action
+  ref (Data): Reference
+  logged_at (Datetime): Logged At
+  logged_by (Link): Logged By → User
+
+## Permissions
+  System Manager: read
+  FlowBridge Developer: read
+
+# DOCTYPE: FB Custom API
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  api_name (Data): API Name [required, unique]
+  method (Select): HTTP Method → GET
+POST
+PUT
+PATCH
+DELETE [required]
+  path (Data): Path [required]
+  flow (Link): Trigger Flow → FB Flow [required]
+  is_active (Check): Active
+  auth_required (Check): Require API Key Auth
+  description (Small Text): Description
+  request_schema (Code): Request Schema (JSON Schema) → JSON
+  response_schema (Code): Response Schema (JSON Schema) → JSON
+  rate_limit_rpm (Int): Rate Limit (req/min, 0=unlimited)
+  max_request_size_kb (Int): Max Request Body Size (KB, 0=unlimited)
+  allowed_roles (Small Text): Allowed Frappe Roles (comma-separated, blank=any)
+  ip_allowlist (Small Text): IP Allowlist (CIDR or IP, one per line, blank=any)
+  inject_request_headers (Code): Inject Headers into Flow Payload (JSON key:value) → JSON
+  mask_response_fields (Small Text): Mask Fields in Response (dot-notation, comma-separated)
+  cors_origins (Small Text): CORS Allowed Origins (one per line, blank=disabled)
+  enable_audit_log (Check): Enable Audit Log
+  mask_pii_in_logs (Check): Mask PII in Audit Logs
+  billable (Check): Billable API
+  billing_unit_label (Data): Billing Unit Label
+  price_per_unit (Currency): Price per Unit (INR)
+
+## Permissions
+  System Manager: read, write, create, delete
+  FlowBridge Developer: read, write, create
+
+# DOCTYPE: FB Developer Account
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  developer_name (Data): Developer Name [required]
+  developer_email (Data): Developer Email → Email [required]
+  company (Data): Company
+  api_key (Data): API Key
+  sandbox_api_key (Data): Sandbox API Key
+  subscription_plan (Link): Subscription Plan → FB API Subscription Plan
+  subscription_status (Select): Subscription Status → free
+created
+active
+grace_period
+cancelled
+  razorpay_subscription_id (Data): Razorpay Subscription ID
+  grace_period_until (Date): Grace Period Until
+  custom_daily_quota (Int): Custom Daily Quota
+  suspension_reason (Small Text): Suspension Reason
+  is_active (Check): Is Active
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB Developer Profile
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  developer_name (Data): Developer Name [required, unique]
+  display_name (Data): Display Name [required]
+  is_verified (Check): Verified Developer
+  is_active (Check): Active
+  email (Data): Email → Email [required]
+  website (Data): Website
+  github_url (Data): GitHub URL
+  twitter_url (Data): Twitter URL
+  bio (Text Editor): Bio
+  avatar_url (Data): Avatar URL
+  payout_method (Select): Payout Method → 
+UPI
+Bank Transfer
+  upi_id (Data): UPI ID
+  bank_account_name (Data): Account Holder Name
+  bank_account_number (Data): Account Number
+  bank_ifsc (Data): IFSC Code
+  pan_number (Data): PAN Number
+  gst_number (Data): GST Number
+  total_packages (Int): Total Packages
+  total_installs (Int): Total Installs
+  total_revenue (Currency): Total Revenue (₹)
+  pending_payout (Currency): Pending Payout (₹)
+  last_payout_date (Date): Last Payout Date
+  rating_average (Float): Avg Rating
+  rating_count (Int): Total Ratings
+
+## Permissions
+  System Manager: read, write, create, delete
+  All: read
+
+# DOCTYPE: FB Document Review
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  file_url (Data): File URL
+  document_type (Select): Document Type → invoice
+purchase_order
+receipt
+contract
+other
+  confidence_pct (Float): AI Confidence %
+  status (Select): Status → Pending
+Approved
+Rejected
+  created_at (Datetime): Created At
+  reviewed_by (Link): Reviewed By → User
+  reviewed_at (Datetime): Reviewed At
+  extracted_json (Code): Extracted Fields (JSON) → JSON
+  corrections_json (Code): Human Corrections (JSON) → JSON
+  rejection_reason (Small Text): Rejection Reason
+
+## Permissions
+  System Manager: read, write, create
+  FlowBridge Developer: read, write
+
+# DOCTYPE: FB DPDP Consent
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  user_identity (Data): User Identity
+  endpoint (Link): Endpoint → FB API Endpoint
+  status (Select): Status → Active
+Revoked
+  consented_at (Datetime): Consented At
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB Electronic Signature
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  ref_doctype (Data): Document Type [required]
+  ref_docname (Data): Document Name [required]
+  signed_by (Link): Signed By → User [required]
+  signed_at (Datetime): Signed At [required]
+  signature_meaning (Data): Signature Meaning [required]
+
+## Permissions
+  System Manager: read, create
+  FlowBridge Developer: read, create
+
+# DOCTYPE: FB ERPNext Integration
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  integration_name (Data): Integration Name [required, unique]
+  is_active (Check): Is Active
+  source_doctype (Link): Source DocType → DocType [required]
+  doctype_event (Select): Event → after_insert
+on_update
+on_submit
+on_cancel
+on_trash
+all [required]
+  flow (Link): Target Flow → FB Flow [required]
+  event_id_field (Data): Event ID Field
+  filter_expression (Code): Filter Expression → Jinja
+  last_triggered (Datetime): Last Triggered
+  trigger_count (Int): Trigger Count
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB ETL Pipeline
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  pipeline_name (Data): Pipeline Name [required, unique]
+  source_type (Select): Source Type → erpnext
+connector
+sql
+csv
+json_api
+postgres
+bigquery
+snowflake
+redshift [required]
+  destination_type (Select): Destination Type → erpnext
+bigquery
+snowflake
+redshift
+postgres
+connector [required]
+  schedule (Select): Schedule → manual
+hourly
+daily
+weekly
+  is_active (Check): Active
+  source_config_json (Code): Source Config (JSON) → JSON
+  transform_steps_json (Code): Transform Steps (JSON array) → JSON
+  destination_config_json (Code): Destination Config (JSON) → JSON
+
+## Permissions
+  System Manager: read, write, create, delete
+  FlowBridge Developer: read, write, create
+
+# DOCTYPE: FB ETL Run
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  pipeline (Link): Pipeline → FB ETL Pipeline
+  status (Select): Status → Running
+Success
+Failed
+  started_at (Datetime): Started At
+  completed_at (Datetime): Completed At
+  rows_extracted (Int): Rows Extracted
+  rows_loaded (Int): Rows Loaded
+  error (Small Text): Error
+
+## Permissions
+  System Manager: read
+  FlowBridge Developer: read
+
+# DOCTYPE: FB Federated Site
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  site_name (Data): Site Name [required, unique]
+  site_type (Select): Site Type → branch
+hq
+peer
+  base_url (Data): Base URL [required]
+  status (Select): Status → Active
+Error
+Paused
+  description (Small Text): Description
+  api_key (Data): API Key [required]
+  api_secret (Password): API Secret [required]
+  last_ping (Datetime): Last Ping
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB Field Mapping
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  mapping_name (Data): Mapping Name [required, unique]
+  source_connector (Link): Source Connector → FB Connector
+  source_endpoint (Data): Source Endpoint
+  target_doctype (Link): Target DocType → DocType
+  description (Small Text): Description
+  mapping_rules (Table): Rules → FB Mapping Rule
+  filter_expression (Code): Filter Expression (Jinja2 — return true to process record) → Jinja2
+  last_applied (Datetime): Last Applied
+  apply_count (Int): Total Records Mapped
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB Field Mapping Correction
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  source_field (Data): Source Field [required]
+  suggested_target (Data): AI Suggested Target
+  correct_target (Data): Correct Target [required]
+  score (Float): Suggestion Score
+  accepted (Check): Suggestion Was Correct
+  connector (Link): Connector → FB Connector
+  mapping (Link): Field Mapping → FB Field Mapping
+  user_feedback (Small Text): User Notes
+  submitted_by (Link): Submitted By → User
+
+## Permissions
+  System Manager: read, write, create
+  FlowBridge Developer: create
+
+# DOCTYPE: FB Flow
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  flow_name (Data): Flow Name [required, unique]
+  status (Select): Status → Draft
+Active
+Paused
+Archived
+  trigger_type (Select): Trigger → Webhook
+Schedule
+DocType Event
+Manual [required]
+  is_active (Check): Active
+  version (Data): Version
+  description (Small Text): Description
+  webhook_path (Data): Webhook Path (e.g. /hooks/my-flow)
+  webhook_secret (Password): Webhook Secret (for HMAC verification)
+  schedule_cron (Data): Cron Expression (e.g. 0 9 * * 1-5)
+  doctype_trigger (Link): DocType → DocType
+  doctype_event (Select): Event → after_insert
+on_update
+before_submit
+on_submit
+on_cancel
+on_trash
+  nodes (Table): Nodes → FB Flow Node
+  max_concurrent_runs (Int): Max Concurrent Runs
+  timeout_seconds (Int): Timeout (seconds)
+  dlq_enabled (Check): Send failures to Dead Letter Queue
+  review_status (Select): Review Status → 
+Pending Review
+Approved
+Rejected
+  allowed_roles (Small Text): Allowed Roles (comma-separated)
+  owner_user (Link): Owner → User
+  last_run (Datetime): Last Run
+  last_run_status (Select): Last Run Status → 
+Success
+Failed
+Running
+  total_runs (Int): Total Runs
+  success_runs (Int): Successful Runs
+  failed_runs (Int): Failed Runs
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB Flow Comment
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  flow (Link): Flow → FB Flow [required]
+  flow_version (Link): Version → FB Flow Version
+  author (Link): Author → User
+  node_id (Data): Node ID (optional)
+  resolved (Check): Resolved
+  body (Text Editor): Body [required]
+
+## Permissions
+  System Manager: read, write, create, delete
+  FlowBridge Developer: read, write, create
+
+# DOCTYPE: FB Flow Node
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  node_id (Data): Node ID [required]
+  node_type (Select): Node Type → trigger
+action
+transform
+condition
+delay
+loop
+sub_flow
+webhook_trigger
+schedule_trigger
+doctype_trigger
+http_request
+create_doc
+update_doc
+delete_doc
+notify
+batch
+approve [required]
+  node_name (Data): Display Name
+  position_x (Float): Canvas X
+  position_y (Float): Canvas Y
+  connector (Link): Connector → FB Connector
+  endpoint (Data): Endpoint
+  field_mapping (Link): Field Mapping → FB Field Mapping
+  config_json (Code): Node Config (JSON) → JSON
+  next_node_id (Data): Next Node (on success)
+  true_next_node_id (Data): True Branch Node
+  false_next_node_id (Data): False Branch Node
+  on_error (Select): On Error → stop
+continue
+retry
+dlq
+  retry_count (Int): Max Retries
+  retry_delay_seconds (Int): Initial Retry Delay (s)
+
+# DOCTYPE: FB Flow Run
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  flow (Link): Flow → FB Flow [required]
+  status (Select): Status → Queued
+Running
+Waiting
+Success
+Failed
+Timeout
+  trigger (Select): Trigger → webhook
+schedule
+doctype_event
+manual
+retry
+  started_at (Datetime): Started At
+  ended_at (Datetime): Ended At
+  duration_ms (Int): Duration (ms)
+  trigger_payload (Code): Payload (JSON) → JSON
+  steps (Table): Steps → FB Flow Run Step
+  result_summary (Small Text): Summary
+  error_message (Text): Error
+  dlq_message_id (Data): DLQ Message ID
+  parent_run (Link): Parent Run → FB Flow Run
+  waiting_node_id (Data): Waiting At Node
+  resume_context_json (Code): Resume Context (JSON) → JSON
+
+## Permissions
+  System Manager: read, write, create
+
+# DOCTYPE: FB Flow Run Step
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  node_id (Data): Node ID
+  node_type (Data): Node Type
+  status (Select): Status → Pending
+Running
+Success
+Failed
+Skipped
+  started_at (Datetime): Started At
+  ended_at (Datetime): Ended At
+  duration_ms (Int): Duration (ms)
+  input_json (Code): Input → JSON
+  output_json (Code): Output → JSON
+  error_message (Small Text): Error
+  retry_count (Int): Retries
+
+# DOCTYPE: FB Flow SLA
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  flow_name (Link): Flow → FB Flow [required, unique]
+  max_duration_minutes (Int): Max Duration (minutes) [required]
+  is_active (Check): Active
+  breach_notify_roles (Data): Notify Roles (comma-separated)
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB Flow Version
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  flow (Link): Flow → FB Flow [required]
+  version_number (Int): Version [required]
+  label (Data): Label
+  created_by (Link): Saved By → User
+  promoted_to (Select): Promoted To Env → 
+Development
+Staging
+Production
+  snapshot_json (Code): Flow Snapshot (JSON) → JSON
+  diff_summary (Small Text): Diff Summary
+
+## Permissions
+  System Manager: read, write, create
+  FlowBridge Developer: read
+
+# DOCTYPE: FB FlowBridge Settings
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  ai_provider (Select): AI Provider → default
+claude
+openai
+gemini
+ollama
+  claude_model (Select): Claude Model → claude-sonnet-4-6
+claude-opus-4-7
+claude-haiku-4-5-20251001
+  anthropic_api_key (Password): Anthropic API Key
+  openai_api_key (Password): OpenAI API Key
+  openai_model (Select): OpenAI Model → gpt-4o
+gpt-4o-mini
+gpt-4-turbo
+gpt-3.5-turbo
+  gemini_api_key (Password): Gemini API Key
+  gemini_model (Select): Gemini Model → gemini-1.5-pro
+gemini-1.5-flash
+gemini-2.0-flash
+  ollama_base_url (Data): Ollama Base URL
+  ollama_model (Data): Ollama Model
+  razorpay_key_id (Data): Razorpay Key ID
+  razorpay_key_secret (Password): Razorpay Key Secret
+  razorpay_webhook_secret (Password): Razorpay Webhook Secret
+  gateway_host (Data): Gateway Host
+  gateway_port (Int): Gateway Port
+  otel_endpoint (Data): OTLP Endpoint
+  datadog_api_key (Password): Datadog API Key
+  feature_provider_flow_builder (Select): Flow Builder Provider → 
+default
+claude
+openai
+gemini
+ollama
+  feature_provider_field_mapper (Select): Field Mapper Provider → 
+default
+claude
+openai
+gemini
+ollama
+  feature_provider_copilot (Select): Copilot Provider → 
+default
+claude
+openai
+gemini
+ollama
+  feature_provider_agents (Select): AI Agents Provider → 
+default
+claude
+openai
+gemini
+ollama
+  feature_provider_error_explainer (Select): Error Explainer Provider → 
+default
+claude
+openai
+gemini
+ollama
+  feature_provider_analytics (Select): Analytics Copilot Provider → 
+default
+claude
+openai
+gemini
+ollama
+  huggingface_token (Password): HuggingFace Token
+
+## Permissions
+  System Manager: read, write
+
+# DOCTYPE: FB Frontend Page
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  page_name (Data): Page Name [required]
+  page_type (Select): Page Type → Dashboard
+List
+Detail
+Form
+Custom
+  slug (Data): Slug [required]
+  is_published (Check): Is Published
+  allowed_roles (Data): Allowed Roles (CSV)
+  fb_api_endpoint (Link): Primary Endpoint → FB API Endpoint
+  custom_domain (Data): Custom Domain
+  layout_json (Code): Layout JSON → JSON
+  versions (Table): Versions → FB Frontend Page Version
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB Frontend Page Version
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  saved_at (Datetime): Saved At
+  saved_by (Link): Saved By → User
+  layout_snapshot (Code): Layout Snapshot → JSON
+
+# DOCTYPE: FB Installed Package
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  package (Link): Package → FB Marketplace Package [required]
+  version_installed (Data): Version Installed
+  status (Select): Status → Active
+Expired
+Cancelled
+Pending Payment
+  installed_by (Link): Installed By → User
+  installed_at (Datetime): Installed At
+  payment_status (Select): Payment Status → Free
+Paid
+Pending
+Failed
+Refunded
+  razorpay_order_id (Data): Razorpay Order ID
+  razorpay_payment_id (Data): Razorpay Payment ID
+  amount_paid (Currency): Amount Paid (₹)
+  subscription_id (Data): Razorpay Subscription ID
+  next_billing_date (Date): Next Billing Date
+  installed_flow_names (Code): Installed Flow Names (JSON array) → JSON
+  installed_connector_names (Code): Installed Connector Names (JSON array) → JSON
+  update_available (Check): Update Available
+  latest_version (Data): Latest Available Version
+  auto_update (Check): Auto-update
+  last_checked (Datetime): Last Checked
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB Kafka DLQ
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  topic (Data): Topic
+  message_key (Data): Message Key
+  payload (Code): Payload → JSON
+  error_message (Small Text): Error
+  status (Select): Status → Pending
+Replayed
+Ignored
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB Kafka Sink
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  sink_name (Data): Sink Name [required]
+  source_doctype (Link): Source DocType → DocType
+  topic (Data): Kafka Topic [required]
+  key_field (Data): Key Field
+  is_active (Check): Is Active
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB Kafka Source
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  source_name (Data): Source Name [required]
+  topic (Data): Kafka Topic [required]
+  target_doctype (Link): Target DocType → DocType
+  consumer_group (Data): Consumer Group
+  is_active (Check): Is Active
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB Mapping Rule
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  source_path (Data): Source Path (e.g. order.customer.name or items[*].sku) [required]
+  target_field (Data): Target Field [required]
+  transform (Select): Transform → 
+to_string
+to_int
+to_float
+to_date
+to_datetime
+upper
+lower
+strip
+truncate
+replace
+concat
+format_date
+format_currency
+to_bool
+if_empty
+coalesce
+lookup
+hmac_sha256
+base64_encode
+base64_decode
+md5
+aes_decrypt
+regex_extract
+join
+filter
+pluck
+sort
+custom
+  is_required (Check): Required (fail if source is null)
+  default_value (Data): Default Value
+  condition (Data): Condition (Jinja2 — skip rule if false)
+  transform_args (Code): Transform Args (JSON) → JSON
+
+# DOCTYPE: FB Marketplace Package
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  package_name (Data): Package Name [required, unique]
+  title (Data): Title [required]
+  package_type (Select): Type → Flow
+Connector
+Bundle [required]
+  status (Select): Status → Draft
+Under Review
+Published
+Unpublished
+Rejected
+  developer (Link): Developer → FB Developer Profile [required]
+  latest_version (Data): Latest Version
+  short_description (Small Text): Short Description (one-liner) [required]
+  description (Text Editor): Full Description
+  icon_url (Data): Icon URL
+  banner_url (Data): Banner URL
+  screenshots (Code): Screenshots (JSON array of URLs) → JSON
+  pricing_model (Select): Pricing Model → Free
+One-time
+Subscription [required]
+  price_inr (Currency): Price (₹)
+  subscription_price_inr (Currency): Subscription Price (₹)
+  subscription_interval (Select): Billing Interval → monthly
+yearly
+  razorpay_plan_id (Data): Razorpay Plan ID
+  category (Select): Category → 
+E-Commerce
+Payments
+Logistics
+Communications
+ERP
+CRM
+Accounting
+HR
+Analytics
+Utility
+Other
+  tags (Data): Tags (comma-separated)
+  target_doctypes (Data): Target DocTypes (comma-separated)
+  required_connectors (Data): Required Connectors (comma-separated)
+  frappe_version_min (Data): Min Frappe Version
+  frappe_version_max (Data): Max Frappe Version
+  install_count (Int): Total Installs
+  active_installs (Int): Active Installs
+  rating_average (Float): Avg Rating
+  rating_count (Int): Rating Count
+  revenue_total (Currency): Total Revenue (₹)
+  is_featured (Check): Featured
+  is_verified (Check): Verified
+  review_notes (Small Text): Review Notes (internal)
+
+## Permissions
+  System Manager: read, write, create, delete
+  All: read, write, create
+  All: read
+
+# DOCTYPE: FB MQTT Sink
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  sink_name (Data): Sink Name [required]
+  source_doctype (Link): Source DocType → DocType
+  topic_template (Data): Topic Template
+  qos (Select): QoS → 0
+1
+2
+  retain (Check): Retain
+  is_active (Check): Is Active
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB MQTT Source
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  source_name (Data): Source Name [required]
+  target_doctype (Link): Target DocType → DocType
+  upsert_on_field (Data): Upsert On Field
+  topic_patterns (Table): Topic Patterns → FB MQTT Topic Pattern
+  is_active (Check): Is Active
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB Package Review
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  package (Link): Package → FB Marketplace Package [required]
+  rating (Rating): Rating [required]
+  status (Select): Status → Pending
+Approved
+Rejected
+  reviewer (Link): Reviewer → User
+  title (Data): Title
+  body (Text Editor): Review Body
+  helpful_count (Int): Helpful Votes
+  reported_count (Int): Report Count
+  admin_notes (Small Text): Admin Notes
+
+## Permissions
+  System Manager: read, write, create, delete
+  All: read, create
+  All: read, write
+
+# DOCTYPE: FB Package Version
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  package (Link): Package → FB Marketplace Package [required]
+  version (Data): Version (semver) [required]
+  status (Select): Status → Draft
+Active
+Deprecated
+Yanked
+  is_latest (Check): Is Latest
+  content_json (Code): Content (flow.json / connector.json) → JSON [required]
+  changelog (Text Editor): Changelog
+  frappe_version_min (Data): Min Frappe Version
+  frappe_version_max (Data): Max Frappe Version
+  breaking_change (Check): Breaking Change
+  migration_guide (Text Editor): Migration Guide
+  published_at (Datetime): Published At
+  download_count (Int): Downloads
+  checksum_sha256 (Data): SHA-256 Checksum
+
+## Permissions
+  System Manager: read, write, create, delete
+  All: read, write, create
+  All: read
+
+# DOCTYPE: FB Page View
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  page_slug (Data): Page Slug
+  session_id (Data): Session ID
+  viewed_at (Datetime): Viewed At
+  user (Link): User → User
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB Payout Request
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  developer (Link): Developer → FB Developer Profile [required]
+  amount (Currency): Gross Amount (₹) [required]
+  status (Select): Status → Requested
+Processing
+Paid
+Failed
+Cancelled
+  requested_at (Datetime): Requested At
+  payout_method (Select): Method → UPI
+Bank Transfer
+  upi_id (Data): UPI ID
+  bank_account_name (Data): Account Name
+  bank_account_number (Data): Account Number
+  bank_ifsc (Data): IFSC
+  razorpay_payout_id (Data): Razorpay Payout ID
+  utr_number (Data): UTR Number
+  processed_at (Datetime): Processed At
+  admin_notes (Small Text): Admin Notes
+  tds_rate (Percent): TDS Rate
+  tds_amount (Currency): TDS Amount (₹)
+  net_amount (Currency): Net Payout (₹)
+  gst_tds (Currency): GST TDS (₹)
+  invoice_number (Data): Invoice Number
+  invoice_url (Data): Invoice URL
+
+## Permissions
+  System Manager: read, write, create, delete
+  All: read, create
+
+# DOCTYPE: FB Polling Config
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  config_name (Data): Config Name [required, unique]
+  flow (Link): Target Flow → FB Flow [required]
+  connector (Link): Connector → FB Connector [required]
+  endpoint (Data): Endpoint Name [required]
+  is_active (Check): Active
+  interval_seconds (Int): Poll Interval (seconds)
+  jitter_seconds (Int): Jitter (seconds, 0=none)
+  watermark_field (Data): Watermark Field (in response)
+  watermark_param (Data): Watermark Query Param Name
+  lookback_days (Int): Lookback Days (first run)
+  last_watermark (Data): Last Watermark Value
+  dedup_id_field (Data): Record ID Field
+  dedup_window_seconds (Int): Dedup Window (seconds)
+  pagination_strategy (Select): pagination_strategy → none
+page_number
+cursor
+offset_limit
+link_header
+  page_param (Data): Page Param Name
+  page_size (Int): Page Size
+  page_size_param (Data): Page Size Param Name
+  cursor_field (Data): Cursor Field (in response)
+  link_header_rel (Data): Link Header rel= value
+  last_run_at (Datetime): Last Run At
+  last_run_status (Select): last_run_status → 
+Success
+Failed
+Running
+  last_error (Small Text): Last Error
+
+## Permissions
+  System Manager: read, write, create, delete
+  FlowBridge Developer: read, write, create
+
+# DOCTYPE: FB Push Device
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  user (Link): User → User [required]
+  platform (Select): Platform → Android
+iOS
+Web [required]
+  device_token (Data): Device Token [required]
+  device_name (Data): Device Name
+  last_seen (Datetime): Last Seen
+
+## Permissions
+  System Manager: read, write, create, delete
+  All: read, write, create
+
+# DOCTYPE: FB QA Post
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  package (Link): Package → FB Marketplace Package [required]
+  question (Data): Question [required]
+  status (Select): Status → Open
+Answered
+Closed
+  author (Link): Author → User
+  body (Text Editor): Details
+  upvote_count (Int): Upvotes
+  reply_count (Int): Replies
+  is_answered (Check): Answered
+  accepted_reply (Link): Accepted Reply → FB QA Reply
+
+## Permissions
+  System Manager: read, write, create, delete
+  All: read, create
+  All: read, write
+
+# DOCTYPE: FB QA Reply
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  post (Link): Post → FB QA Post [required]
+  author (Link): Author → User
+  is_developer_reply (Check): Developer Reply
+  upvote_count (Int): Upvotes
+  body (Text Editor): Reply [required]
+
+## Permissions
+  System Manager: read, write, create, delete
+  All: read, create
+  All: read, write
+
+# DOCTYPE: FB Residency Policy
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  policy_key (Data): Policy Key [required, unique]
+  scope (Select): Scope → flow
+connector
+  flow_name (Link): Flow → FB Flow
+  connector_name (Link): Connector → FB Connector
+  allowed_regions (Data): Allowed Regions (ISO codes)
+  block_cross_border (Check): Block Cross-Border
+  action_on_violation (Select): Action on Violation → block
+alert
+mask
+  is_active (Check): Active
+  pii_fields_json (Code): PII Fields (JSON array) → JSON
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB Residency Violation
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  flow_name (Data): Flow Name
+  connector_name (Data): Connector
+  request_country (Data): Country
+  logged_at (Datetime): Logged At
+  violations_json (Code): Violations (JSON) → JSON
+
+## Permissions
+  System Manager: read
+
+# DOCTYPE: FB Security Alert
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  endpoint (Data): Endpoint
+  alert_type (Data): Alert Type
+  severity (Select): Severity → Low
+Medium
+High
+Critical
+  message (Small Text): Message
+  status (Select): Status → Open
+Resolved
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB Security Audit Log
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  action (Data): Action
+  actor (Link): Actor → User
+  data_json (Code): Data → JSON
+  prev_hash (Data): Prev Hash
+  entry_hash (Data): Entry Hash
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: FB SLA Breach Alert
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  run (Link): Flow Run → FB Flow Run
+  flow_name (Link): Flow → FB Flow
+  breached_at (Datetime): Breached At
+  resolved_at (Datetime): Resolved At
+  endpoint (Link): Endpoint → FB API Endpoint
+  alert_type (Select): Alert Type → Slow Query
+Error Rate
+Anomaly
+SLA Breach
+  message (Small Text): Message
+  status (Select): Status → Open
+Resolved
+
+## Permissions
+  System Manager: read
+  FlowBridge Developer: read
+
+# DOCTYPE: FB Sync Config
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  sync_name (Data): Sync Name [required, unique]
+  direction (Select): Sync Direction → A→B
+B→A
+Bidirectional
+  status (Select): status → Active
+Paused
+  source_type (Select): Source Type → Connector
+ERPNext DocType
+  source_connector (Link): Source Connector → FB Connector
+  source_endpoint (Data): Source Endpoint
+  source_doctype (Link): Source DocType → DocType
+  target_type (Select): Target Type → Connector
+ERPNext DocType
+  target_connector (Link): Target Connector → FB Connector
+  target_endpoint (Data): Target Endpoint
+  target_doctype (Link): Target DocType → DocType
+  field_mapping (Link): Field Mapping → FB Field Mapping
+  conflict_strategy (Select): Conflict Strategy → last_write_wins
+source_wins
+target_wins
+manual_review
+  master_side (Select): Master Side (for *_wins strategies) → Source
+Target
+  dedup_key_source (Data): Source ID Field
+  dedup_key_target (Data): Target ID Field
+  loop_prevention_ttl (Int): Loop Prevention TTL (seconds)
+  last_sync_at (Datetime): Last Sync At
+  last_sync_status (Select): last_sync_status → 
+Success
+Partial
+Failed
+  records_synced_total (Int): Total Records Synced
+  last_error (Small Text): Last Error
+
+## Permissions
+  System Manager: read, write, create, delete
+  FlowBridge Developer: read, write, create
+
+# DOCTYPE: FB Unified Mapping
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  mapping_key (Data): Key [required, unique]
+  connector (Link): Connector → FB Connector
+  entity (Data): Entity
+  field_mapping_json (Code): Field Mapping (JSON) → JSON
+
+## Permissions
+  System Manager: read, write, create, delete
+  FlowBridge Developer: read, write, create
+
+# DOCTYPE: FB Webhook Log
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  received_at (Datetime): Received At [required]
+  flow (Link): Flow → FB Flow
+  source_ip (Data): Source IP
+  status (Select): Status → Received
+Queued
+Duplicate
+Rejected (HMAC)
+Rejected (No Flow)
+  flow_run (Link): Flow Run → FB Flow Run
+  hmac_valid (Select): HMAC → 
+Valid
+Invalid
+Not Required
+  method (Data): HTTP Method
+  path (Data): Path
+  request_headers (Code): Headers (JSON) → JSON
+  request_body (Code): Body (JSON) → JSON
+  response_status (Int): HTTP Response Status
+  ack_latency_ms (Int): ACK Latency (ms)
+  processing_notes (Small Text): Notes
+
+## Permissions
+  System Manager: read, create
+
+# DOCTYPE: FB Webhook Subscription
+# Module: Flowbridge  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  developer (Link): Developer → FB Developer Account [required]
+  endpoint_slug (Link): Endpoint → FB API Endpoint
+  callback_url (Data): Callback URL [required]
+  signing_secret (Password): Signing Secret
+  last_delivery_status (Select): Last Delivery Status → 
+delivered
+failed
+  is_active (Check): Is Active
+
+## Permissions
+  System Manager: read, write, create, delete
+

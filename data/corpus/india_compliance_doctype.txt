@@ -1,0 +1,687 @@
+# DOCTYPE: Bill of Entry
+# Module: GST India  Type:   Submittable: True  ChildTable: False
+
+## Fields
+  naming_series (Select): Naming Series → BOE-.YYYY.- [required]
+  bill_of_entry_no (Data): Bill of Entry No. [required]
+  bill_of_entry_date (Date): Bill of Entry Date [required]
+  amended_from (Link): Amended From → Bill of Entry
+  port_code (Data): Port Code
+  company (Link): Company → Company
+  company_gstin (Autocomplete): Company GSTIN
+  items (Table): items → Bill of Entry Item [required]
+  taxes (Table): taxes → India Compliance Taxes and Charges [required]
+  total_taxable_value (Currency): Total Taxable Value (Net Total)
+  total_customs_duty (Currency): Total Customs Duty
+  total_taxes (Currency): Total Taxes
+  cost_center (Link): Cost Center → Cost Center
+  posting_date (Date): Posting Date [required]
+  total_amount_payable (Currency): Total Amount Payable
+  customs_payable_account (Link): Customs Duty Payable Account → Account [required]
+  customs_expense_account (Link): Customs Duty Expense Account → Account [required]
+  bill_of_lading_no (Data): Bill of Lading No.
+  reconciliation_status (Select): 2A/2B Reconciliation Status → 
+Not Applicable
+Reconciled
+Unreconciled
+Ignored
+  itc_claim_period (Autocomplete): ITC Claim Period
+  tax_category (Link): Tax Category → Tax Category
+  get_items_from_purchase_invoice (Button): Get Items From Purchase Invoice
+
+## Permissions
+  Purchase User: read
+  Accounts User: read, write, create, submit, cancel
+  Accounts Manager: read, write, create, delete, submit, cancel
+  Auditor: read
+
+# DOCTYPE: Bill of Entry Item
+# Module: GST India  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  item_code (Link): Item → Item [required]
+  item_name (Data): Item Name
+  assessable_value (Currency): Assessable Value → INR [required]
+  customs_duty (Currency): Customs and Additional Charges → INR
+  taxable_value (Currency): Taxable Value → INR
+  item_tax_template (Link): Item Tax Template → Item Tax Template
+  pi_detail (Data): Purchase Invoice Item
+  cost_center (Link): Cost Center → Cost Center
+  project (Link): Project → Project
+  is_ineligible_for_itc (Check): Is Ineligible for Input Tax Credit
+  igst_rate (Float): IGST Rate
+  cgst_rate (Float): CGST Rate
+  sgst_rate (Float): SGST Rate
+  cess_rate (Float): CESS Rate
+  cess_non_advol_rate (Float): CESS Non Advol Rate
+  igst_amount (Currency): IGST Amount
+  cgst_amount (Currency): CGST Amount
+  sgst_amount (Currency): SGST Amount
+  cess_amount (Currency): CESS Amount
+  cess_non_advol_amount (Currency): CESS Non Advol Amount
+  gst_treatment (Autocomplete): GST Treatment → Taxable
+Zero-Rated
+Nil-Rated
+Exempted
+Non-GST
+  gst_hsn_code (Data): HSN/SAC
+  uom (Link): UOM (Purchase Invoice) → UOM
+  qty (Float): Qty (Purchase Invoice)
+  purchase_invoice (Link): Purchase Invoice → Purchase Invoice
+
+# DOCTYPE: e-Invoice Applicable Company
+# Module: GST India  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  company (Link): Company → Company [required]
+  applicable_from (Date): Applicable From [required]
+
+# DOCTYPE: e-Invoice Log
+# Module: GST India  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  irn (Data): Invoice Reference Number (IRN) [unique]
+  signed_invoice (Code): Signed Invoice
+  invoice_data (Code): Invoice Data
+  signed_qr_code (Code): Signed QR Code
+  is_cancelled (Check): Is Cancelled
+  cancel_reason_code (Data): Cancel Reason Code
+  cancel_remark (Data): Cancel Remark
+  cancelled_on (Datetime): Cancelled On
+  acknowledgement_number (Data): Acknowledgement Number
+  acknowledged_on (Datetime): Acknowledged On
+  is_generated_in_sandbox_mode (Check): Is Generated in Sandbox Mode
+  reference_doctype (Link): Reference Document Type → DocType
+  reference_name (Dynamic Link): Reference Document Name → reference_doctype
+
+## Permissions
+  Accounts Manager: read, delete
+  Accounts User: read, delete
+
+# DOCTYPE: e-Waybill Log
+# Module: GST India  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  e_waybill_number (Data): e-Waybill Number [unique]
+  valid_upto (Datetime): Valid Upto
+  is_cancelled (Check): Is Cancelled
+  cancel_reason_code (Data): Cancel Reason Code
+  cancel_remark (Data): Cancel Remark
+  data (Code): Data → JSON
+  is_latest_data (Check): Is Latest Data
+  reference_doctype (Link): Reference Document Type → DocType
+  reference_name (Dynamic Link): Reference Document Name → reference_doctype
+  created_on (Datetime): Created On
+  cancelled_on (Datetime): Cancelled On
+  is_generated_in_sandbox_mode (Check): Is Generated in Sandbox Mode
+  extension_scheduled (Check): Extension Scheduled
+  extension_remark (Data): Remark
+  extension_reason_code (Data): Reason
+  extension_data (JSON): Extension Data
+
+## Permissions
+  Accounts Manager: read, delete
+  Accounts User: read, delete
+  Stock Manager: read, delete
+  Stock User: read, delete
+
+# DOCTYPE: GST Account
+# Module: GST India  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  company (Link): Company → Company [required]
+  cgst_account (Link): CGST Account → Account [required]
+  sgst_account (Link): SGST / UTGST Account → Account [required]
+  igst_account (Link): IGST Account → Account [required]
+  cess_account (Link): Cess Account → Account
+  cess_non_advol_account (Link): Cess Non Advol Account → Account
+  account_type (Select): Account Type → Input
+Output
+Purchase Reverse Charge
+Sales Reverse Charge
+Output Refund [required]
+
+# DOCTYPE: GST Credential
+# Module: GST India  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  company (Link): Company → Company [required]
+  service (Select): Service → e-Waybill / e-Invoice
+Returns [required]
+  gstin (Autocomplete): GSTIN [required]
+  username (Data): Username [required]
+  password (Password): Password
+  session_key (Data): Session Key
+  auth_token (Data): Auth Token
+  app_key (Data): App Key
+  session_expiry (Datetime): Session Expiry Date
+  session_ip (Data): Session IP
+
+# DOCTYPE: GST HSN Code
+# Module: GST India  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  hsn_code (Data): HSN Code [required, unique]
+  description (Small Text): Description
+  taxes (Table): Taxes → Item Tax
+
+## Permissions
+  All: read
+  Accounts Manager: read, write, create
+  Accounts User: read, write, create
+  System Manager: read, write, create
+  Item Manager: read, write, create
+  Stock Manager: read, write, create
+
+# DOCTYPE: GST Invoice Management System
+# Module: GST India  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  company (Link): Company → Company
+  company_gstin (Autocomplete): Company GSTIN
+  period (Autocomplete): GSTR-3B Period
+
+## Permissions
+  System Manager: read, write, create
+  Accounts Manager: read, write, create
+  Accounts User: read, write, create
+
+# DOCTYPE: GST Inward Supply
+# Module: GST India  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  company (Link): Company → Company
+  company_gstin (Data): Company GSTIN
+  supplier_name (Data): Supplier Name
+  supplier_gstin (Data): Supplier GSTIN
+  doc_type (Select): Document Type → 
+Invoice
+Credit Note
+Debit Note
+ISD Invoice
+ISD Credit Note
+Bill of Entry
+  place_of_supply (Data): Place of Supply
+  supply_type (Select): Supply Type → 
+Regular
+SEZ Without Payment of Tax
+SEZ With Payment of Tax
+Deemed Export
+Intra-State Supplies Attracting IGST
+  classification (Select): Classification → 
+B2B
+B2BA
+CDNR
+CDNRA
+ISD
+ISDA
+IMPG
+IMPGSEZ
+  items (Table): Items → GST Inward Supply Item
+  document_value (Float): Document Value
+  diffprcnt (Data): Applicable % of tax rate
+  port_code (Data): Port Code
+  irn_source (Data): IRN Source
+  irn_number (Data): IRN Number
+  irn_gen_date (Date): IRN Generation Date
+  itc_availability (Select): ITC Availability → 
+Yes
+No
+Temporary
+  reason_itc_unavailability (Data): Reason for ITC Unavailability
+  other_return_period (Data): Amendment/Original Period
+  is_amended (Check): Is Amended
+  amendment_type (Data): Amendment Type
+  original_doc_type (Select): Original Document Type → 
+Credit Note
+Debit Note
+ISD Invoice
+ISD Credit Note
+  action (Select): Action → No Action
+Accept
+Ignore
+Pending
+  link_doctype (Link): Link Document Type → DocType
+  match_status (Select): Match Status → 
+Exact Match
+Suggested Match
+Mismatch
+Manual Match
+Unlinked
+Amended
+  link_name (Dynamic Link): Link Name → link_doctype
+  sup_return_period (Data): Return Period
+  gstr_1_filled (Check): GSTR 1 Filled
+  gstr_3b_filled (Check): GSTR 3B Filled
+  gstr_1_filing_date (Date): GSTR 1 Filing Date
+  registration_cancel_date (Date): Registration Cancel Date
+  return_period_2b (Data): 2B Return Period
+  gen_date_2b (Date): 2B Generation Date
+  is_reverse_charge (Check): Reverse Charge
+  bill_no (Data): Document Number
+  bill_date (Date): Document Date
+  original_bill_no (Data): Original Document Number
+  original_bill_date (Date): Original Document Date
+  igst (Float): Total IGST
+  cgst (Float): Total CGST
+  sgst (Float): Total SGST
+  cess (Float): Total CESS
+  taxable_value (Float): Taxable Value
+  ims_action (Data): IMS Action
+  previous_ims_action (Data): Previous IMS Action
+  is_pending_action_allowed (Check): Is Pending Action Allowed
+  is_supplier_return_filed (Check): Is Supplier Return Filed
+  is_downloaded_from_ims (Check): Downloaded from IMS
+  supplier_return_form (Data): Supplier Return Form
+  is_downloaded_from_2b (Check): Downloaded from 2B
+  is_downloaded_from_2a (Check): Downloaded from 2A
+  previous_action (Select): Previous Action → No Action
+Accept
+Ignore
+Pending
+
+## Permissions
+  System Manager: read, write, create, delete
+  Accounts Manager: read
+  Accounts User: read
+
+# DOCTYPE: GST Inward Supply Item
+# Module: GST India  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  item_number (Int): Item Number
+  taxable_value (Float): Taxable Value
+  rate (Float): Tax Rate
+  igst (Float): IGST Amount
+  cgst (Float): CGST Amount
+  sgst (Float): SGST Amount
+  cess (Float): CESS Amount
+
+# DOCTYPE: GST Return Log
+# Module: GST India  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  filing_status (Data): Filing Status
+  return_period (Data): Return Period [required]
+  company (Link): Company → Company
+  filing_date (Date): Filing Date
+  acknowledgement_number (Data): Acknowledgement Number
+  gstin (Data): GSTIN [required]
+  generation_status (Select): Generation Status → 
+In Progress
+Generated
+Failed
+  unfiled (Attach): Unfiled Invoices
+  filed (Attach): Filed Data
+  unfiled_summary (Attach): Unfiled Summary
+  filed_summary (Attach): Filed Summary
+  is_latest_data (Check): Is Latest Data
+  books (Attach): Books Data
+  books_summary (Attach): Books Summary
+  reconcile (Attach): Reconcile GSTR-1
+  reconcile_summary (Attach): Reconcile Summary
+  return_type (Data): Return Type [required]
+  filing_preference (Data): Filing Preference
+  upload_error (Attach): Upload Error Data
+  authenticated_summary (Attach): Authenticated Summary
+  actions (Table): Actions → GSTR Action
+  is_nil (Check): Is Nil Return
+
+## Permissions
+  System Manager: read, write, create, delete
+  Accounts Manager: read, write, create, delete
+  Accounts User: read, write, create
+  Auditor: read, write, create
+
+# DOCTYPE: GST Settings
+# Module: GST India  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  gst_accounts (Table): Accounts → GST Account
+  round_off_gst_values (Check): Round Off GST Values
+  hsn_wise_tax_breakup (Check): View Tax Breakup Table Based On HSN Code
+  api_secret (Password): API Secret
+  validate_hsn_code (Check): Validate HSN/SAC Code in Sales Items and Transactions
+  min_hsn_digits (Select): Minimum HSN/SAC Code Digits → 4
+6
+8 [mandatory_if: eval: doc.validate_hsn_code]
+  credentials (Table): Credentials → GST Credential
+  enable_e_waybill (Check): Enable e-Waybill Features
+  attach_e_waybill_print (Check): Attach e-Waybill Print After Generation
+  enable_api (Check): Enable API Features
+  e_invoice_applicable_from (Date): e-Invoice Applicable From [mandatory_if: eval: doc.enable_e_invoice && !doc.apply_e_invoice_only_for_selected_companies]
+  e_waybill_threshold (Currency): Default Threshold Value for e-Waybill Generation
+  auto_generate_e_waybill (Check): Automatically Generate e-Waybill on Invoice Submission
+  fetch_e_waybill_data (Check): Fetch e-Waybill Data After Generation
+  auto_generate_e_invoice (Check): Automatically Generate e-Invoice on Invoice Submission
+  enable_e_invoice (Check): Enable e-Invoicing
+  enable_reverse_charge_in_sales (Check): Enable Reverse Charge in Sales Transactions
+  enable_e_waybill_from_dn (Check): Enable e-Waybill Generation from Delivery Note
+  enable_overseas_transactions (Check): Enable SEZ / Overseas Transactions
+  autofill_party_info (Check): Autofill Party Information based on GSTIN
+  enable_e_waybill_from_pi (Check): Enable e-Waybill Generation from Purchase Invoice
+  sandbox_mode (Check): Use API in Sandbox Mode?
+  apply_e_invoice_only_for_selected_companies (Check): Apply e-Invoice for Selected Companies
+  e_invoice_applicable_companies (Table): e-Invoice Applicable Companies → e-Invoice Applicable Company
+  gst_uom_map (Table): gst_uom_map → GST UOM Map
+  generate_e_waybill_with_e_invoice (Check): Generate e-Waybill with e-Invoice
+  archive_party_info_days (Int): Use Archived Party Information (In Days)
+  gstin_status_refresh_interval (Int): GSTIN Status Refresh Interval (In Days)
+  rcm_threshold (Currency): Invoice Value Threshold for Reverse Charge
+  enable_rcm_for_unregistered_supplier (Check): Enable Reverse Charge for Purchase from Unregistered Supplier
+  require_supplier_invoice_no (Check): Require Vendor Document Reference for GST Purchases or Receipts
+  validate_gstin_status (Check): Refresh and Validate GSTIN Status in Transactions
+  gstn_public_certificate (Code): GSTN Public Certificate
+  nic_public_key (Code): NIC Public Key
+  enable_e_waybill_from_pr (Check): Enable e-Waybill Generation from Purchase Receipt
+  enable_auto_reconciliation (Check): Enable Auto Reconciliation
+  inward_supply_period (Int): Inward Supply Period in months
+  reconcile_on_monday (Check): Monday
+  reconcile_on_friday (Check): Friday
+  reconcile_on_tuesday (Check): Tuesday
+  reconcile_on_saturday (Check): Saturday
+  reconcile_on_wednesday (Check): Wednesday
+  reconcile_on_sunday (Check): Sunday
+  reconcile_on_thursday (Check): Thursday
+  reconcile_for_b2b (Check): B2B
+  reconcile_for_b2ba (Check): B2BA
+  reconcile_for_cdnr (Check): CDNR
+  reconcile_for_cdnra (Check): CDNRA
+  reconcile_for_isd (Check): ISD
+  reconcile_for_isda (Check): ISDA
+  reconcile_for_impg (Check): IMPG
+  reconcile_for_impgsez (Check): IMPGSEZ
+  enable_retry_einv_ewb_generation (Check): Enable Retry e-Invoice/e-Waybill Generation
+  is_retry_einv_ewb_generation_pending (Check): Is Retry e-Invoice/e-Waybill Pending
+  enable_sales_through_ecommerce_operators (Check): Enable Sales through E-commerce Operators
+  role_allowed_to_modify (Link): Role Allowed to Modify Transactions → Role
+  restrict_changes_after_gstr_1 (Check): Restrict Changes to Transactions After Filing
+  enable_e_waybill_for_sc (Check): Enable e-Waybill Generation for Subcontracting and Material Transfer
+  fetch_e_invoice_details_from_gst_portal (Check): Fetch e-Invoice details from GST Portal
+  auto_cancel_e_waybill (Check): Automatically Cancel e-Waybill on Cancellation
+  auto_cancel_e_invoice (Check): Automatically Cancel e-Invoice on Invoice Cancellation
+  reason_for_e_waybill_cancellation (Select): Default Reason for e-Waybill Cancellation → Duplicate
+Order Cancelled
+Data Entry Mistake [mandatory_if: eval: doc.auto_cancel_e_waybill]
+  reason_for_e_invoice_cancellation (Select): Default Reason for e-Invoice Cancellation → Duplicate
+Order Cancelled
+Data Entry Mistake [mandatory_if: eval: doc.auto_cancel_e_invoice]
+  compare_unfiled_data (Check): Compare Data with GST Portal Before Filing
+  enable_gstr_1_api (Check): Enable GSTR-1 API Features
+  restrict_cancel_if_e_invoice_final (Check): Restrict Cancellation if e-Invoice not Cancellable
+  e_invoice_reporting_time_limit_days (Int): e-Invoice Reporting Time Limit (in Days)
+  use_fallback_for_nic (Check): Use Fallback APIs for e-Waybill and e-Invoice
+  e_waybill_threshold_for_intrastate (Table): e-Waybill Threshold for Intrastate → State-wise e-Waybill Threshold
+
+## Permissions
+  Accounts Manager: read, write, create
+  Accounts User: read, write, create
+  System Manager: read, write, create
+
+# DOCTYPE: GST UOM Map
+# Module: GST India  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  uom (Link): UOM → UOM [required, unique]
+  gst_uom (Autocomplete): GST UOM → 
+BAG (Bags)
+BAL (Bale)
+BDL (Bundles)
+BKL (Buckles)
+BOU (Billion of Units)
+BOX (Box)
+BTL (Bottles)
+BUN (Bunches)
+CAN (Cans)
+CBM (Cubic Meters)
+CCM (Cubic Centimeters)
+CMS (Centimeters)
+CTN (Cartons)
+DOZ (Dozens)
+DRM (Drums)
+GGK (Great Gross)
+GMS (Grammes)
+GRS (Gross)
+GYD (Gross Yards)
+KGS (Kilograms)
+KLR (Kilolitre)
+KME (Kilometre)
+LTR (Litres)
+MLT (Mililitre)
+MTR (Meters)
+MTS (Metric Ton)
+NOS (Numbers)
+OTH (Others)
+PAC (Packs)
+PCS (Pieces)
+PRS (Pairs)
+QTL (Quintal)
+ROL (Rolls)
+SET (Sets)
+SQF (Square Feet)
+SQM (Square Meters)
+SQY (Square Yards)
+TBS (Tablets)
+TGM (Ten Gross)
+THD (Thousands)
+TON (Tonnes)
+TUB (Tubes)
+UGS (US Gallons)
+UNT (Units)
+YDS (Yards) [required]
+
+# DOCTYPE: GSTIN
+# Module: GST India  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  gstin (Data): GSTIN [required, unique]
+  status (Data): GSTIN Status
+  registration_date (Date): Registration Date
+  cancelled_date (Date): Cancelled Date
+  last_updated_on (Datetime): Last Updated On
+  is_blocked (Check): Is Blocked
+  transporter_id_status (Data): Transporter ID Status
+  gstr_1_filed_upto (Date): GSTR-1 Filed Upto
+  last_pan_used_for_gstr (Data): Last PAN Used for GSTR
+
+## Permissions
+  System Manager: read
+  Accounts Manager: read
+  Accounts User: read
+
+# DOCTYPE: GSTR-1
+# Module: GST India  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  company (Link): Company → Company [required]
+  company_gstin (Autocomplete): Company GSTIN [required]
+  year (Autocomplete): Year [required]
+  month_or_quarter (Select): Month/Quarter [required]
+  filing_preference (Select): Filing Preference → 
+Monthly
+Quarterly
+  file_nil_gstr1 (Check): File Nil GSTR-1
+
+## Permissions
+  System Manager: read, write, create
+  Accounts Manager: read, write, create
+  Accounts User: read, write, create
+  Auditor: read, write, create
+
+# DOCTYPE: GSTR 3B Report
+# Module: GST India  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  company (Link): Company → Company
+  year (Select): Year
+  json_output (Code): JSON Output
+  missing_field_invoices (Small Text): Invoices with no Place Of Supply
+  enqueue_report (Check): Enqueue Report
+  filter_by (Select): Filter By → ITC Claim Period
+Posting Date
+  generation_status (Data): Status
+  filing_status (Select): Filing Status → Not Filed
+Filed
+  company_gstin (Autocomplete): Company GSTIN
+  month_or_quarter (Select): Month or Quarter → Apr - Jun
+Jul - Sep
+Oct - Dec
+Jan - Mar
+January
+February
+March
+April
+May
+June
+July
+August
+September
+October
+November
+December
+
+## Permissions
+  Accounts Manager: read, write, create
+  Accounts User: read, write, create
+  System Manager: read, write, create
+
+# DOCTYPE: GSTR Action
+# Module: GST India  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  request_type (Data): Request Type
+  token (Data): Token
+  status (Data): Status
+  creation_time (Datetime): Creation Time
+  integration_request (Link): Integration Request → Integration Request
+  request_id (Data): Request id
+
+# DOCTYPE: GSTR Import Log
+# Module: GST India  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  gstin (Data): GSTIN
+  classification (Data): Classification
+  return_period (Data): Return Period
+  last_updated_on (Datetime): Last updated on
+  return_type (Data): Return Type
+  data_not_found (Check): Data not Found
+  request_id (Data): Request ID
+  request_time (Datetime): Request Time
+  dont_redownload (Check): Redownload not Required
+
+## Permissions
+  System Manager: read, write, create, delete
+  Accounts Manager: read
+  Accounts User: read
+
+# DOCTYPE: India Compliance Taxes and Charges
+# Module: GST India  Type: Setup  Submittable: False  ChildTable: True
+
+## Fields
+  charge_type (Select): Type → 
+Actual
+On Net Total
+On Item Quantity [required]
+  account_head (Link): Account Head → Account [required]
+  rate (Float): Rate
+  item_wise_tax_rates (Code): Item Wise Tax Rates
+  tax_amount (Currency): Amount → INR
+  base_total (Currency): Total → INR
+  gst_tax_type (Data): GST Tax Type
+
+# DOCTYPE: PAN
+# Module: GST India  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  pan (Data): Pan [required, unique]
+  pan_status (Data): Pan Status
+  last_updated_on (Datetime): Last Updated On
+
+## Permissions
+  System Manager: read, delete
+  Accounts Manager: read
+  Accounts User: read
+
+# DOCTYPE: Purchase Reconciliation Tool
+# Module: GST India  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  company (Link): Company → Company
+  company_gstin (Autocomplete): Company GSTIN
+  purchase_period (Select): Purchase Period → 
+This Month
+This Quarter to Last Month
+This Quarter
+This Fiscal Year to Last Month
+This Fiscal Year
+Last Month
+Last Quarter
+Last Fiscal Year
+Custom [required]
+  purchase_from_date (Date): From Date
+  purchase_to_date (Date): To Date
+  inward_supply_period (Select): Inward Supply Period → 
+This Month
+This Quarter to Last Month
+This Quarter
+This Fiscal Year to Last Month
+This Fiscal Year
+Last Month
+Last Quarter
+Last Fiscal Year
+Custom [required]
+  inward_supply_from_date (Date): From Date
+  inward_supply_to_date (Date): To Date
+  gst_return (Select): GST Return → GSTR 2B
+Both GSTR 2A & 2B
+  include_ignored (Check): Include Ignored
+
+## Permissions
+  System Manager: read, write, create
+  Accounts Manager: read, write, create
+  Accounts User: read, write, create
+
+# DOCTYPE: State-wise e-Waybill Threshold
+# Module: GST India  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  state (Autocomplete): State [required]
+  intrastate_applicable (Check): Intrastate Applicable
+  intrastate_threshold (Currency): Intrastate Threshold [mandatory_if: eval: doc.intrastate_applicable]
+
+# DOCTYPE: C-Form
+# Module: VAT India  Type:   Submittable: True  ChildTable: False
+
+## Fields
+  naming_series (Select): Series → ACC-CF-.YYYY.- [required]
+  c_form_no (Data): C-Form No [required]
+  received_date (Date): Received Date [required]
+  customer (Link): Customer → Customer [required]
+  company (Link): Company → Company
+  quarter (Select): Quarter → 
+I
+II
+III
+IV
+  total_amount (Currency): Total Amount → Company:company:default_currency [required]
+  state (Data): State [required]
+  invoices (Table): Invoices → C-Form Invoice Detail
+  total_invoiced_amount (Currency): Total Invoiced Amount → Company:company:default_currency
+  amended_from (Link): Amended From → C-Form
+
+## Permissions
+  Accounts User: read, write, create
+  Accounts Manager: read, write, create
+  All: read
+
+# DOCTYPE: C-Form Invoice Detail
+# Module: VAT India  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  invoice_no (Link): Invoice No → Sales Invoice
+  invoice_date (Date): Invoice Date
+  territory (Link): Territory → Territory
+  net_total (Currency): Net Total → Company:company:default_currency
+  grand_total (Currency): Grand Total → Company:company:default_currency
+

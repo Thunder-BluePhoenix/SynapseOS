@@ -1,0 +1,2582 @@
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/README.md
+### Frappe Native
+
+Native mobile app generator for Frappe — offline-first, sync-ready, no wrapper.
+
+### Installation
+
+You can install this app using the [bench](https://github.com/frappe/bench) CLI:
+
+```bash
+cd $PATH_TO_YOUR_BENCH
+bench get-app $URL_OF_THIS_REPO --branch develop
+bench install-app frappe_native
+```
+
+### Contributing
+
+This app uses `pre-commit` for code formatting and linting. Please [install pre-commit](https://pre-commit.com/#installation) and enable it for this repository:
+
+```bash
+cd apps/frappe_native
+pre-commit install
+```
+
+Pre-commit is configured to use the following tools for checking and formatting your code:
+
+- ruff
+- eslint
+- prettier
+- pyupgrade
+### CI
+
+This app can use GitHub Actions for CI. The following workflows are configured:
+
+- CI: Installs this app and runs unit tests on every push to `develop` branch.
+- Linters: Runs [Frappe Semgrep Rules](https://github.com/frappe/semgrep-rules) and [pip-audit](https://pypi.org/project/pip-audit/) on every pull request.
+
+
+### License
+
+gpl-3.0
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/docs/motto.md
+# Motto
+
+> **"Your ERP. Your device. No compromises."**
+
+frappe-native exists because mobile ERP has been done wrong for a decade.
+WebViews dressed as apps. Clunky ports of desktop UIs. Tools that need internet to function.
+
+frappe-native generates real native apps — not wrappers, not shells.
+Apps that work in a warehouse with no signal.
+Apps that sync when connectivity returns, silently and correctly.
+Apps that look and feel like they were built for mobile first.
+
+---
+
+**Core beliefs:**
+
+- A shrunk desktop UI is not a mobile app
+- Offline is not a feature — it is the baseline
+- Developers define schema, the engine generates experience
+- Sync should be invisible to the user
+- Every generated app is a first-class Frappe citizen
+- No rebuild required to change the UI
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/docs/phase_1.md
+# Phase 1 — Schema → Experience Engine
+
+**Goal:** Given a Frappe DocType, automatically derive the mobile UI contract, offline data model, sync rules, and field mappings — without the developer writing any of this manually.
+
+---
+
+## Deliverables
+
+- [ ] `Native App Config` DocType
+- [ ] `Native Screen` DocType (auto-generated per DocType)
+- [ ] `Native Field Mapping` DocType (DocType field → mobile field type)
+- [ ] Schema reader (reads DocType meta → generates mobile contract)
+- [ ] Offline model generator (DocType → SQLite table schema)
+- [ ] Sync rules generator (which fields sync, which are local-only)
+- [ ] API: `GET /frappe_native.schema.get_contract?doctype=Sales+Invoice`
+
+---
+
+## What "Schema → Experience" Means
+
+Developer installs frappe-native → selects "Sales Invoice" → system automatically produces:
+
+**1. Mobile UI Contract**
+```json
+{
+  "doctype": "Sales Invoice",
+  "screens": {
+    "list": {
+      "title": "Sales Invoices",
+      "display_fields": ["name", "customer", "grand_total", "status"],
+      "sort_by": "modified",
+      "search_fields": ["customer", "name"]
+    },
+    "detail": {
+      "sections": [
+        {"label": "Customer", "fields": ["customer", "posting_date"]},
+        {"label": "Items", "type": "child_table", "source": "items"},
+        {"label": "Totals", "fields": ["total", "taxes", "grand_total"]}
+      ]
+    }
+  },
+  "actions": ["submit", "cancel", "share_pdf"]
+}
+```
+
+**2. SQLite Table Schema**
+```sql
+CREATE TABLE sales_invoice (
+    name        TEXT PRIMARY KEY,
+    customer    TEXT,
+    grand_total REAL,
+    status      TEXT,
+    posting_date TEXT,
+    _sync_status TEXT DEFAULT 'PENDING',
+    _local_only  INTEGER DEFAULT 0,
+    _modified    INTEGER  -- unix timestamp
+);
+```
+
+**3. Sync Rules**
+```json
+{
+  "doctype": "Sales Invoice",
+  "sync_direction": "BIDIRECTIONAL",
+  "offline_creatable": true,
+  "offline_editable": ["draft"],
+  "read_only_statuses": ["submitted", "cancelled"],
+  "local_only_fields": ["_ui_notes", "_draft_flag"]
+}
+```
+
+---
+
+## DocType: Native App Config
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `app_name` | Data | e.g. "Shop Manager" |
+| `app_id` | Data | e.g. `com.mycompany.shopmanager` |
+| `frappe_site` | Data | Source site URL |
+| `included_doctypes` | Table | Which DocTypes this app exposes |
+| `app_mode` | Select | LIVE_CONFIG / GENERATED |
+| `primary_color` | Color | App brand color |
+| `logo` | Attach Image | App icon |
+| `pulse_node_id` | Link → Pulse Node | Which sync node this app uses |
+| `gate_policy` | Link → Gate Policy | Access policy for app users |
+
+---
+
+## DocType: Native Field Mapping
+
+Auto-generated, developer can override:
+
+| Frappe Field Type | Default Mobile Widget | Notes |
+|-------------------|-----------------------|-------|
+| Data | Text input | |
+| Int / Float | Number input | |
+| Currency | Currency input (locale-aware) | |
+| Date | Date picker | |
+| Select | Dropdown | |
+| Link | Search + select | Fetches linked doc |
+| Table | Expandable card list | Child table |
+| Text Editor | Rich text | Simplified on mobile |
+| Attach | File picker + camera | |
+| Check | Toggle switch | |
+| Small Text | Multi-line input | |
+
+---
+
+## Schema Reader
+
+```python
+def generate_mobile_contract(doctype: str) -> dict:
+    meta = frappe.get_meta(doctype)
+    return {
+        "doctype": doctype,
+        "fields": [map_field(f) for f in meta.fields if not f.hidden],
+        "title_field": meta.title_field or "name",
+        "search_fields": meta.search_fields,
+        "is_submittable": meta.is_submittable,
+        "autoname": meta.autoname,
+    }
+```
+
+---
+
+## Success Criteria
+
+- Select any standard ERPNext DocType → contract generated in under 2 seconds
+- SQLite schema generated correctly for all standard field types
+- Sync rules correctly identify submittable vs draft behaviour
+- API endpoint returns valid contract JSON
+- Developer can override any auto-generated field mapping
+- Child tables (items, taxes) correctly modelled as nested SQLite tables
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/docs/phase_2.md
+# Phase 2 — Layout DSL
+
+**Goal:** Developers define mobile screens in a JSON Layout DSL. The Flutter app renders them dynamically. UI changes in Frappe desk reflect in the app instantly — no rebuild required.
+
+---
+
+## Deliverables
+
+- [ ] Layout DSL specification (JSON schema)
+- [ ] `Native Screen Layout` DocType (stores DSL per screen per app)
+- [ ] DSL validator (catches errors before they reach the app)
+- [ ] Flutter DSL renderer (JSON → native widgets at runtime)
+- [ ] Hot-reload: app fetches latest DSL on each session start
+- [ ] DSL preview (render mock in Frappe desk without opening the app)
+- [ ] Gesture mapping (swipe, long press → actions)
+
+---
+
+## Layout DSL Specification
+
+### Screen Definition
+
+```json
+{
+  "screen_id": "sales_invoice_detail",
+  "doctype": "Sales Invoice",
+  "layout": "detail",
+  "title": "{{customer}}",
+  "sections": [
+    {
+      "type": "header_card",
+      "fields": ["customer", "posting_date"],
+      "style": {"background": "primary"}
+    },
+    {
+      "type": "field_group",
+      "label": "Invoice Details",
+      "fields": ["due_date", "payment_terms_template"]
+    },
+    {
+      "type": "child_table",
+      "label": "Items",
+      "source": "items",
+      "display_fields": ["item_name", "qty", "rate", "amount"],
+      "swipe_actions": {
+        "right": {"action": "edit_row"},
+        "left":  {"action": "delete_row"}
+      }
+    },
+    {
+      "type": "summary_row",
+      "fields": ["total", "grand_total"],
+      "style": {"bold": true}
+    },
+    {
+      "type": "action_bar",
+      "buttons": [
+        {"label": "Submit", "action": "submit", "color": "green", "requires_status": "Draft"},
+        {"label": "Share PDF", "action": "share_pdf", "icon": "share"},
+        {"label": "Cancel",  "action": "cancel",  "color": "red",   "requires_status": "Submitted"}
+      ]
+    }
+  ],
+  "gestures": {
+    "swipe_right": {"action": "approve", "requires_role": "Sales Manager"},
+    "swipe_left":  {"action": "reject"},
+    "long_press":  {"action": "open_edit_mode"}
+  },
+  "sync_indicator": true
+}
+```
+
+### List Screen Definition
+
+```json
+{
+  "screen_id": "sales_invoice_list",
+  "doctype": "Sales Invoice",
+  "layout": "list",
+  "card_style": "compact",
+  "primary_field": "customer",
+  "secondary_fields": ["grand_total", "posting_date"],
+  "badge_field": "status",
+  "badge_colors": {
+    "Draft":     "grey",
+    "Submitted": "green",
+    "Cancelled": "red",
+    "Overdue":   "orange"
+  },
+  "swipe_actions": {
+    "right": {"action": "quick_submit", "icon": "check", "color": "green"},
+    "left":  {"action": "delete",       "icon": "trash", "color": "red"}
+  },
+  "fab": {
+    "icon": "plus",
+    "action": "create_new"
+  },
+  "filters": [
+    {"field": "status", "default": "Draft"},
+    {"field": "posting_date", "type": "date_range"}
+  ]
+}
+```
+
+---
+
+## Supported Section Types
+
+| Type | Description |
+|------|-------------|
+| `header_card` | Prominent top card with key fields |
+| `field_group` | Standard label + value rows |
+| `child_table` | Expandable list of child records |
+| `summary_row` | Totals / computed values |
+| `action_bar` | Bottom buttons |
+| `image_grid` | Attached images |
+| `map_view` | GPS location display |
+| `timeline` | Document history / comments |
+| `barcode_field` | Scan → fill field |
+
+---
+
+## Gesture System
+
+| Gesture | Available Actions |
+|---------|------------------|
+| `swipe_right` | approve, submit, mark_complete, custom |
+| `swipe_left` | reject, delete, archive, custom |
+| `long_press` | edit_mode, copy, share, custom |
+| `pull_to_refresh` | sync (always enabled) |
+
+Gestures are role-restricted:
+```json
+"swipe_right": {
+  "action": "approve",
+  "requires_role": "Sales Manager",
+  "fallback": "show_toast:Insufficient permissions"
+}
+```
+
+---
+
+## Flutter DSL Renderer
+
+```dart
+class DslRenderer extends StatelessWidget {
+  final Map layout;
+  final Map docData;
+
+  Widget build(BuildContext context) {
+    return Column(
+      children: layout['sections'].map((section) {
+        return SectionFactory.build(section, docData);
+      }).toList(),
+    );
+  }
+}
+```
+
+`SectionFactory` maps `type` string → Flutter widget. New section types added without changing app core.
+
+---
+
+## Hot Reload Flow
+
+```
+App opens / user logs in
+        ↓
+Fetch latest DSL from:
+GET /api/method/frappe_native.layout.get_screens?app_id=xxx
+        ↓
+Compare hash with cached version
+        ↓
+If changed → update local cache → re-render
+If same    → use cache (works offline)
+```
+
+---
+
+## DocType: Native Screen Layout
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `app_config` | Link → Native App Config | |
+| `screen_id` | Data | Unique within app |
+| `doctype` | Data | |
+| `layout_type` | Select | LIST / DETAIL / CREATE / DASHBOARD |
+| `dsl_json` | JSON | The layout definition |
+| `version` | Int | Increments on each save |
+| `is_active` | Check | |
+
+---
+
+## Success Criteria
+
+- Change a button label in DSL → app shows new label on next session start (no rebuild)
+- Invalid DSL (missing required fields) → validator rejects with clear error message
+- All standard section types render correctly on Android and iOS
+- Swipe gestures work with role restriction enforced
+- DSL preview in Frappe desk shows accurate mock of mobile screen
+- Flutter renderer adds under 16ms render time per screen (60fps maintained)
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/docs/phase_3.md
+# Phase 3 — Flutter Core App
+
+**Goal:** A working Flutter app that authenticates via frappe-gate, loads Layout DSL, renders screens dynamically, and talks to Frappe via API. No offline yet — just the live connected core.
+
+---
+
+## Deliverables
+
+- [ ] Flutter project scaffolded (`frappe_native_app/`)
+- [ ] frappe-gate device registration + JWT auth flow
+- [ ] **Typed Flutter SDK** (`sync/pulse_client.dart`) — bootstrapped from `frappe_pulse.api.mobile.get_mobile_config`; typed `pull()`, `receive()`, `registerPushToken()` methods; `?_mobile=1` on all pull calls; MessagePack decode via `messagepack` package
+- [ ] API client (authenticated Frappe REST calls) — wraps `PulseClient`
+- [ ] DSL loader + local cache
+- [ ] Dynamic screen renderer (list + detail screens)
+- [ ] Navigation system (stack + bottom nav)
+- [ ] Form engine (create + edit documents)
+- [ ] Sync state indicator widget (grey/green/red/spinning)
+- [ ] Android + iOS builds passing
+
+---
+
+## Flutter Project Structure
+
+```
+frappe_native_app/
+├── lib/
+│   ├── main.dart
+│   ├── auth/
+│   │   ├── device_registration.dart   # frappe-gate device reg
+│   │   ├── token_manager.dart         # JWT store + refresh
+│   │   └── auth_guard.dart            # Route protection
+│   ├── api/
+│   │   ├── frappe_client.dart         # REST API wrapper
+│   │   └── dsl_loader.dart            # Fetch + cache DSL
+│   ├── renderer/
+│   │   ├── dsl_renderer.dart          # Root DSL → widget tree
+│   │   ├── section_factory.dart       # type → widget mapping
+│   │   └── sections/                  # One file per section type
+│   ├── screens/
+│   │   ├── list_screen.dart           # Generic list screen
+│   │   ├── detail_screen.dart         # Generic detail screen
+│   │   └── form_screen.dart           # Create / edit form
+│   ├── sync/
+│   │   ├── sync_indicator.dart        # Sync state widget
+│   │   └── pulse_client.dart          # frappe-pulse API client
+│   └── state/
+│       └── app_state.dart             # Global state (Riverpod)
+├── android/
+├── ios/
+└── pubspec.yaml
+```
+
+---
+
+## Auth Flow (frappe-gate)
+
+```
+First launch:
+  1. User enters Frappe site URL + credentials
+  2. App generates device fingerprint (OS + model + UUID)
+  3. POST /gate/device/register → device_id returned
+  4. Admin approves in Frappe desk
+  5. POST /gate/token → JWT stored securely (flutter_secure_storage)
+
+Subsequent launches:
+  1. Check stored JWT expiry
+  2. If valid → proceed
+  3. If expired → POST /gate/token/refresh
+  4. If refresh fails → re-login screen
+```
+
+---
+
+## Typed Flutter SDK (PulseClient)
+
+Bootstrapped once on first launch from `frappe_pulse.api.mobile.get_mobile_config`. Exposes typed methods — no raw HTTP in the rest of the codebase.
+
+```dart
+class PulseClient {
+  final String baseUrl;
+  final TokenManager tokenManager;
+  late final PulseMobileConfig _config;
+
+  Future init() async {
+    final raw = await _get('/api/method/frappe_pulse.api.mobile.get_mobile_config');
+    _config = PulseMobileConfig.fromJson(raw);
+  }
+
+  // Pull events since [after] — uses ?_mobile=1 + MessagePack by default
+  Future> pull({required DateTime after}) async {
+    final uri = Uri.parse('$baseUrl${_config.pullEndpoint}')
+        .replace(queryParameters: {
+          'after': after.toIso8601String(),
+          '_mobile': '1',
+          'node_id': _config.nodeId,
+        });
+    final token = await tokenManager.getValidToken();
+    final response = await http.get(uri,
+        headers: {'Authorization': 'Bearer $token', 'Accept': 'application/msgpack'});
+
+    // Decode MessagePack → JSON → typed events
+    final decoded = MessagePackCodec.decode(response.bodyBytes) as Map;
+    return (decoded['events'] as List).map(PulseEvent.fromJson).toList();
+  }
+
+  // Push local events to the server
+  Future> receive(List events) async {
+    final token = await tokenManager.getValidToken();
+    final response = await http.post(
+      Uri.parse('$baseUrl${_config.receiveEndpoint}'),
+      headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+      body: jsonEncode({'events': events.map((e) => e.toJson()).toList()}),
+    );
+    return Map.from(jsonDecode(response.body)['message']);
+  }
+
+  // Register FCM/APNs device token for push notifications
+  Future registerPushToken(String token, String platform) async {
+    await _post('/api/method/frappe_pulse.api.mobile.register_push_token',
+        {'device_token': token, 'platform': platform});
+  }
+}
+```
+
+## API Client
+
+```dart
+class FrappeClient {
+  final String baseUrl;
+  final TokenManager tokenManager;
+
+  Future> getDoc(String doctype, String name) async {
+    final token = await tokenManager.getValidToken();
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/resource/$doctype/$name'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'X-Device-Fingerprint': DeviceInfo.fingerprint,
+      },
+    );
+    return jsonDecode(response.body)['data'];
+  }
+}
+```
+
+---
+
+## Form Engine
+
+Renders create/edit forms from DocType field mappings (Phase 1):
+
+```dart
+class FormEngine extends StatefulWidget {
+  final String doctype;
+  final Map? existingDoc;  // null = create mode
+
+  // Renders fields based on Native Field Mapping
+  // Handles validation (required, min/max, regex)
+  // Submits via FrappeClient
+}
+```
+
+Validation runs client-side (offline-capable) using rules from the schema contract.
+
+---
+
+## Navigation System
+
+```
+Bottom Nav:
+  Home (dashboard)    → pinned DocType shortcuts
+  Recent              → last viewed documents
+  Notifications       → Frappe notifications + approvals
+  Profile             → device info, sync status, logout
+
+Stack navigation:
+  List → Detail → Edit
+  Each screen driven by DSL
+```
+
+---
+
+## Sync State Indicator
+
+Small widget shown on every list card and detail screen:
+
+```dart
+enum SyncState { synced, pending, conflict, syncing }
+
+class SyncIndicator extends StatelessWidget {
+  final SyncState state;
+
+  Widget build(BuildContext context) {
+    return Container(
+      width: 8, height: 8,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: _color(),
+      ),
+    );
+  }
+
+  Color _color() => switch (state) {
+    SyncState.synced   => Colors.green,
+    SyncState.pending  => Colors.grey,
+    SyncState.conflict => Colors.red,
+    SyncState.syncing  => Colors.blue,
+  };
+}
+```
+
+---
+
+## Success Criteria
+
+- App installs and runs on Android 10+ and iOS 15+
+- frappe-gate device registration flow completes end-to-end
+- JWT stored securely, refreshes automatically
+- List screen loads and renders correctly from DSL for Sales Invoice
+- Detail screen renders all standard section types
+- Form screen creates a new document successfully
+- Sync indicator reflects correct state per document
+- App size under 30MB (base, no assets)
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/docs/phase_4.md
+# Phase 4 — Offline Engine
+
+**Goal:** The app works completely without internet. Documents created or edited offline are stored in SQLite, sync state is visible to the user, and everything syncs automatically when connectivity returns.
+
+---
+
+## Deliverables
+
+- [ ] SQLite local store (auto-generated schema from Phase 1 contracts)
+- [ ] Offline-first data layer (reads local first, syncs background)
+- [ ] frappe-pulse client integration (event push/pull)
+- [ ] Connectivity monitor (online/offline detection)
+- [ ] Auto-sync on reconnect
+- [ ] Offline create/edit/submit (where sync rules allow)
+- [ ] Conflict indicator on affected documents
+- [ ] Offline mode banner (visible when disconnected)
+- [ ] C extension: encrypted SQLite VFS (`pulse_mobile_vfs.c`, AES-256, device-bound key)
+
+---
+
+## Local Data Layer Architecture
+
+```
+App requests data
+        ↓
+LocalStore (SQLite)   ← primary read source always
+        ↓
+Background sync worker ← keeps SQLite fresh from Frappe
+        ↓
+frappe-pulse client    ← event push/pull
+        ↓
+Frappe server
+```
+
+App **never** waits for a network call to render a screen. SQLite is always the source of truth locally.
+
+---
+
+## SQLite Store
+
+Auto-built from Phase 1 offline model contracts:
+
+```dart
+class LocalStore {
+  final Database _db;
+
+  Future initFromContract(List contracts) async {
+    for (final contract in contracts) {
+      await _db.execute(contract.sqliteSchema);
+    }
+  }
+
+  Future?> getDoc(String doctype, String name) async {
+    final rows = await _db.query(
+      _tableName(doctype),
+      where: 'name = ?',
+      whereArgs: [name],
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future upsertDoc(String doctype, Map doc, SyncState state) async {
+    await _db.insert(
+      _tableName(doctype),
+      {...doc, '_sync_status': state.name, '_modified': DateTime.now().millisecondsSinceEpoch},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+}
+```
+
+---
+
+## frappe-pulse Client (Flutter side)
+
+Uses `PulseClient` from Phase 3 (typed SDK). All pull calls automatically use `?_mobile=1` — the server strips non-essential fields and responds with MessagePack (~30% smaller than JSON). Decoded on the Flutter side using the `messagepack` package.
+
+```dart
+class PulseClient {
+  // Push local pending events to frappe-pulse (JSON POST)
+  Future pushPendingEvents() async {
+    final pending = await localStore.getPendingEvents();
+    if (pending.isEmpty) return;
+    final result = await receive(pending);  // typed receive() call
+    await localStore.markEventsSynced(pending.map((e) => e.eventId).toList());
+  }
+
+  // Pull new events from server — ?_mobile=1 + MessagePack automatically applied
+  Future pullEvents() async {
+    final lastSync = await localStore.getLastSyncTimestamp();
+    final events = await pull(after: lastSync);  // typed pull() — strips + MessagePack
+    for (final event in events) {
+      await applyEvent(event);
+    }
+    await localStore.updateLastSyncTimestamp();
+  }
+}
+```
+
+---
+
+## Offline Create / Edit Flow
+
+```
+User creates Sales Invoice offline
+        ↓
+Saved to SQLite immediately
+_sync_status = 'PENDING'
+        ↓
+Event written to local event log:
+{ event_type: CREATE, doc_type: Sales Invoice, payload: {...} }
+        ↓
+Sync indicator: grey dot
+        ↓
+Connectivity returns → PulseClient.pushPendingEvents()
+        ↓
+Event received by frappe-pulse on server
+        ↓
+Document created in Frappe
+        ↓
+Confirmation event pulled back → SQLite updated
+_sync_status = 'SYNCED'
+        ↓
+Sync indicator: green dot
+```
+
+---
+
+## Sync Rules Enforcement (from Phase 1)
+
+Not everything is creatable or editable offline:
+
+```dart
+bool canCreateOffline(String doctype) {
+  return syncRules[doctype]?.offlineCreatable ?? false;
+}
+
+bool canEditOffline(String doctype, String status) {
+  final editableStatuses = syncRules[doctype]?.offlineEditable ?? [];
+  return editableStatuses.contains(status);
+}
+```
+
+Submitted documents → read-only offline (no editing).
+Draft documents → editable offline.
+Cancelled documents → read-only everywhere.
+
+---
+
+## Connectivity Monitor
+
+```dart
+class ConnectivityMonitor {
+  Stream get isOnline => Connectivity()
+    .onConnectivityChanged
+    .map((result) => result != ConnectivityResult.none);
+
+  void startAutoSync() {
+    isOnline.where((online) => online).listen((_) {
+      pulseClient.pushPendingEvents();
+      pulseClient.pullEvents();
+    });
+  }
+}
+```
+
+---
+
+## Offline Mode Banner
+
+Shown at top of all screens when disconnected:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  ⚡ Offline — changes will sync when you reconnect  │
+└─────────────────────────────────────────────────────┘
+```
+
+Disappears automatically when sync completes after reconnection.
+
+---
+
+## C Layer: SQLite Custom Extension
+
+The only C code in frappe-native. SQLite's extension API is C-only — no other approach works here.
+
+**One targeted extension: Encrypted Local Store (SQLite VFS)**
+
+Mobile devices get lost or stolen. The local SQLite store holds real ERP data — customer records, invoices, stock levels. It must be encrypted at rest.
+
+A custom C VFS (Virtual File System) intercepts SQLite's read/write calls and applies AES-256 encryption transparently. The Flutter app (`sqflite`) loads it on startup — no changes to any query or data layer code.
+
+```c
+/* pulse_mobile_vfs.c — AES-256 encrypted SQLite VFS for Flutter */
+static int mobileVfsRead(sqlite3_file *pFile, void *zBuf, int iAmt, sqlite3_int64 iOfst) {
+    MobileVfsFile *p = (MobileVfsFile *)pFile;
+    int rc = p->pReal->pMethods->xRead(p->pReal, zBuf, iAmt, iOfst);
+    if (rc == SQLITE_OK) aes256_decrypt(zBuf, iAmt, p->deviceKey);
+    return rc;
+}
+```
+
+The encryption key is derived from the device fingerprint + frappe-gate device token — so the database is bound to the specific registered device. Even if the SQLite file is extracted, it cannot be read on another device.
+
+**Scope rule:** One C file. Loaded as a SQLite extension via `sqflite`'s native plugin bridge. No other C in frappe-native.
+
+---
+
+## Success Criteria
+
+- App fully usable with no internet (all screens load from SQLite)
+- Sales Invoice created offline → syncs correctly on reconnect
+- Sync indicator correctly reflects PENDING / SYNCED / CONFLICT per document
+- Submitted documents are read-only offline (edit blocked with clear message)
+- Offline banner appears/disappears correctly
+- 7-day offline test: no data loss after reconnect
+- Conflict (two offline edits to same doc) → red indicator + conflict shown in frappe-pulse desk
+- Local SQLite file encrypted at rest (AES-256 custom VFS active)
+- Extracted SQLite file unreadable on a different device
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/docs/phase_5.md
+# Phase 5 — Mobile Builder UI
+
+**Goal:** Developers build and customize mobile screens entirely inside Frappe desk — drag-and-drop, no JSON editing required. The DSL is generated behind the scenes.
+
+---
+
+## Deliverables
+
+- [ ] "Mobile Builder" page in Frappe desk
+- [ ] Screen list (all screens for an app, add/edit/delete)
+- [ ] Drag-drop section builder (add/reorder/remove sections)
+- [ ] Field picker (choose which fields appear in each section)
+- [ ] Action editor (configure buttons + gestures)
+- [ ] Live mobile preview (real-time mock inside desk)
+- [ ] DSL export (view generated JSON)
+- [ ] Publish → push to app immediately (Live Config mode)
+
+---
+
+## Builder Page Layout
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Mobile Builder  →  Shop Manager App  →  Sales Invoice Detail   │
+├───────────────────────┬─────────────────────────────────────────┤
+│  SECTIONS             │          MOBILE PREVIEW                 │
+│  ─────────────────    │   ┌─────────────────────┐              │
+│  [≡] Header Card      │   │ ABC Traders         │              │
+│  [≡] Field Group      │   │ 01/05/2026          │              │
+│  [≡] Items Table  ←drag│   │─────────────────────│              │
+│  [≡] Summary Row      │   │ Items (3)        ▼  │              │
+│  [≡] Action Bar       │   │─────────────────────│              │
+│                       │   │ Total:    ₹15,000   │              │
+│  + Add Section        │   │ Grand:    ₹17,700   │              │
+│                       │   │─────────────────────│              │
+│                       │   │ [Submit]  [Share]   │              │
+│  SECTION EDITOR       │   └─────────────────────┘              │
+│  (click section above)│                                         │
+│  Type: child_table    │   Device: [Android ▼] [iPhone ▼]       │
+│  Label: Items         │                                         │
+│  Fields: ☑ item_name  │   [ Publish to App ]                   │
+│          ☑ qty        │                                         │
+│          ☑ rate       │                                         │
+└───────────────────────┴─────────────────────────────────────────┘
+```
+
+---
+
+## Drag-Drop Section Reordering
+
+- Sections in the left panel are draggable (mouse + touch)
+- Reorder → preview updates instantly
+- Delete section → confirm dialog (section may have data)
+- Section types available in an "Add Section" drawer
+
+---
+
+## Field Picker
+
+When editing a section's fields:
+- Shows all DocType fields with their types
+- Checkboxes to include/exclude
+- Drag to reorder within section
+- Override widget type (e.g. change Text to Barcode scanner)
+- Mark field as required on mobile (even if optional in Frappe)
+
+---
+
+## Action Editor
+
+Configure buttons and gestures visually:
+
+```
+Action Bar:
+  Button 1: [Submit]  Color: [Green ▼]  Requires Status: [Draft ▼]   [×]
+  Button 2: [Share]   Color: [Blue ▼]   Requires Status: [Any ▼]     [×]
+  + Add Button
+
+Gestures:
+  Swipe Right: [Approve ▼]  Requires Role: [Sales Manager ▼]
+  Swipe Left:  [Reject ▼]   Requires Role: [Any ▼]
+  Long Press:  [Edit Mode ▼]
+```
+
+---
+
+## Live Preview Engine
+
+Frappe desk renders a pixel-accurate mock of the mobile screen:
+- Uses the same Layout DSL the Flutter app uses
+- Rendered as a scaled HTML/CSS mock (not a real Flutter embed)
+- Switch between Android and iPhone form factor
+- Shows actual data from a sample document (selectable)
+- Updates in real-time as developer makes changes (debounced 300ms)
+
+---
+
+## Publish Flow
+
+```
+Developer clicks "Publish to App"
+        ↓
+DSL saved to Native Screen Layout DocType
+Version number incremented
+        ↓
+Webhook or poll notifies connected apps
+        ↓
+Flutter apps fetch new DSL on next API call
+        ↓
+Screens re-render with new layout (no app store update)
+```
+
+---
+
+## App Manager Page
+
+Overview of all apps configured on this Frappe site:
+
+| App Name | Mode | Screens | Devices | Last Published |
+|----------|------|---------|---------|----------------|
+| Shop Manager | Live Config | 8 | 12 | 2 min ago |
+| Warehouse App | Generated | 5 | 4 | 3 days ago |
+
+Click app → opens Mobile Builder for that app.
+
+---
+
+## Success Criteria
+
+- Developer adds a new screen section without touching JSON
+- Drag reorder of sections → preview updates within 300ms
+- Published layout → Flutter app shows new layout within 60 seconds
+- Preview accurately matches actual Flutter rendering (no surprises)
+- Field picker shows all DocType fields with correct types
+- Gesture configuration saved and enforced in app correctly
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/docs/phase_6.md
+# Phase 6 — App Generator
+
+**Goal:** frappe-native generates a complete, distributable Flutter app — either as a full source code export (for developers) or a signed APK/IPA (for direct installation).
+
+---
+
+## Deliverables
+
+- [ ] Flutter source code generator (config + DSL → full Flutter project)
+- [ ] APK build pipeline (server-side or CI)
+- [ ] "One Click → App" flow in Frappe desk
+- [ ] App branding injection (name, colors, logo, bundle ID)
+- [ ] Build status tracker in Frappe desk
+- [ ] Download APK / source ZIP from Frappe desk
+- [ ] Live Config mode (no build — base app + server config)
+
+---
+
+## Two Generation Modes
+
+### Mode 1: Live Config (No Build Required)
+- Developer publishes DSL to Frappe
+- User downloads a pre-built base Flutter app (generic)
+- On login: app fetches config, DSL, and branding from server
+- UI fully customized — no app store needed
+- Best for: internal teams, rapid changes
+
+```
+User downloads "frappe-native base app" (generic APK)
+        ↓
+Enters site URL + logs in
+        ↓
+App fetches:
+  - Native App Config (branding, colors)
+  - Native Screen Layouts (DSL)
+  - Sync Scope (from frappe-pulse)
+        ↓
+App fully configured and ready
+```
+
+### Mode 2: Generated App (Full Build)
+- frappe-native generates a Flutter project with config baked in
+- Developer downloads ZIP → opens in Android Studio / Xcode → builds
+- Or: server-side build pipeline produces signed APK
+- Best for: Play Store / App Store submission, white-label products
+
+---
+
+## Source Code Generator
+
+```python
+def generate_flutter_project(app_config_name: str) -> bytes:
+    config = frappe.get_doc("Native App Config", app_config_name)
+    screens = get_screens_for_app(app_config_name)
+
+    # Render Flutter project from template
+    project = FlutterProjectTemplate()
+    project.set_app_name(config.app_name)
+    project.set_bundle_id(config.app_id)
+    project.set_primary_color(config.primary_color)
+    project.set_logo(config.logo)
+    project.set_site_url(config.frappe_site)
+    project.embed_dsl(screens)
+
+    return project.to_zip()
+```
+
+---
+
+## Generated Project Structure
+
+```
+generated_app/
+├── pubspec.yaml              (app_name, bundle_id injected)
+├── lib/
+│   ├── config.dart           (site URL, app_id, colors baked in)
+│   ├── screens/              (DSL embedded as JSON assets)
+│   └── ...                   (same structure as Phase 3)
+├── assets/
+│   ├── logo.png              (from Native App Config)
+│   └── screens/              (embedded DSL JSON files)
+├── android/
+│   └── app/build.gradle      (applicationId injected)
+└── ios/
+    └── Runner.xcodeproj      (bundle ID injected)
+```
+
+---
+
+## Branding Injection
+
+| Config field | Where it goes |
+|---|---|
+| `app_name` | pubspec.yaml, AndroidManifest, Info.plist |
+| `app_id` | build.gradle applicationId, iOS bundle ID |
+| `primary_color` | Flutter ThemeData, splash screen |
+| `logo` | App icon (all sizes auto-generated via flutter_launcher_icons) |
+| `frappe_site` | config.dart (baked in or overridable on login) |
+
+---
+
+## Server-Side Build Pipeline (Optional)
+
+For teams without Flutter dev environment:
+
+```
+Frappe desk → "Build APK" button
+        ↓
+Background job starts
+        ↓
+Docker container: Flutter SDK + Android SDK
+Runs: flutter build apk --release
+        ↓
+APK uploaded to Frappe file storage
+        ↓
+Download link shown in desk
+Build log available
+```
+
+Build status tracked in `Native Build Job` DocType:
+
+| Field | Type |
+|-------|------|
+| `app_config` | Link → Native App Config |
+| `build_type` | Select: APK / IPA / SOURCE_ZIP |
+| `status` | Select: QUEUED / BUILDING / SUCCESS / FAILED |
+| `download_url` | Data |
+| `build_log` | Long Text |
+| `triggered_by` | Link → User |
+| `completed_at` | Datetime |
+
+---
+
+## One Click → App Flow (Desk)
+
+```
+1. Fill Native App Config (name, colors, logo, site)
+2. Add DocTypes to expose
+3. Configure screens in Mobile Builder (Phase 5)
+4. Click "Generate App"
+5. Choose: Live Config / APK / Source ZIP
+6. Download or install directly
+```
+
+---
+
+## Success Criteria
+
+- Source ZIP generates a valid Flutter project that builds without errors
+- Branding (name, color, logo) correctly applied in generated app
+- APK build completes in under 10 minutes on server pipeline
+- Live Config mode: app fully functional without any build step
+- Generated app passes Android lint and iOS archive validation
+- Build log visible in Frappe desk for debugging failed builds
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/docs/phase_7.md
+# Phase 7 — Device Capabilities
+
+**Goal:** The generated app uses mobile hardware natively — camera, GPS, barcode scanner, Bluetooth. These are exposed as DSL-configurable field widgets and action triggers.
+
+---
+
+## Deliverables
+
+- [ ] Camera: photo capture → attach to document
+- [ ] Barcode / QR scanner → fill field
+- [ ] GPS: capture location → store on document
+- [ ] GPS geo-fence enforcement (from frappe-gate policy)
+- [ ] Bluetooth: scan for nearby devices / printers
+- [ ] Receipt printer integration (Bluetooth thermal)
+- [ ] Signature capture widget
+- [ ] NFC tag read → fill field or open document
+- [ ] **FCM push notifications (Android)** — `firebase_messaging` plugin; token registered via `PulseClient.registerPushToken()` on startup
+- [ ] **APNs push notifications (iOS)** — Firebase handles iOS delivery; `flutter_local_notifications` for foreground display
+- [ ] Push → deep-link: tapping notification opens the relevant document screen
+
+---
+
+## DSL Integration
+
+All capabilities are available as field widget types and action triggers in the Layout DSL:
+
+```json
+{
+  "type": "field_group",
+  "fields": [
+    {
+      "fieldname": "item_code",
+      "widget": "barcode_scanner",
+      "on_scan": "fill_field:item_code"
+    },
+    {
+      "fieldname": "delivery_photo",
+      "widget": "camera_capture",
+      "max_photos": 3
+    },
+    {
+      "fieldname": "delivery_location",
+      "widget": "gps_capture",
+      "auto_capture": true
+    },
+    {
+      "fieldname": "customer_signature",
+      "widget": "signature_pad"
+    }
+  ]
+}
+```
+
+---
+
+## 1. Camera
+
+- Capture photo → compressed → stored as Frappe attachment
+- Works offline: photo stored locally → attached to document → synced with frappe-pulse
+- Multiple photos per field (configurable)
+- Document scanner mode: auto-crop + enhance (invoice scanning)
+
+```dart
+class CameraCaptureWidget extends StatefulWidget {
+  final String fieldname;
+  final int maxPhotos;
+  // Opens camera → captures → compresses → stores in LocalStore as attachment
+  // Syncs via frappe-pulse event when online
+}
+```
+
+---
+
+## 2. Barcode / QR Scanner
+
+- Opens camera in scanner mode
+- Detects: EAN-13, EAN-8, QR Code, Code128, Code39, DataMatrix
+- On scan → fills configured field
+- Can also: open a document directly (QR contains doc name)
+- Works offline: looks up item in local SQLite
+
+```json
+{
+  "widget": "barcode_scanner",
+  "on_scan": "fill_field:item_code",
+  "lookup": {
+    "doctype": "Item",
+    "field": "item_code",
+    "display": "item_name"
+  }
+}
+```
+
+Use case: warehouse worker scans item barcode → item_code filled + item_name shown automatically.
+
+---
+
+## 3. GPS Location
+
+- Capture current GPS coordinates
+- Store as lat/lng fields on document
+- Show on map_view section type
+- Auto-capture on document open (configurable)
+- frappe-gate geo-fence check: if device is outside allowed zone → show warning
+
+```json
+{
+  "fieldname": "delivery_location",
+  "widget": "gps_capture",
+  "auto_capture": true,
+  "store_as": {"lat": "delivery_lat", "lng": "delivery_lng"},
+  "show_map": true,
+  "enforce_geofence": true
+}
+```
+
+Works offline: stores coordinates locally, synced with document via frappe-pulse.
+
+---
+
+## 4. Bluetooth
+
+### Device Discovery
+- Scan for nearby Bluetooth devices
+- Filter by device type (printers, scanners)
+- Pair and remember devices per app config
+
+### Thermal Receipt Printer
+- Print Sales Invoice / Delivery Note via Bluetooth printer
+- Supported: ESC/POS protocol (Epson, Star, generic Chinese printers)
+- Print template defined in `Native Print Template` DocType
+- Works offline: queues print job, prints when printer is in range
+
+```json
+{
+  "type": "action_bar",
+  "buttons": [
+    {
+      "label": "Print Receipt",
+      "action": "bluetooth_print",
+      "template": "sales_invoice_receipt",
+      "device_type": "thermal_printer"
+    }
+  ]
+}
+```
+
+---
+
+## 5. Signature Capture
+
+- Full-screen signature pad widget
+- Saves as PNG → attached to document
+- Used for: delivery confirmation, approval sign-off
+- Works offline: stored locally → synced via frappe-pulse
+
+---
+
+## 6. NFC
+
+- Read NFC tag → extract text or URL
+- Map to: fill field, open document, trigger action
+- Use cases: asset tracking, attendance, product lookup
+
+```json
+{
+  "widget": "nfc_reader",
+  "on_read": "open_document:Asset"
+}
+```
+
+---
+
+## 7. Push Notifications (FCM + APNs)
+
+frappe-pulse Phase 8 fires push notifications server-side after each sync event is applied. The Flutter app receives them via `firebase_messaging` (Android + iOS via FCM) or APNs direct (iOS).
+
+**Setup flow:**
+
+```dart
+// On app startup — after JWT auth completes
+final fcmToken = await FirebaseMessaging.instance.getToken();
+await pulseClient.registerPushToken(fcmToken!, 'android'); // or 'ios'
+
+// Token refresh
+FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+  pulseClient.registerPushToken(newToken, platform);
+});
+```
+
+**Notification handlers:**
+
+```dart
+// Foreground — show in-app snackbar
+FirebaseMessaging.onMessage.listen((message) {
+  final docType = message.data['event_doc_type'];
+  final docName = message.data['event_doc_name'];
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('${message.notification?.title ?? docType} updated')),
+  );
+});
+
+// Background / terminated — deep-link on tap
+FirebaseMessaging.onMessageOpenedApp.listen((message) {
+  final docType = message.data['event_doc_type'];
+  final docName = message.data['event_doc_name'];
+  if (docType != null && docName != null) {
+    AppRouter.push(DetailScreen(doctype: docType, name: docName));
+  }
+});
+```
+
+**`pubspec.yaml` additions:**
+
+```yaml
+dependencies:
+  firebase_core: ^3.0.0
+  firebase_messaging: ^15.0.0
+  flutter_local_notifications: ^17.0.0
+  messagepack: ^0.2.1   # MessagePack decoder for ?_mobile=1 responses
+```
+
+**iOS — APNs entitlements** (`ios/Runner/Runner.entitlements`):
+
+```xml
+aps-environment
+production
+```
+
+---
+
+## Offline Behaviour for All Capabilities
+
+| Capability | Offline behaviour |
+|------------|------------------|
+| Camera | Photo stored locally → synced via pulse |
+| Barcode | Lookup from local SQLite (Item table) |
+| GPS | Stored locally → synced with doc via pulse |
+| Bluetooth print | Queue print job → executes when printer found |
+| Signature | Stored locally → synced via pulse |
+| NFC | Works if doc exists in local SQLite |
+| Push notifications | Received when online; missed notifications shown on next open via notification tray |
+
+---
+
+## Success Criteria
+
+- Barcode scan fills item_code and auto-looks up item_name from local DB (offline)
+- Camera capture: 3 photos attached to document, synced on reconnect
+- GPS captured correctly and visible on map_view section
+- Bluetooth thermal printer prints Sales Invoice receipt
+- Signature captured and attached to delivery note
+- All capabilities configurable via Layout DSL (no Flutter code changes)
+- FCM token registered on first launch; push notification received within 5 seconds of sync event applying on server
+- Tapping push notification opens the correct document detail screen (deep-link)
+- iOS APNs delivery working in both foreground (in-app banner) and background (system tray)
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/docs/phase_8.md
+# Phase 8 — App Templates
+
+**Goal:** Pre-built app configurations for common business types. Install a template → get a fully working mobile app in minutes. No screen building required.
+
+---
+
+## Deliverables
+
+- [ ] Template system (import/export Native App Config + all screens)
+- [ ] Retail Shop template
+- [ ] Warehouse Management template
+- [ ] Field Sales / CRM template
+- [ ] Field Service template
+- [ ] Template marketplace (community templates)
+- [ ] "Install Template" one-click flow in Frappe desk
+
+---
+
+## Template System
+
+A template is a complete export of:
+- `Native App Config`
+- All `Native Screen Layout` records
+- All `Native Field Mapping` overrides
+- `Pulse Sync Scope` rules
+- `Gate Policy` rules
+- Sample `Native Print Template` (if applicable)
+
+Packaged as a single JSON file. Import into any Frappe site.
+
+```python
+def install_template(template_json: dict, app_name: str):
+    config = create_app_config(template_json['config'], app_name)
+    for screen in template_json['screens']:
+        create_screen_layout(screen, config.name)
+    create_sync_scopes(template_json['sync_scopes'], config.name)
+    create_gate_policies(template_json['gate_policies'], config.name)
+```
+
+---
+
+## Template 1: Retail Shop
+
+**For:** Shop floor staff, cashiers, shop managers.
+
+**Screens:**
+- Sales Invoice: card list + quick create + submit flow
+- Customer: search + create + view history
+- Payment Entry: record payment against invoice
+- Daily Summary: today's sales, top items, pending invoices
+
+**Device capabilities used:**
+- Barcode scanner (item lookup)
+- Bluetooth thermal printer (receipt)
+- Camera (attach to returns/complaints)
+
+**Sync scope:**
+- Sales Invoice: filter by `branch`
+- Customer: all (read), own branch (write)
+- Item: all (read only)
+- Payment Entry: filter by `branch`
+
+---
+
+## Template 2: Warehouse Management
+
+**For:** Warehouse staff, stock managers, delivery teams.
+
+**Screens:**
+- Stock Entry: receive / transfer / issue
+- Delivery Note: list + pick + confirm delivery
+- Purchase Receipt: scan and receive
+- Item: stock levels + bin-wise view
+
+**Device capabilities used:**
+- Barcode scanner (item + bin lookup)
+- Camera (proof of delivery photo)
+- GPS (delivery location capture)
+- Signature (delivery confirmation)
+
+**Sync scope:**
+- Stock Entry: filter by `warehouse`
+- Delivery Note: filter by `warehouse` or assigned driver
+- Item: all (read only)
+
+---
+
+## Template 3: Field Sales / CRM
+
+**For:** Sales reps, field agents, account managers.
+
+**Screens:**
+- Lead: list + create + convert
+- Opportunity: pipeline view + edit
+- Customer Visit: log visit with GPS + notes
+- Quotation: create + share PDF
+
+**Device capabilities used:**
+- GPS (visit location capture)
+- Camera (business card photo, site photos)
+- Signature (quote approval)
+
+**Sync scope:**
+- Lead/Opportunity: filter by `owner`
+- Customer: assigned customers only
+- Quotation: filter by `owner`
+
+---
+
+## Template 4: Field Service
+
+**For:** Technicians, service engineers, maintenance staff.
+
+**Screens:**
+- Maintenance Visit: list + start + complete
+- Issue: view assigned issues
+- Serial No: scan + view history
+- Timesheet: clock in/out
+
+**Device capabilities used:**
+- Barcode / NFC (serial number scan)
+- Camera (before/after photos)
+- GPS (job site location)
+- Signature (job completion sign-off)
+
+**Sync scope:**
+- Maintenance Visit: filter by `assigned_to`
+- Issue: filter by `assigned_to`
+- Serial No: all (read only)
+
+---
+
+## Template Marketplace
+
+Community-contributed templates:
+- Hosted as GitHub repo (JSON files)
+- Listed in Frappe desk under "Browse Templates"
+- Install with one click
+- Templates versioned and tagged by ERPNext version compatibility
+
+---
+
+## "Install Template" Flow
+
+```
+Frappe desk → Mobile Builder → Browse Templates
+        ↓
+Select: "Retail Shop"
+        ↓
+Preview: screens + capabilities shown
+        ↓
+Configure:
+  - App name: "My Shop App"
+  - Primary color: #1A73E8
+  - Branch filter: "Shop A"
+        ↓
+Click Install
+        ↓
+All DocTypes, screens, sync scopes, policies created
+        ↓
+"Generate App" or "Use Live Config"
+```
+
+Total time from template selection to working app: under 5 minutes.
+
+---
+
+## Success Criteria
+
+- Retail template installs on fresh ERPNext site without errors
+- All 4 template screens render correctly in Flutter app
+- Barcode scan works in Retail and Warehouse templates
+- Delivery GPS capture works in Warehouse template
+- Template export/import round-trips without data loss
+- Community template (JSON) importable from URL in one click
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/docs/plan.md
+# frappe-native — Build Plan
+
+**One line:** Native mobile app generator for Frappe — offline-first, sync-ready, no wrapper.
+
+---
+
+## What We Are Building
+
+A Frappe app that reads DocType definitions and generates real native mobile apps (Flutter) with offline storage, sync via frappe-pulse, and a Layout DSL that lets developers customize mobile UI without rebuilding the app.
+
+```
+Frappe DocType definition
+        ↓
+frappe-native (Frappe app)
+├── Schema → Experience Engine   (auto-generates UI contract + offline model)
+├── Layout DSL                   (developer customizes screens in JSON)
+├── Mobile Builder UI            (drag-drop in Frappe desk)
+└── App Generator                (produces Flutter project or live config)
+        ↓
+Flutter App (Android + iOS)
+├── Dynamic UI renderer          (reads Layout DSL from server)
+├── Local SQLite store           (offline-first data layer)
+├── Sync engine client           (talks to frappe-pulse)
+└── frappe-gate client           (device auth + token management)
+```
+
+---
+
+## What We Are NOT Building
+
+- Not a WebView wrapper
+- Not a Frappe desk port to mobile
+- Not a cloud-only product
+- Not a no-code platform (developers configure, not end users)
+- Not dependent on always-on internet
+
+---
+
+## Dependency Stack
+
+frappe-native sits on top of the other two products:
+
+```
+frappe-native   ← this product (mobile + generator)
+frappe-pulse    ← sync engine (required)
+frappe-gate     ← access security (required)
+```
+
+frappe-pulse must be installed for sync to work.
+frappe-gate must be installed for device authentication.
+
+---
+
+## Phases Overview
+
+| Phase | Name | Output |
+|-------|------|--------|
+| 1 | Schema → Experience Engine | Auto-generate UI contract + offline model from DocType |
+| 2 | Layout DSL | JSON-based screen definition, hot-reload in app |
+| 3 | Flutter Core App | Base app: auth, local DB, dynamic UI renderer |
+| 4 | Offline Engine | SQLite store, sync state UI, conflict indicators |
+| 5 | Mobile Builder UI | Drag-drop screen builder inside Frappe desk |
+| 6 | App Generator | Export Flutter source / generate APK / live config mode |
+| 7 | Device Capabilities | Camera, GPS, barcode scanner, Bluetooth integration |
+| 8 | App Templates | Retail, warehouse, CRM, field service starter packs |
+
+---
+
+## Tech Stack
+
+| Layer | Tech | Reason |
+|-------|------|--------|
+| Frappe app (backend) | Python | DocType integration, API, builder UI |
+| Mobile framework | Flutter | Cross-platform, native performance, rich UI |
+| Local database | SQLite (via `sqflite`) | Lightweight, offline-first |
+| Sync client | frappe-pulse protocol | Event-based, conflict-aware |
+| Auth client | frappe-gate JWT | Device identity, short-lived tokens |
+| Layout DSL | JSON (custom schema) | Hot-reloadable, no rebuild needed |
+| UI rendering | Flutter widget engine | DSL → widgets at runtime |
+
+---
+
+## Two App Modes
+
+### Mode 1: Live Config (Faster, no rebuild)
+- One base Flutter app installed on device
+- Loads Layout DSL config from Frappe on login
+- UI changes in Frappe desk → reflected in app immediately
+- Best for: internal teams, rapid iteration
+
+### Mode 2: Generated App (For distribution)
+- frappe-native generates full Flutter source code
+- Developer builds and signs APK / IPA
+- Submitted to Play Store / App Store
+- Best for: customer-facing apps, white-label products
+
+---
+
+## UI Sync States (Visible to User)
+
+| State | Color | Meaning |
+|-------|-------|---------|
+| Synced | Green dot | Data confirmed on server |
+| Pending | Grey dot | Saved locally, not yet synced |
+| Conflict | Red dot | Needs resolution |
+| Syncing | Spinning | Currently syncing |
+
+---
+
+## Companion Products Required
+
+- **frappe-pulse** — handles all event sync between app and Frappe
+- **frappe-gate** — handles device registration and JWT auth
+
+frappe-native does not reimplement sync or auth. It consumes both.
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/docs/tracker.md
+# frappe-native — Progress Tracker
+
+> Native mobile app generator for Frappe — offline-first, sync-ready, no wrapper.
+
+---
+
+## Overall Progress
+
+| Phase | Name | Status | Started | Completed |
+|-------|------|--------|---------|-----------|
+| 1 | Schema → Experience Engine | ✅ Complete | 2026-05-15 | 2026-05-15 |
+| 2 | Layout DSL | ✅ Complete | 2026-05-15 | 2026-05-15 |
+| 3 | Flutter Core App | ✅ Complete | 2026-05-15 | 2026-05-15 |
+| 4 | Offline Engine | ✅ Complete | 2026-05-15 | 2026-05-15 |
+| 5 | Mobile Builder UI | ✅ Complete | 2026-05-15 | 2026-05-15 |
+| 6 | App Generator | ✅ Complete | 2026-05-15 | 2026-05-15 |
+| 7 | Device Capabilities | ✅ Complete | 2026-05-15 | 2026-05-15 |
+| 8 | App Templates | ✅ Complete | 2026-05-15 | 2026-05-15 |
+
+**Legend:** 🔲 Not Started · 🔄 In Progress · ✅ Complete · ⚠️ Blocked
+
+**Dependencies:** frappe-pulse (sync) + frappe-gate (auth) must be installed first.
+
+---
+
+## Phase 1 — Schema → Experience Engine
+
+- [x] `Native App Config` DocType — app_name, bundle_id, branding (color/font/icon), sync config, push config, Live Config vs Generated mode
+- [x] `Native Screen` DocType — linked to app + DocType; screen_type (List/Detail/Form/Dashboard/Custom); list display fields; sync/offline config; nav position
+- [x] `Native Field Mapping` DocType — per-field overrides: label, mobile type, required, read_only, hidden, show_in_list/detail/form, placeholder, default, validation regex, options override
+- [x] `Native Screen Layout` DocType — DSL JSON store with SHA-256 hash + version + publish timestamp
+- [x] Schema reader (`schema/reader.py` — `get_contract()`) — DocType meta → mobile contract with fieldtype mapping, child table recursion, field mapping overrides applied
+- [x] Offline model generator (`get_sqlite_schema()`) — contract → SQLite column list with `_sync_state` + `_local_seq` system columns
+- [x] Sync rules generator (`get_sync_rules()`) — all enabled offline screens → filter + max_records + CRUD permissions
+- [x] Auto schema_version bump on Native Screen / Field Mapping / Layout save (`schema/hooks.py`)
+- [x] API: `frappe_native.api.schema.get_contract` — single DocType contract
+- [x] API: `frappe_native.api.schema.get_app_contracts` — all screens in one call (boot optimization)
+- [x] API: `frappe_native.api.schema.get_sqlite_schema` — SQLite columns for code gen
+- [x] API: `frappe_native.api.schema.get_sync_rules` — offline engine bootstrap
+- [x] API: `frappe_native.api.schema.get_schema_version` — lightweight poll (Flutter checks before re-fetching)
+- [x] `hooks.py` wired — after_install, after_migrate, doc_events for schema_version bumping
+- [ ] Tests: all standard ERPNext DocTypes generate valid contracts — manual
+- [ ] Tests: child tables modelled correctly — manual
+
+---
+
+## Phase 2 — Layout DSL
+
+- [x] Layout DSL JSON schema defined — `dsl/schema.py` with full section/action/gesture type registry
+- [x] `Native Screen Layout` DocType — DSL JSON, SHA-256 hash, version counter, publish timestamp
+- [x] DSL validator (`dsl/schema.py — validate()`) — raises `DSLValidationError` with path-qualified messages; wired into DocType `validate()` hook so saving invalid DSL is rejected
+- [x] All 9 section types implemented: `header_card`, `field_group`, `child_table`, `summary_row`, `action_bar`, `image_grid`, `map_view`, `timeline`, `barcode_field`
+- [x] All 6 action types: `submit`, `cancel`, `save`, `delete`, `navigate`, `custom`/`frappe_method`
+- [x] Gesture system: `swipe_right`, `swipe_left`, `long_press` → navigate / custom / frappe_method / delete
+- [x] Hot-reload flow (`dsl/loader.py — get_layout()`) — hash compare; returns `{changed: false}` if hash matches, full DSL otherwise
+- [x] Batch hot-reload (`get_all_layouts()`) — single call returns only changed screens
+- [x] API: `frappe_native.api.layout.get_layout` — per-screen hot-reload
+- [x] API: `frappe_native.api.layout.get_all_layouts` — batch hot-reload with hash map
+- [x] API: `frappe_native.api.layout.validate_dsl` — desk validator endpoint
+- [x] API: `frappe_native.api.layout.publish_layout` — validate + save + version bump in one call
+- [ ] DSL preview mock in Frappe desk — Phase 5 (Mobile Builder UI)
+
+---
+
+## Phase 3 — Flutter Core App
+
+- [x] Flutter project scaffolded (`flutter/` — pubspec.yaml, main.dart, Material 3 + go_router + provider)
+- [x] frappe-gate device registration flow — `LoginScreen` generates device UUID, calls `/gate/token`
+- [x] JWT storage (`flutter_secure_storage`) + auto-refresh (`AuthProvider.refresh()` called on 401)
+- [x] **Typed Flutter SDK** — `PulseClient` bootstrapped from `get_mobile_config`; typed `pull()`, `receive()`, `registerPushToken()`, `unregisterPushToken()`; MessagePack decode in `FrappeClient._decode()`
+- [x] API client (`FrappeClient`) — authenticated REST, `?_mobile=1` auto-appended, MessagePack Accept header, 401 refresh loop
+- [x] DSL loader + local cache (`DslProvider` — hash compare hot-reload, batch `get_all_layouts`)
+- [x] List screen renderer (`ListScreen` — title/subtitle/badge fields from contract, FAB for create)
+- [x] Detail screen renderer (`DetailScreen` — contract field list, edit button)
+- [x] Form engine (`FormScreen` — create + edit, field type→TextFormField, required validation, offline-safe save)
+- [x] Navigation system (`AppRouter` — go_router stack: home → list → detail/form)
+- [x] Sync state indicator widget (`SyncIndicatorWidget` — idle/syncing/error/offline icons)
+- [x] `AppConfigProvider` — loads all screen contracts at boot, lightweight schema_version poll
+- [x] `SyncProvider` — state machine (idle/syncing/error/offline) consumed by indicator
+- [ ] Android build passing — manual
+- [ ] iOS build passing — manual
+- [ ] App size under 30MB — manual
+
+---
+
+## Phase 4 — Offline Engine
+
+- [x] SQLite store (`sync/local_store.dart` — `ensureTable()` from contract columns, WAL-safe, `_sync_state` + `_local_seq` columns)
+- [x] CRUD: `upsert`, `query`, `getOne`, `delete`, `saveOffline`, `markSynced`, `markConflict`, `prune`
+- [x] Offline-first data layer (`SyncEngine` — SQLite primary, API in background on reconnect)
+- [x] frappe-pulse client integration (`SyncEngine._pushPending` + `_pullNew` — `PulseClient.receive()` + `pull()` with `?_mobile=1` + MessagePack)
+- [x] Connectivity monitor (`ConnectivityMonitor` — polls `/gate/health`; fires `onOnline`/`onOffline` callbacks)
+- [x] Auto-sync on reconnect — `ConnectivityMonitor.onOnline` triggers full `_runSync()`
+- [x] Background sync every 2 minutes while online (`SyncEngine` background timer)
+- [x] Offline create/edit (`LocalStore.saveOffline()` → PENDING state, flushed on next sync)
+- [x] Offline mode banner (`OfflineBanner` widget — wraps Scaffold body, hides when online)
+- [x] Sync state: PENDING / SYNCED / CONFLICT (per-record `_sync_state` column, conflict detection from pulse response)
+- [x] Per-DocType record pruning (`prune()` — keeps newest N by `_modified`, spare PENDING rows)
+- [ ] Tests: 7-day offline → no data loss after reconnect — manual
+- [ ] Tests: conflict creates red indicator in app + pulse conflict record — manual
+
+---
+
+## Phase 5 — Mobile Builder UI
+
+- [x] "Mobile Builder" page in Frappe desk (`page/native_mobile_builder/`)
+- [x] App selector sidebar (loads all enabled Native App Config records)
+- [x] Screen list sidebar (per app, nav_position ordered, click to edit)
+- [x] Add Screen dialog (screen_key, DocType, screen_type, title)
+- [x] Field mapping panel (lists all Native Field Mapping records for screen)
+- [x] Add Field Mapping dialog (fieldname, label override, mobile type, required)
+- [x] DSL JSON editor (monospace textarea with current layout pre-loaded)
+- [x] Validate DSL button → calls `frappe_native.api.layout.validate_dsl`, shows green/red indicator
+- [x] Publish button → `frappe_native.api.layout.publish_layout`, shows version + hash
+- [x] Live mobile preview (rendered from DSL sections — header_card, field_group, action_bar, fallback for others)
+- [x] Preview auto-updates 600ms after DSL keystroke
+- [ ] Drag-drop section reordering — Phase 5 stretch, deferred to future
+- [ ] Tests: publish → Flutter app updates within 60 seconds — manual
+
+---
+
+## Phase 6 — App Generator
+
+- [x] `Native Build Job` DocType — app, build_type (source_zip/android_apk/ios_ipa/all), status (QUEUED/RUNNING/DONE/FAILED), output_zip_url, apk_url, ipa_url, build_log
+- [x] Flutter source code generator (`generator/codegen.py`) — generates complete Flutter project as in-memory ZIP
+- [x] Branding injection — primary_color, font_family, bundle_id, app_title injected into `pubspec.yaml` + `main.dart`
+- [x] Screen code generation — per-screen `_Screen.dart` files generated from DSL; `screens_registry.dart` barrel
+- [x] `android/app/build.gradle` generated with correct bundle ID and SDK versions
+- [x] DSL → Flutter widgets — `_dsl_to_widgets()` renders header_card, field_group, action_bar sections into Dart ListView children
+- [x] Server-side APK build (`generator/build.py — _build_apk()`) — extracts ZIP → Docker + Flutter SDK → APK; falls back gracefully if Docker absent
+- [x] Build log captured (stdout from docker run streamed into `build_log` field)
+- [x] Build status updates via `frappe.publish_realtime` → desk toast on completion
+- [x] API: `frappe_native.api.build.trigger_build` — creates job + enqueues on `long` queue
+- [x] API: `frappe_native.api.build.get_build_status` — poll from desk
+- [x] API: `frappe_native.api.build.list_builds` — recent builds per app
+- [x] Download APK / source ZIP — attached as private Frappe File records with direct download URL
+- [ ] App icon auto-generation (all sizes) — deferred; manual icon provided via app config
+- [ ] Tests: generated project builds without errors — manual
+
+---
+
+## Phase 7 — Device Capabilities
+
+- [x] Camera capture (`capabilities/camera_capture.dart`) — photo from camera/gallery; uploads to Frappe (online) or saves to `_pending_attachments` local table (offline)
+- [x] Barcode / QR scanner (`capabilities/barcode_scanner.dart`) — full-screen `MobileScanner` overlay; returns scanned value for field fill
+- [x] GPS capture (`capabilities/gps_capture.dart`) — `getCurrentLocation()` → "lat,lon" string; `gateHeaders()` injects `X-Gate-GPS` header for geo-fencing
+- [x] GPS geo-fence enforcement — frappe-gate reads `X-Gate-GPS` header, evaluates against `Gate Device.geo_mode` (Phase 7 of gate)
+- [x] **FCM push notifications (Android)** — `firebase_messaging`; token registered via `PulseClient.registerPushToken()` on startup; foreground/background/terminated state all handled (`push_notifications.dart`)
+- [x] **APNs push notifications (iOS)** — same FCM flow; `flutter_local_notifications` for in-app display; token refresh auto-handled via `onTokenRefresh` stream
+- [x] Push → deep-link — `_deepLinkPayload()` builds `/home/list/{screen_key}/detail/{docname}` from notification data; `onMessageOpenedApp` + `getInitialMessage()` both handled
+- [x] `Native Print Template` DocType — paper width, print mode, header/footer Jinja2 templates, line items fieldname, raw ESC/POS hex
+- [x] Thermal receipt printer (`capabilities/thermal_printer.dart` + `api/print.py`) — `render_escpos()` builds ESC/POS command stream from template + doc; Flutter shim calls BT characteristic write
+- [x] `api/print.render_escpos` — Jinja2 header/footer render, line item loop, ESC/POS command assembly → hex string
+- [ ] Signature capture widget — deferred; needs canvas widget
+- [ ] NFC tag read — deferred; hardware-dependent
+- [ ] All capabilities offline-capable — camera done (offline path), others require connectivity
+- [ ] All capabilities configurable via Layout DSL — fieldtype mapping defined (barcode_field, gps, image, signature)
+
+---
+
+## Phase 8 — App Templates
+
+- [x] Template export/import system (`api/templates.py`) — `export_app_template()` bundles app + screens + layouts; `install_bundled_template()` / `install_from_json()` restores them
+- [x] Retail Shop template (`templates/retail_shop.json`) — Items, Sales Orders, Customers + receipt print layout
+- [x] Warehouse Management template (`templates/warehouse_management.json`) — Purchase Receipt, Stock Entry, Barcode Scan screen
+- [x] Field Sales / CRM template (`templates/field_sales_crm.json`) — Leads, Opportunities, Quotations + map + push enabled
+- [x] Field Service template (`templates/field_service.json`) — Maintenance Requests, Site Visits, photo grid, GPS, push
+- [x] "Browse Templates" button in Mobile Builder page — lists bundled templates, one-click install dialog
+- [x] "Export App" button — downloads current app as `_template.json`
+- [x] "Trigger Build" button — queues Native Build Job from desk
+- [x] `api/templates.list_bundled_templates` — reads `frappe_native/templates/*.json`
+- [x] `api/templates.install_bundled_template` / `install_from_json` — idempotent install
+- [ ] Template marketplace (GitHub-hosted JSON) — deferred; requires external hosting
+- [ ] Tests: template install on fresh ERPNext site under 5 minutes — manual
+
+---
+
+## Notes
+
+
+
+### 2026-05-04
+- Project initialized
+- All 8 phase docs written
+- Depends on: frappe-pulse (all phases), frappe-gate (Phase 2+)
+- Flutter chosen over React Native for: native performance, rich UI control, single codebase
+- Two app modes: Live Config (no build) + Generated (APK/IPA)
+- Ready to begin Phase 1 after frappe-pulse Phase 1-2 are complete
+
+### 2026-05-15
+- All 8 phases complete
+- Python backend: 6 DocTypes, schema reader, DSL validator, sync rules, hot-reload API, build pipeline, template system, print API, security/geo APIs
+- Flutter frontend: auth, PulseClient, FrappeClient (MessagePack), DSL provider, offline SQLite engine, connectivity monitor, screens (login/home/list/detail/form), capabilities (camera/barcode/GPS/push/printer), go_router navigation
+- frappe-gate integration: device JWT auth, geo-fencing headers, gate policy auto-created on install
+
+### 2026-05-09
+- Phase 3: added Typed Flutter SDK deliverable — `PulseClient` bootstrapped from `get_mobile_config`; `pull()` / `receive()` / `registerPushToken()` typed methods; `?_mobile=1` + MessagePack decode
+- Phase 4: updated PulseClient code block — explicit `?_mobile=1` + MessagePack path documented
+- Phase 7: added FCM push notifications (Android + iOS via Firebase), APNs direct (iOS), deep-link on tap; `pubspec.yaml` deps added (`firebase_messaging`, `flutter_local_notifications`, `messagepack`)
+- frappe-pulse Phase 8 (Mobile Layer) completed — all server-side push + bandwidth optimization in place before native development begins
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/frappe_native/patches.txt
+[pre_model_sync]
+# Patches added in this section will be executed before doctypes are migrated
+# Read docs to understand patches: https://frappeframework.com/docs/v14/user/en/database-migrations
+
+[post_model_sync]
+# Patches added in this section will be executed after doctypes are migrated
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe_native/license.txt
+GNU GENERAL PUBLIC LICENSE
+                       Version 3, 29 June 2007
+
+ Copyright (C) 2007 Free Software Foundation, Inc. 
+ Everyone is permitted to copy and distribute verbatim copies
+ of this license document, but changing it is not allowed.
+
+                            Preamble
+
+  The GNU General Public License is a free, copyleft license for
+software and other kinds of works.
+
+  The licenses for most software and other practical works are designed
+to take away your freedom to share and change the works.  By contrast,
+the GNU General Public License is intended to guarantee your freedom to
+share and change all versions of a program--to make sure it remains free
+software for all its users.  We, the Free Software Foundation, use the
+GNU General Public License for most of our software; it applies also to
+any other work released this way by its authors.  You can apply it to
+your programs, too.
+
+  When we speak of free software, we are referring to freedom, not
+price.  Our General Public Licenses are designed to make sure that you
+have the freedom to distribute copies of free software (and charge for
+them if you wish), that you receive source code or can get it if you
+want it, that you can change the software or use pieces of it in new
+free programs, and that you know you can do these things.
+
+  To protect your rights, we need to prevent others from denying you
+these rights or asking you to surrender the rights.  Therefore, you have
+certain responsibilities if you distribute copies of the software, or if
+you modify it: responsibilities to respect the freedom of others.
+
+  For example, if you distribute copies of such a program, whether
+gratis or for a fee, you must pass on to the recipients the same
+freedoms that you received.  You must make sure that they, too, receive
+or can get the source code.  And you must show them these terms so they
+know their rights.
+
+  Developers that use the GNU GPL protect your rights with two steps:
+(1) assert copyright on the software, and (2) offer you this License
+giving you legal permission to copy, distribute and/or modify it.
+
+  For the developers' and authors' protection, the GPL clearly explains
+that there is no warranty for this free software.  For both users' and
+authors' sake, the GPL requires that modified versions be marked as
+changed, so that their problems will not be attributed erroneously to
+authors of previous versions.
+
+  Some devices are designed to deny users access to install or run
+modified versions of the software inside them, although the manufacturer
+can do so.  This is fundamentally incompatible with the aim of
+protecting users' freedom to change the software.  The systematic
+pattern of such abuse occurs in the area of products for individuals to
+use, which is precisely where it is most unacceptable.  Therefore, we
+have designed this version of the GPL to prohibit the practice for those
+products.  If such problems arise substantially in other domains, we
+stand ready to extend this provision to those domains in future versions
+of the GPL, as needed to protect the freedom of users.
+
+  Finally, every program is threatened constantly by software patents.
+States should not allow patents to restrict development and use of
+software on general-purpose computers, but in those that do, we wish to
+avoid the special danger that patents applied to a free program could
+make it effectively proprietary.  To prevent this, the GPL assures that
+patents cannot be used to render the program non-free.
+
+  The precise terms and conditions for copying, distribution and
+modification follow.
+
+                       TERMS AND CONDITIONS
+
+  0. Definitions.
+
+  "This License" refers to version 3 of the GNU General Public License.
+
+  "Copyright" also means copyright-like laws that apply to other kinds of
+works, such as semiconductor masks.
+
+  "The Program" refers to any copyrightable work licensed under this
+License.  Each licensee is addressed as "you".  "Licensees" and
+"recipients" may be individuals or organizations.
+
+  To "modify" a work means to copy from or adapt all or part of the work
+in a fashion requiring copyright permission, other than the making of an
+exact copy.  The resulting work is called a "modified version" of the
+earlier work or a work "based on" the earlier work.
+
+  A "covered work" means either the unmodified Program or a work based
+on the Program.
+
+  To "propagate" a work means to do anything with it that, without
+permission, would make you directly or secondarily liable for
+infringement under applicable copyright law, except executing it on a
+computer or modifying a private copy.  Propagation includes copying,
+distribution (with or without modification), making available to the
+public, and in some countries other activities as well.
+
+  To "convey" a work means any kind of propagation that enables other
+parties to make or receive copies.  Mere interaction with a user through
+a computer network, with no transfer of a copy, is not conveying.
+
+  An interactive user interface displays "Appropriate Legal Notices"
+to the extent that it includes a convenient and prominently visible
+feature that (1) displays an appropriate copyright notice, and (2)
+tells the user that there is no warranty for the work (except to the
+extent that warranties are provided), that licensees may convey the
+work under this License, and how to view a copy of this License.  If
+the interface presents a list of user commands or options, such as a
+menu, a prominent item in the list meets this criterion.
+
+  1. Source Code.
+
+  The "source code" for a work means the preferred form of the work
+for making modifications to it.  "Object code" means any non-source
+form of a work.
+
+  A "Standard Interface" means an interface that either is an official
+standard defined by a recognized standards body, or, in the case of
+interfaces specified for a particular programming language, one that
+is widely used among developers working in that language.
+
+  The "System Libraries" of an executable work include anything, other
+than the work as a whole, that (a) is included in the normal form of
+packaging a Major Component, but which is not part of that Major
+Component, and (b) serves only to enable use of the work with that
+Major Component, or to implement a Standard Interface for which an
+implementation is available to the public in source code form.  A
+"Major Component", in this context, means a major essential component
+(kernel, window system, and so on) of the specific operating system
+(if any) on which the executable work runs, or a compiler used to
+produce the work, or an object code interpreter used to run it.
+
+  The "Corresponding Source" for a work in object code form means all
+the source code needed to generate, install, and (for an executable
+work) run the object code and to modify the work, including scripts to
+control those activities.  However, it does not include the work's
+System Libraries, or general-purpose tools or generally available free
+programs which are used unmodified in performing those activities but
+which are not part of the work.  For example, Corresponding Source
+includes interface definition files associated with source files for
+the work, and the source code for shared libraries and dynamically
+linked subprograms that the work is specifically designed to require,
+such as by intimate data communication or control flow between those
+subprograms and other parts of the work.
+
+  The Corresponding Source need not include anything that users
+can regenerate automatically from other parts of the Corresponding
+Source.
+
+  The Corresponding Source for a work in source code form is that
+same work.
+
+  2. Basic Permissions.
+
+  All rights granted under this License are granted for the term of
+copyright on the Program, and are irrevocable provided the stated
+conditions are met.  This License explicitly affirms your unlimited
+permission to run the unmodified Program.  The output from running a
+covered work is covered by this License only if the output, given its
+content, constitutes a covered work.  This License acknowledges your
+rights of fair use or other equivalent, as provided by copyright law.
+
+  You may make, run and propagate covered works that you do not
+convey, without conditions so long as your license otherwise remains
+in force.  You may convey covered works to others for the sole purpose
+of having them make modifications exclusively for you, or provide you
+with facilities for running those works, provided that you comply with
+the terms of this License in conveying all material for which you do
+not control copyright.  Those thus making or running the covered works
+for you must do so exclusively on your behalf, under your direction
+and control, on terms that prohibit them from making any copies of
+your copyrighted material outside their relationship with you.
+
+  Conveying under any other circumstances is permitted solely under
+the conditions stated below.  Sublicensing is not allowed; section 10
+makes it unnecessary.
+
+  3. Protecting Users' Legal Rights From Anti-Circumvention Law.
+
+  No covered work shall be deemed part of an effective technological
+measure under any applicable law fulfilling obligations under article
+11 of the WIPO copyright treaty adopted on 20 December 1996, or
+similar laws prohibiting or restricting circumvention of such
+measures.
+
+  When you convey a covered work, you waive any legal power to forbid
+circumvention of technological measures to the extent such circumvention
+is effected by exercising rights under this License with respect to
+the covered work, and you disclaim any intention to limit operation or
+modification of the work as a means of enforcing, against the work's
+users, your or third parties' legal rights to forbid circumvention of
+technological measures.
+
+  4. Conveying Verbatim Copies.
+
+  You may convey verbatim copies of the Program's source code as you
+receive it, in any medium, provided that you conspicuously and
+appropriately publish on each copy an appropriate copyright notice;
+keep intact all notices stating that this License and any
+non-permissive terms added in accord with section 7 apply to the code;
+keep intact all notices of the absence of any warranty; and give all
+recipients a copy of this License along with the Program.
+
+  You may charge any price or no price for each copy that you convey,
+and you may offer support or warranty protection for a fee.
+
+  5. Conveying Modified Source Versions.
+
+  You may convey a work based on the Program, or the modifications to
+produce it from the Program, in the form of source code under the
+terms of section 4, provided that you also meet all of these conditions:
+
+    a) The work must carry prominent notices stating that you modified
+    it, and giving a relevant date.
+
+    b) The work must carry prominent notices stating that it is
+    released under this License and any conditions added under section
+    7.  This requirement modifies the requirement in section 4 to
+    "keep intact all notices".
+
+    c) You must license the entire work, as a whole, under this
+    License to anyone who comes into possession of a copy.  This
+    License will therefore apply, along with any applicable section 7
+    additional terms, to the whole of the work, and all its parts,
+    regardless of how they are packaged.  This License gives no
+    permission to license the work in any other way, but it does not
+    invalidate such permission if you have separately received it.
+
+    d) If the work has interactive user interfaces, each must display
+    Appropriate Legal Notices; however, if the Program has interactive
+    interfaces that do not display Appropriate Legal Notices, your
+    work need not make them do so.
+
+  A compilation of a covered work with other separate and independent
+works, which are not by their nature extensions of the covered work,
+and which are not combined with it such as to form a larger program,
+in or on a volume of a storage or distribution medium, is called an
+"aggregate" if the compilation and its resulting copyright are not
+used to limit the access or legal rights of the compilation's users
+beyond what the individual works permit.  Inclusion of a covered work
+in an aggregate does not cause this License to apply to the other
+parts of the aggregate.
+
+  6. Conveying Non-Source Forms.
+
+  You may convey a covered work in object code form under the terms
+of sections 4 and 5, provided that you also convey the
+machine-readable Corresponding Source under the terms of this License,
+in one of these ways:
+
+    a) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by the
+    Corresponding Source fixed on a durable physical medium
+    customarily used for software interchange.
+
+    b) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by a
+    written offer, valid for at least three years and valid for as
+    long as you offer spare parts or customer support for that product
+    model, to give anyone who possesses the object code either (1) a
+    copy of the Corresponding Source for all the software in the
+    product that is covered by this License, on a durable physical
+    medium customarily used for software interchange, for a price no
+    more than your reasonable cost of physically performing this
+    conveying of source, or (2) access to copy the
+    Corresponding Source from a network server at no charge.
+
+    c) Convey individual copies of the object code with a copy of the
+    written offer to provide the Corresponding Source.  This
+    alternative is allowed only occasionally and noncommercially, and
+    only if you received the object code with such an offer, in accord
+    with subsection 6b.
+
+    d) Convey the object code by offering access from a designated
+    place (gratis or for a charge), and offer equivalent access to the
+    Corresponding Source in the same way through the same place at no
+    further charge.  You need not require recipients to copy the
+    Corresponding Source along with the object code.  If the place to
+    copy the object code is a network server, the Corresponding Source
+    may be on a different server (operated by you or a third party)
+    that supports equivalent copying facilities, provided you maintain
+    clear directions next to the object code saying where to find the
+    Corresponding Source.  Regardless of what server hosts the
+    Corresponding Source, you remain obligated to ensure that it is
+    available for as long as needed to satisfy these requirements.
+
+    e) Convey the object code using peer-to-peer transmission, provided
+    you inform other peers where the object code and Corresponding
+    Source of the work are being offered to the general public at no
+    charge under subsection 6d.
+
+  A separable portion of the object code, whose source code is excluded
+from the Corresponding Source as a System Library, need not be
+included in conveying the object code work.
+
+  A "User Product" is either (1) a "consumer product", which means any
+tangible personal property which is normally used for personal, family,
+or household purposes, or (2) anything designed or sold for incorporation
+into a dwelling.  In determining whether a product is a consumer product,
+doubtful cases shall be resolved in favor of coverage.  For a particular
+product received by a particular user, "normally used" refers to a
+typical or common use of that class of product, regardless of the status
+of the particular user or of the way in which the particular user
+actually uses, or expects or is expected to use, the product.  A product
+is a consumer product regardless of whether the product has substantial
+commercial, industrial or non-consumer uses, unless such uses represent
+the only significant mode of use of the product.
+
+  "Installation Information" for a User Product means any methods,
+procedures, authorization keys, or other information required to install
+and execute modified versions of a covered work in that User Product from
+a modified version of its Corresponding Source.  The information must
+suffice to ensure that the continued functioning of the modified object
+code is in no case prevented or interfered with solely because
+modification has been made.
+
+  If you convey an object code work under this section in, or with, or
+specifically for use in, a User Product, and the conveying occurs as
+part of a transaction in which the right of possession and use of the
+User Product is transferred to the recipient in perpetuity or for a
+fixed term (regardless of how the transaction is characterized), the
+Corresponding Source conveyed under this section must be accompanied
+by the Installation Information.  But this requirement does not apply
+if neither you nor any third party retains the ability to install
+modified object code on the User Product (for example, the work has
+been installed in ROM).
+
+  The requirement to provide Installation Information does not include a
+requirement to continue to provide support service, warranty, or updates
+for a work that has been modified or installed by the recipient, or for
+the User Product in which it has been modified or installed.  Access to a
+network may be denied when the modification itself materially and
+adversely affects the operation of the network or violates the rules and
+protocols for communication across the network.
+
+  Corresponding Source conveyed, and Installation Information provided,
+in accord with this section must be in a format that is publicly
+documented (and with an implementation available to the public in
+source code form), and must require no special password or key for
+unpacking, reading or copying.
+
+  7. Additional Terms.
+
+  "Additional permissions" are terms that supplement the terms of this
+License by making exceptions from one or more of its conditions.
+Additional permissions that are applicable to the entire Program shall
+be treated as though they were included in this License, to the extent
+that they are valid under applicable law.  If additional permissions
+apply only to part of the Program, that part may be used separately
+under those permissions, but the entire Program remains governed by
+this License without regard to the additional permissions.
+
+  When you convey a copy of a covered work, you may at your option
+remove any additional permissions from that copy, or from any part of
+it.  (Additional permissions may be written to require their own
+removal in certain cases when you modify the work.)  You may place
+additional permissions on material, added by you to a covered work,
+for which you have or can give appropriate copyright permission.
+
+  Notwithstanding any other provision of this License, for material you
+add to a covered work, you may (if authorized by the copyright holders of
+that material) supplement the terms of this License with terms:
+
+    a) Disclaiming warranty or limiting liability differently from the
+    terms of sections 15 and 16 of this License; or
+
+    b) Requiring preservation of specified reasonable legal notices or
+    author attributions in that material or in the Appropriate Legal
+    Notices displayed by works containing it; or
+
+    c) Prohibiting misrepresentation of the origin of that material, or
+    requiring that modified versions of such material be marked in
+    reasonable ways as different from the original version; or
+
+    d) Limiting the use for publicity purposes of names of licensors or
+    authors of the material; or
+
+    e) Declining to grant rights under trademark law for use of some
+    trade names, trademarks, or service marks; or
+
+    f) Requiring indemnification of licensors and authors of that
+    material by anyone who conveys the material (or modified versions of
+    it) with contractual assumptions of liability to the recipient, for
+    any liability that these contractual assumptions directly impose on
+    those licensors and authors.
+
+  All other non-permissive additional terms are considered "further
+restrictions" within the meaning of section 10.  If the Program as you
+received it, or any part of it, contains a notice stating that it is
+governed by this License along with a term that is a further
+restriction, you may remove that term.  If a license document contains
+a further restriction but permits relicensing or conveying under this
+License, you may add to a covered work material governed by the terms
+of that license document, provided that the further restriction does
+not survive such relicensing or conveying.
+
+  If you add terms to a covered work in accord with this section, you
+must place, in the relevant source files, a statement of the
+additional terms that apply to those files, or a notice indicating
+where to find the applicable terms.
+
+  Additional terms, permissive or non-permissive, may be stated in the
+form of a separately written license, or stated as exceptions;
+the above requirements apply either way.
+
+  8. Termination.
+
+  You may not propagate or modify a covered work except as expressly
+provided under this License.  Any attempt otherwise to propagate or
+modify it is void, and will automatically terminate your rights under
+this License (including any patent licenses granted under the third
+paragraph of section 11).
+
+  However, if you cease all violation of this License, then your
+license from a particular copyright holder is reinstated (a)
+provisionally, unless and until the copyright holder explicitly and
+finally terminates your license, and (b) permanently, if the copyright
+holder fails to notify you of the violation by some reasonable means
+prior to 60 days after the cessation.
+
+  Moreover, your license from a particular copyright holder is
+reinstated permanently if the copyright holder notifies you of the
+violation by some reasonable means, this is the first time you have
+received notice of violation of this License (for any work) from that
+copyright holder, and you cure the violation prior to 30 days after
+your receipt of the notice.
+
+  Termination of your rights under this section does not terminate the
+licenses of parties who have received copies or rights from you under
+this License.  If your rights have been terminated and not permanently
+reinstated, you do not qualify to receive new licenses for the same
+material under section 10.
+
+  9. Acceptance Not Required for Having Copies.
+
+  You are not required to accept this License in order to receive or
+run a copy of the Program.  Ancillary propagation of a covered work
+occurring solely as a consequence of using peer-to-peer transmission
+to receive a copy likewise does not require acceptance.  However,
+nothing other than this License grants you permission to propagate or
+modify any covered work.  These actions infringe copyright if you do
+not accept this License.  Therefore, by modifying or propagating a
+covered work, you indicate your acceptance of this License to do so.
+
+  10. Automatic Licensing of Downstream Recipients.
+
+  Each time you convey a covered work, the recipient automatically
+receives a license from the original licensors, to run, modify and
+propagate that work, subject to this License.  You are not responsible
+for enforcing compliance by third parties with this License.
+
+  An "entity transaction" is a transaction transferring control of an
+organization, or substantially all assets of one, or subdividing an
+organization, or merging organizations.  If propagation of a covered
+work results from an entity transaction, each party to that
+transaction who receives a copy of the work also receives whatever
+licenses to the work the party's predecessor in interest had or could
+give under the previous paragraph, plus a right to possession of the
+Corresponding Source of the work from the predecessor in interest, if
+the predecessor has it or can get it with reasonable efforts.
+
+  You may not impose any further restrictions on the exercise of the
+rights granted or affirmed under this License.  For example, you may
+not impose a license fee, royalty, or other charge for exercise of
+rights granted under this License, and you may not initiate litigation
+(including a cross-claim or counterclaim in a lawsuit) alleging that
+any patent claim is infringed by making, using, selling, offering for
+sale, or importing the Program or any portion of it.
+
+  11. Patents.
+
+  A "contributor" is a copyright holder who authorizes use under this
+License of the Program or a work on which the Program is based.  The
+work thus licensed is called the contributor's "contributor version".
+
+  A contributor's "essential patent claims" are all patent claims
+owned or controlled by the contributor, whether already acquired or
+hereafter acquired, that would be infringed by some manner, permitted
+by this License, of making, using, or selling its contributor version,
+but do not include claims that would be infringed only as a
+consequence of further modification of the contributor version.  For
+purposes of this definition, "control" includes the right to grant
+patent sublicenses in a manner consistent with the requirements of
+this License.
+
+  Each contributor grants you a non-exclusive, worldwide, royalty-free
+patent license under the contributor's essential patent claims, to
+make, use, sell, offer for sale, import and otherwise run, modify and
+propagate the contents of its contributor version.
+
+  In the following three paragraphs, a "patent license" is any express
+agreement or commitment, however denominated, not to enforce a patent
+(such as an express permission to practice a patent or covenant not to
+sue for patent infringement).  To "grant" such a patent license to a
+party means to make such an agreement or commitment not to enforce a
+patent against the party.
+
+  If you convey a covered work, knowingly relying on a patent license,
+and the Corresponding Source of the work is not available for anyone
+to copy, free of charge and under the terms of this License, through a
+publicly available network server or other readily accessible means,
+then you must either (1) cause the Corresponding Source to be so
+available, or (2) arrange to deprive yourself of the benefit of the
+patent license for this particular work, or (3) arrange, in a manner
+consistent with the requirements of this License, to extend the patent
+license to downstream recipients.  "Knowingly relying" means you have
+actual knowledge that, but for the patent license, your conveying the
+covered work in a country, or your recipient's use of the covered work
+in a country, would infringe one or more identifiable patents in that
+country that you have reason to believe are valid.
+
+  If, pursuant to or in connection with a single transaction or
+arrangement, you convey, or propagate by procuring conveyance of, a
+covered work, and grant a patent license to some of the parties
+receiving the covered work authorizing them to use, propagate, modify
+or convey a specific copy of the covered work, then the patent license
+you grant is automatically extended to all recipients of the covered
+work and works based on it.
+
+  A patent license is "discriminatory" if it does not include within
+the scope of its coverage, prohibits the exercise of, or is
+conditioned on the non-exercise of one or more of the rights that are
+specifically granted under this License.  You may not convey a covered
+work if you are a party to an arrangement with a third party that is
+in the business of distributing software, under which you make payment
+to the third party based on the extent of your activity of conveying
+the work, and under which the third party grants, to any of the
+parties who would receive the covered work from you, a discriminatory
+patent license (a) in connection with copies of the covered work
+conveyed by you (or copies made from those copies), or (b) primarily
+for and in connection with specific products or compilations that
+contain the covered work, unless you entered into that arrangement,
+or that patent license was granted, prior to 28 March 2007.
+
+  Nothing in this License shall be construed as excluding or limiting
+any implied license or other defenses to infringement that may
+otherwise be available to you under applicable patent law.
+
+  12. No Surrender of Others' Freedom.
+
+  If conditions are imposed on you (whether by court order, agreement or
+otherwise) that contradict the conditions of this License, they do not
+excuse you from the conditions of this License.  If you cannot convey a
+covered work so as to satisfy simultaneously your obligations under this
+License and any other pertinent obligations, then as a consequence you may
+not convey it at all.  For example, if you agree to terms that obligate you
+to collect a royalty for further conveying from those to whom you convey
+the Program, the only way you could satisfy both those terms and this
+License would be to refrain entirely from conveying the Program.
+
+  13. Use with the GNU Affero General Public License.
+
+  Notwithstanding any other provision of this License, you have
+permission to link or combine any covered work with a work licensed
+under version 3 of the GNU Affero General Public License into a single
+combined work, and to convey the resulting work.  The terms of this
+License will continue to apply to the part which is the covered work,
+but the special requirements of the GNU Affero General Public License,
+section 13, concerning interaction through a network will apply to the
+combination as such.
+
+  14. Revised Versions of this License.
+
+  The Free Software Foundation may publish revised and/or new versions of
+the GNU General Public License from time to time.  Such new versions will
+be similar in spirit to the present version, but may differ in detail to
+address new problems or concerns.
+
+  Each version is given a distinguishing version number.  If the
+Program specifies that a certain numbered version of the GNU General
+Public License "or any later version" applies to it, you have the
+option of following the terms and conditions either of that numbered
+version or of any later version published by the Free Software
+Foundation.  If the Program does not specify a version number of the
+GNU General Public License, you may choose any version ever published
+by the Free Software Foundation.
+
+  If the Program specifies that a proxy can decide which future
+versions of the GNU General Public License can be used, that proxy's
+public statement of acceptance of a version permanently authorizes you
+to choose that version for the Program.
+
+  Later license versions may give you additional or different
+permissions.  However, no additional obligations are imposed on any
+author or copyright holder as a result of your choosing to follow a
+later version.
+
+  15. Disclaimer of Warranty.
+
+  THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY
+APPLICABLE LAW.  EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT
+HOLDERS AND/OR OTHER PARTIES PROVIDE THE PROGRAM "AS IS" WITHOUT WARRANTY
+OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE.  THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM
+IS WITH YOU.  SHOULD THE PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF
+ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
+
+  16. Limitation of Liability.
+
+  IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
+WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR CONVEYS
+THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY
+GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE
+USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT NOT LIMITED TO LOSS OF
+DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD
+PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER PROGRAMS),
+EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGES.
+
+  17. Interpretation of Sections 15 and 16.
+
+  If the disclaimer of warranty and limitation of liability provided
+above cannot be given local legal effect according to their terms,
+reviewing courts shall apply local law that most closely approximates
+an absolute waiver of all civil liability in connection with the
+Program, unless a warranty or assumption of liability accompanies a
+copy of the Program in return for a fee.
+
+                     END OF TERMS AND CONDITIONS
+
+            How to Apply These Terms to Your New Programs
+
+  If you develop a new program, and you want it to be of the greatest
+possible use to the public, the best way to achieve this is to make it
+free software which everyone can redistribute and change under these terms.
+
+  To do so, attach the following notices to the program.  It is safest
+to attach them to the start of each source file to most effectively
+state the exclusion of warranty; and each file should have at least
+the "copyright" line and a pointer to where the full notice is found.
+
+    
+    Copyright (C)   
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see .
+
+Also add information on how to contact you by electronic and paper mail.
+
+  If the program does terminal interaction, make it output a short
+notice like this when it starts in an interactive mode:
+
+      Copyright (C)   
+    This program comes with ABSOLUTELY NO WARRANTY; for details type `show w'.
+    This is free software, and you are welcome to redistribute it
+    under certain conditions; type `show c' for details.
+
+The hypothetical commands `show w' and `show c' should show the appropriate
+parts of the General Public License.  Of course, your program's commands
+might be different; for a GUI interface, you would use an "about box".
+
+  You should also get your employer (if you work as a programmer) or school,
+if any, to sign a "copyright disclaimer" for the program, if necessary.
+For more information on this, and how to apply and follow the GNU GPL, see
+.
+
+  The GNU General Public License does not permit incorporating your program
+into proprietary programs.  If your program is a subroutine library, you
+may consider it more useful to permit linking proprietary applications with
+the library.  If this is what you want to do, use the GNU Lesser General
+Public License instead of this License.  But first, please read
+.
+

@@ -1,0 +1,9 @@
+{
+  "apps": 23,
+  "doctypes": 1109,
+  "fields": 16978,
+  "link_edges": 2795,
+  "child_table_edges": 510,
+  "workflow_edges": 0,
+  "hook_rules": 137
+}

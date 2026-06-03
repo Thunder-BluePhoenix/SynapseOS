@@ -1,0 +1,81 @@
+# DOCTYPE: Canvas Session
+# Module: Excel View  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  session_id (Data): Session ID [required, unique]
+  title (Data): Title [required]
+  base_doctype (Link): Base DocType → DocType [required]
+  created_at (Datetime): Created At
+  last_activity (Datetime): Last Activity
+  canvas_state (Code): Canvas State → JSON
+  chat_messages (Code): Chat Messages → JSON
+  is_public (Check): Is Public
+  collaborators (Table): Collaborators → Canvas Session Collaborator
+
+## Permissions
+  System Manager: read, write, create, delete
+  All: read, write, create, delete
+
+# DOCTYPE: Canvas Session Collaborator
+# Module: Excel View  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  user (Link): User → User [required]
+  role (Select): Role → Editor
+Viewer [required]
+  joined_at (Datetime): Joined At
+
+# DOCTYPE: Excel Formula
+# Module: Excel View  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  formula_name (Data): Formula Name [required]
+  label (Data): Label
+  category (Select): Category → Financial
+Inventory
+HR
+Sales
+Custom
+  formula_type (Select): Formula Type → sum
+count
+avg
+max
+min
+get
+gl_balance
+stock_qty
+item_price
+smart_lookup [required]
+  source_doctype (Link): Source DocType → DocType
+  target_fieldname (Data): Target Fieldname
+  filters (Table): Filters → Excel Formula Filter
+  description (Small Text): Description
+  is_active (Check): Is Active
+  is_system (Check): System Formula
+
+## Permissions
+  System Manager: read, write, create, delete
+  All: read
+
+# DOCTYPE: Excel Workbook
+# Module: Excel View  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  title (Data): Title [required]
+  doctype_name (Link): DocType → DocType [required]
+  is_public (Check): Shared with Everyone
+  columns_config (Code): Columns Config → JSON
+  formula_columns (Code): Formula Columns → JSON
+  filters (Code): Filters → JSON
+  sort_by (Code): Sort Config → JSON
+  join_config (Code): Join Config → JSON
+  sheets (Code): Sheets → JSON
+  chart_overlays (Code): Chart Overlays → JSON
+  format_store (Code): Cell Format Store → JSON
+  cond_fmt_rules (Code): Conditional Formatting Rules → JSON
+  view_state (Code): View State → JSON
+
+## Permissions
+  System Manager: read, write, create, delete
+  All: read, write, create, delete
+

@@ -1,0 +1,113 @@
+# DOCTYPE: UPEOSight Action Audit
+# Module: UPEOSight  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  upeosight_action_audit (Datetime): UPEOSight Action Audit
+  site (Data): site
+  user (Link): user → User
+  action (Select): action → restart_workers
+restart_scheduler
+cleanup
+  target (Data): target
+  result (Select): result → Success
+Failed
+  reason (Small Text): reason
+  details (Long Text): details
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: UPEOSight DB Metric
+# Module: UPEOSight  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  timestamp (Datetime): timestamp
+  site (Data): site
+  db_name (Data): db_name
+  query_signature (Data): query_signature
+  executions (Int): executions
+  avg_time_ms (Int): avg_time_ms
+  max_time_ms (Int): max_time_ms
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: UPEOSight DB Storage Snapshot
+# Module: UPEOSight  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  timestamp (Datetime): timestamp
+  site (Data): site
+  hostname (Data): hostname
+  db_name (Data): db_name
+  total_mb (Float): total_mb
+  data_mb (Float): data_mb
+  index_mb (Float): index_mb
+  tables_count (Int): tables_count
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: UPEOSight DB Table Storage
+# Module: UPEOSight  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  timestamp (Datetime): timestamp
+  site (Data): site
+  hostname (Data): hostname
+  db_name (Data): db_name
+  table_name (Data): table_name
+  engine (Data): engine
+  rows_est (Int): rows_est
+  data_mb (Float): data_mb
+  cleanup_allowed (Check): cleanup_allowed
+  index_mb (Float): index_mb
+  total_mb (Float): total_mb
+  importance (Select): importance → Transactional
+Ledger/Accounting
+Stock/Inventory
+Logs/Audit
+Attachments/Files
+Integration/Sync
+System/Core
+Custom/Unknown
+  importance_note (Small Text): importance_note
+  cleanup_hint (Small Text): cleanup_hint
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: UPEOSight Queue Metric
+# Module: UPEOSight  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  timestamp (Datetime): timestamp
+  site (Data): site
+  queue_name (Select): queue_name → short
+default
+long
+  job_count (Int): job_count
+  failed_count (Int): failed_count
+  active_workers (Int): active_workers
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: UPEOSight System Metric
+# Module: UPEOSight  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  timestamp (Datetime): timestamp
+  site (Data): site
+  hostname (Data): hostname
+  cpu_percent (Float): cpu_percent
+  ram_percent (Float): ram_percent
+  ram_used_mb (Int): ram_used_mb
+  disk_percent (Float): disk_percent
+  load_1 (Float): load_1
+  load_5 (Float): load_5
+  load_15 (Float): load_15
+
+## Permissions
+  System Manager: read, write, create, delete
+

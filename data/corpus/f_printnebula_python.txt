@@ -1,0 +1,2975 @@
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/api/__init__.py
+# PrintNebula API Module
+
+from .template_api import (
+	generate_pdf,
+	preview_template,
+	validate_template,
+	bulk_generate
+)
+
+__all__ = ['generate_pdf', 'preview_template', 'validate_template', 'bulk_generate']
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/api/automation.py
+# Copyright (c) 2025, BluePhoenix and contributors
+# For license information, please see license.txt
+
+import frappe
+from frappe.core.doctype.communication.email import make
+
+def send_auto_emails(doc, method):
+	"""
+	Hook attached to all documents on_submit
+	Finds active templates for the doctype with auto-email enabled and queues them
+	"""
+	templates = frappe.get_all(
+		"PrintNebula Template",
+		filters={
+			"doctype_link": doc.doctype,
+			"is_active": 1,
+			"enable_auto_email": 1
+		},
+		fields=["name", "email_to_field", "email_subject", "email_template", "template_type"]
+	)
+
+	for template in templates:
+		frappe.enqueue(
+			"f_printnebula.api.automation.process_auto_email",
+			queue="long",
+			docname=doc.name,
+			doctype=doc.doctype,
+			template_name=template.name
+		)
+
+def process_auto_email(docname, doctype, template_name):
+	"""Background job worker to generate the PDF and send the email"""
+	doc = frappe.get_doc(doctype, docname)
+	template = frappe.get_doc("PrintNebula Template", template_name)
+
+	# Determine recipient
+	if not template.email_to_field:
+		frappe.log_error("Auto-email failed: No 'Email To Field' configured", f"PrintNebula {template_name}")
+		return
+
+	recipient = doc.get(template.email_to_field)
+	if not recipient:
+		frappe.log_error(f"Auto-email failed: Document missing '{template.email_to_field}' value", f"PrintNebula {template_name}")
+		return
+
+	# Generate PDF/DOCX using our generator
+	from f_printnebula.utils.pdf_generator import PDFGenerator
+	generator = PDFGenerator(template_name)
+
+	try:
+		# output format handles routing internally based on template_type
+		# Word templates generate docx, HTML templates generate PDF
+		result = generator.generate(docname=docname, output_format="pdf", save_file=True)
+		file_url = result.get('file_url')
+
+		if not file_url:
+			raise Exception("File URL missing after generation.")
+	except Exception as e:
+		frappe.log_error(f"Auto-email generation failed: {str(e)}", f"PrintNebula {template_name}")
+		return
+
+	# Parse email subject and body using PrintNebula variables engine!
+	# We can use our VariableParser to parse the subject and body dynamically
+	from f_printnebula.engine.parser import VariableParser
+	import json
+
+	mappings = {}
+	if template.field_mappings:
+		mappings = json.loads(template.field_mappings)
+
+	parser = VariableParser(doc.as_dict(), mappings)
+
+	subject = parser.parse(template.email_subject or f"Document {doc.name}")
+	body = parser.parse(template.email_template or f"Please find the attached document: {doc.name}")
+
+	# Send email using Frappe
+	try:
+		# Since the file is attached to the document, we can attach it to the email
+		file_doc = frappe.get_doc("File", {"file_url": file_url})
+
+		make(
+			recipients=recipient,
+			subject=subject,
+			content=body,
+			doctype=doctype,
+			name=docname,
+			send_email=True,
+			attachments=[file_doc.name]
+		)
+
+		frappe.logger("printnebula").info(f"Successfully auto-emailed {docname} to {recipient}")
+	except Exception as e:
+		frappe.log_error(f"Auto-email sending failed: {str(e)}", f"PrintNebula {template_name}")
+
+
+def setup():
+	# 1. PrintNebula Snippet Doctype
+	if not frappe.db.exists("DocType", "PrintNebula Snippet"):
+		doc = frappe.get_doc({
+			"doctype": "DocType",
+			"name": "PrintNebula Snippet",
+			"module": "F Printnebula",
+			"custom": 0,
+			"naming_rule": "By fieldname",
+			"autoname": "field:snippet_name",
+			"fields": [
+				{"fieldname": "snippet_name", "fieldtype": "Data", "label": "Snippet Name", "reqd": 1, "unique": 1},
+				{"fieldname": "html_content", "fieldtype": "Text Editor", "label": "HTML Content"}
+			],
+			"permissions": [{"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1}]
+		})
+		doc.flags.ignore_links = True
+		doc.insert(ignore_permissions=True)
+
+	# 2. PrintNebula Log Doctype
+	if not frappe.db.exists("DocType", "PrintNebula Log"):
+		doc = frappe.get_doc({
+			"doctype": "DocType",
+			"name": "PrintNebula Log",
+			"module": "F Printnebula",
+			"custom": 0,
+			"fields": [
+				{"fieldname": "template", "fieldtype": "Data", "label": "Template"},
+				{"fieldname": "doctype_link", "fieldtype": "Link", "options": "DocType", "label": "Target DocType"},
+				{"fieldname": "docname", "fieldtype": "Dynamic Link", "options": "doctype_link", "label": "Document Name"},
+				{"fieldname": "status", "fieldtype": "Select", "options": "Success\nFailed", "label": "Status"},
+				{"fieldname": "duration", "fieldtype": "Float", "label": "Duration (s)"},
+				{"fieldname": "error_log", "fieldtype": "Text", "label": "Error Log"}
+			],
+			"permissions": [{"role": "All", "read": 1, "write": 1, "create": 1}]
+		})
+		doc.flags.ignore_links = True
+		doc.insert(ignore_permissions=True)
+
+	frappe.db.commit()
+
+@frappe.whitelist()
+def log_generation(template, doctype_link, docname, status, duration, error_log=""):
+	try:
+		log = frappe.get_doc({
+			"doctype": "PrintNebula Log",
+			"template": template,
+			"doctype_link": doctype_link,
+			"docname": docname,
+			"status": status,
+			"duration": duration,
+			"error_log": error_log
+		})
+		log.insert(ignore_permissions=True)
+		frappe.db.commit()
+	except Exception as e:
+		pass
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/api/template_api.py
+# Copyright (c) 2025, BluePhoenix and contributors
+# For license information, please see license.txt
+
+import frappe
+from typing import Dict, Optional
+
+
+@frappe.whitelist()
+def generate_pdf(
+	template: str,
+	doctype: str,
+	docname: str,
+	output_format: str = "pdf",
+	save_file: bool = True
+) -> Dict:
+	"""
+	Generate PDF for a document using a template
+
+	Args:
+		template: Template name
+		doctype: Doctype name
+		docname: Document name
+		output_format: Output format (pdf, html, docx)
+		save_file: Whether to save file to disk
+
+	Returns:
+		Generation result dictionary
+	"""
+	from f_printnebula.utils.pdf_generator import PDFGenerator
+
+	# Validate template
+	template_doc = frappe.get_doc("PrintNebula Template", template)
+
+	if template_doc.doctype_link != doctype:
+		frappe.throw(f"Template {template} is not for doctype {doctype}")
+
+	if not template_doc.is_active:
+		frappe.throw(f"Template {template} is not active")
+
+	# Generate PDF
+	generator = PDFGenerator(template)
+	result = generator.generate(docname, output_format, save_file)
+
+	return result
+
+
+@frappe.whitelist()
+def preview_template(
+	template: str,
+	docname: Optional[str] = None,
+	sample_data: Optional[Dict] = None
+) -> Dict:
+	"""
+	Preview template with a document or sample data
+
+	Args:
+		template: Template name
+		docname: Document name (optional)
+		sample_data: Sample data dictionary (optional)
+
+	Returns:
+		Preview HTML
+	"""
+	from f_printnebula.engine.renderer import TemplateRenderer
+
+	renderer = TemplateRenderer(template)
+
+	if docname:
+		html = renderer.render(docname)
+	elif sample_data:
+		html = renderer.get_preview_html(sample_data=sample_data)
+	else:
+		frappe.throw("Either docname or sample_data must be provided")
+
+	return {
+		'html': html
+	}
+
+
+@frappe.whitelist()
+def validate_template(template: str) -> Dict:
+	"""
+	Validate template syntax and fields
+
+	Args:
+		template: Template name
+
+	Returns:
+		Validation result
+	"""
+	from f_printnebula.engine.validator import TemplateValidator
+
+	template_doc = frappe.get_doc("PrintNebula Template", template)
+	validator = TemplateValidator(template_doc)
+
+	return validator.validate()
+
+
+@frappe.whitelist()
+def bulk_generate(
+	template: str,
+	doctype: str,
+	filters: Optional[Dict] = None,
+	output_format: str = "pdf",
+	background: bool = True,
+	email: bool = False
+) -> Dict:
+	"""
+	Bulk generate PDFs for multiple documents
+
+	Args:
+		template: Template name
+		doctype: Doctype name
+		filters: Filters for selecting documents
+		output_format: Output format
+		background: Run in background
+		email: Email generated PDFs
+
+	Returns:
+		Job information
+	"""
+	filters = filters or {}
+
+	# Get documents
+	documents = frappe.get_all(doctype, filters=filters, pluck='name')
+
+	if not documents:
+		frappe.throw("No documents found matching filters")
+
+	if background:
+		# Queue background job
+		job = frappe.enqueue(
+			'f_printnebula.api.template_api.process_bulk_generation',
+			template=template,
+			doctype=doctype,
+			documents=documents,
+			output_format=output_format,
+			email=email,
+			queue='long',
+			timeout=3600
+		)
+
+		return {
+			'job_id': job.id,
+			'total_documents': len(documents),
+			'status': 'queued'
+		}
+	else:
+		# Process synchronously
+		result = process_bulk_generation(template, doctype, documents, output_format, email)
+		return result
+
+
+def process_bulk_generation(
+	template: str,
+	doctype: str,
+	documents: list,
+	output_format: str = "pdf",
+	email: bool = False
+) -> Dict:
+	"""
+	Process bulk PDF generation
+
+	Args:
+		template: Template name
+		doctype: Doctype name
+		documents: List of document names
+		output_format: Output format
+		email: Email generated PDFs
+
+	Returns:
+		Generation results
+	"""
+	from f_printnebula.utils.pdf_generator import PDFGenerator
+
+	generator = PDFGenerator(template)
+	results = {
+		'total': len(documents),
+		'completed': 0,
+		'failed': 0,
+		'errors': []
+	}
+
+	for docname in documents:
+		try:
+			result = generator.generate(docname, output_format, save_file=True)
+
+			if email and result.get('success'):
+				# TODO: Implement email sending
+				pass
+
+			results['completed'] += 1
+
+		except Exception as e:
+			results['failed'] += 1
+			results['errors'].append({
+				'document': docname,
+				'error': str(e)
+			})
+
+	return results
+
+
+@frappe.whitelist()
+def get_template_fields(doctype: str) -> Dict:
+	"""
+	Get available fields for a doctype
+
+	Args:
+		doctype: Doctype name
+
+	Returns:
+		Fields list
+	"""
+	from f_printnebula.engine.resolver import FieldResolver
+
+	resolver = FieldResolver(doctype)
+	fields = resolver.get_field_list()
+
+	return {
+		'fields': fields,
+		'child_tables': [f.fieldname for f in resolver.get_child_table_fields()]
+	}
+
+
+@frappe.whitelist()
+def get_child_table_fields(doctype: str, child_table: str) -> Dict:
+	"""
+	Get fields for a child table
+
+	Args:
+		doctype: Parent doctype name
+		child_table: Child table field name
+
+	Returns:
+		Child table fields
+	"""
+	from f_printnebula.engine.resolver import FieldResolver
+
+	# Get child table doctype
+	parent_meta = frappe.get_meta(doctype)
+	child_field = parent_meta.get_field(child_table)
+
+	if not child_field or child_field.fieldtype != 'Table':
+		frappe.throw(f"'{child_table}' is not a table field in {doctype}")
+
+	# Get child table fields
+	child_doctype = child_field.options
+	resolver = FieldResolver(child_doctype)
+	fields = resolver.get_field_list()
+
+	return {
+		'child_doctype': child_doctype,
+		'fields': fields
+	}
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/engine/__init__.py
+# PrintNebula Template Rendering Engine
+
+from .renderer import TemplateRenderer
+from .parser import VariableParser
+from .formatter import FormatterEngine
+from .resolver import FieldResolver
+
+__all__ = ['TemplateRenderer', 'VariableParser', 'FormatterEngine', 'FieldResolver']
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/engine/formatter.py
+# Copyright (c) 2025, BluePhoenix and contributors
+# For license information, please see license.txt
+
+import frappe
+from frappe.utils import (
+	flt, cint, fmt_money, formatdate, get_datetime,
+	now_datetime, add_days, date_diff
+)
+from typing import Any
+
+
+class FormatterEngine:
+	"""Engine for formatting field values"""
+
+	def __init__(self, locale: str = None):
+		"""
+		Initialize formatter with optional locale
+
+		Args:
+			locale: Locale for formatting (e.g., 'en-US', 'hi')
+		"""
+		self.locale = locale or frappe.local.lang or 'en'
+
+	def format(self, value: Any, formatter: str) -> str:
+		"""
+		Format value using specified formatter
+
+		Args:
+			value: Value to format
+			formatter: Formatter specification (e.g., 'date', 'currency', 'date:dd-MM-yyyy')
+
+		Returns:
+			Formatted value as string
+		"""
+		if (value is None or value == "") and not formatter.startswith("default"):
+			return ""
+
+		# Parse formatter and arguments
+		parts = formatter.split(':')
+		formatter_type = parts[0].lower()
+		formatter_args = parts[1] if len(parts) > 1 else None
+
+		# Call appropriate formatter
+		formatter_method = getattr(self, f'format_{formatter_type}', None)
+		if formatter_method:
+			return formatter_method(value, formatter_args)
+
+		# Unknown formatter, return value as-is
+		return str(value)
+
+	def format_date(self, value: Any, format_string: str = None) -> str:
+		"""
+		Format date value
+
+		Args:
+			value: Date value
+			format_string: Date format (e.g., 'dd-MM-yyyy')
+
+		Returns:
+			Formatted date string
+		"""
+		try:
+			if isinstance(value, str):
+				value = get_datetime(value)
+
+			if format_string:
+				return formatdate(value, format_string)
+			else:
+				return formatdate(value)
+		except Exception:
+			return str(value)
+
+	def format_datetime(self, value: Any, format_string: str = None) -> str:
+		"""
+		Format datetime value
+
+		Args:
+			value: Datetime value
+			format_string: Datetime format
+
+		Returns:
+			Formatted datetime string
+		"""
+		try:
+			if isinstance(value, str):
+				value = get_datetime(value)
+
+			if format_string:
+				return value.strftime(format_string)
+			else:
+				return str(value)
+		except Exception:
+			return str(value)
+
+	def format_currency(self, value: Any, currency: str = None) -> str:
+		"""
+		Format currency value
+
+		Args:
+			value: Numeric value
+			currency: Currency code (optional)
+
+		Returns:
+			Formatted currency string
+		"""
+		try:
+			value = flt(value)
+			if currency:
+				return fmt_money(value, currency=currency)
+			else:
+				return fmt_money(value)
+		except Exception:
+			return str(value)
+
+	def format_number(self, value: Any, precision: str = None) -> str:
+		"""
+		Format number value
+
+		Args:
+			value: Numeric value
+			precision: Decimal precision
+
+		Returns:
+			Formatted number string
+		"""
+		try:
+			precision = int(precision) if precision else 2
+			value = flt(value, precision)
+			return frappe.format_value(value, {'fieldtype': 'Float', 'precision': precision})
+		except Exception:
+			return str(value)
+
+	def format_int(self, value: Any, args: str = None) -> str:
+		"""
+		Format integer value
+
+		Args:
+			value: Numeric value
+			args: Not used
+
+		Returns:
+			Formatted integer string
+		"""
+		try:
+			return str(cint(value))
+		except Exception:
+			return str(value)
+
+	def format_percent(self, value: Any, precision: str = None) -> str:
+		"""
+		Format percentage value
+
+		Args:
+			value: Numeric value
+			precision: Decimal precision
+
+		Returns:
+			Formatted percentage string
+		"""
+		try:
+			precision = int(precision) if precision else 2
+			value = flt(value, precision)
+			return f"{value}%"
+		except Exception:
+			return str(value)
+
+	def format_upper(self, value: Any, args: str = None) -> str:
+		"""Convert to uppercase"""
+		return str(value).upper()
+
+	def format_lower(self, value: Any, args: str = None) -> str:
+		"""Convert to lowercase"""
+		return str(value).lower()
+
+	def format_title(self, value: Any, args: str = None) -> str:
+		"""Convert to title case"""
+		return str(value).title()
+
+	def format_round(self, value: Any, precision: str = None) -> str:
+		"""
+		Round number value
+
+		Args:
+			value: Numeric value
+			precision: Decimal places (default 0)
+
+		Returns:
+			Rounded value as string
+		"""
+		try:
+			precision = int(precision) if precision else 0
+			value = flt(value, precision)
+			if precision == 0:
+				return str(int(value))
+			return str(value)
+		except Exception:
+			return str(value)
+
+	def format_default(self, value: Any, default_value: str) -> str:
+		"""
+		Return default value if empty
+
+		Args:
+			value: Original value
+			default_value: Default value to use if empty
+
+		Returns:
+			Value or default
+		"""
+		if value is None or value == "":
+			return default_value
+		return str(value)
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/engine/parser.py
+# Copyright (c) 2025, BluePhoenix and contributors
+# For license information, please see license.txt
+
+import re
+import frappe
+from typing import Dict, Any, Optional
+
+
+class VariableParser:
+	"""
+	Parser for handling curly-brace variables in templates
+	Supports: {field}, {nested.field}, {field|formatter}, {?condition}...{/condition}
+	"""
+
+	def __init__(self, doc: Dict[str, Any], mappings: Optional[Dict] = None):
+		"""
+		Initialize parser with document and field mappings
+
+		Args:
+			doc: Document data as dictionary
+			mappings: Optional field mappings dictionary
+		"""
+		self.doc = doc
+		self.mappings = mappings or {}
+
+	def parse(self, content: str) -> str:
+		"""
+		Parse template content and replace variables
+
+		Args:
+			content: Template content with variables
+
+		Returns:
+			Parsed content with variables replaced
+		"""
+		if not content:
+			return ""
+
+		# Extract global Snippets first!
+		content = self.parse_snippets(content)
+
+		# Parse conditional blocks
+		content = self.parse_conditionals(content)
+
+		# Parse regular variables
+		content = self.parse_variables(content)
+
+		# Parse math operations {=qty * rate}
+		content = self.parse_math(content)
+
+		# Parse media (QR codes, barcodes)
+		content = self.parse_media(content)
+
+		return content
+
+	def parse_snippets(self, content: str) -> str:
+		"""
+		Parse {snippet:MyName} and instantly replace logic pulling from database prior to generic parsing algorithms
+		"""
+		pattern = r'\{snippet:([^}]+)\}'
+
+		def replace_snippet(match):
+			snippet_name = match.group(1).strip()
+			try:
+				html_content = frappe.db.get_value("PrintNebula Snippet", snippet_name, "html_content")
+				if html_content:
+					# Support nested snippets flawlessly
+					return self.parse_snippets(html_content)
+				return f"<!-- Snippet '{snippet_name}' not found -->"
+			except Exception as e:
+				return f"<!-- Snippet '{snippet_name}' error: {str(e)} -->"
+
+		return re.sub(pattern, replace_snippet, content)
+
+	def parse_variables(self, content: str) -> str:
+		"""
+		Parse and replace {field} and {field|formatter} variables
+
+		Args:
+			content: Content with variables
+
+		Returns:
+			Content with variables replaced
+		"""
+		# Pattern: {field_name} or {field_name|formatter1|formatter2:args}
+		pattern = r'\{([a-zA-Z0-9_.]+)(?:\|([^}]+))?\}'
+
+		def replace_variable(match):
+			field_path = match.group(1)
+			formatters_str = match.group(2)
+
+			# Get field value
+			value = self.get_field_value(field_path)
+
+			# Apply formatters sequentially if specified
+			if formatters_str:
+				from .formatter import FormatterEngine
+				formatter_engine = FormatterEngine()
+				formatters = formatters_str.split('|')
+				for formatter in formatters:
+					value = formatter_engine.format(value, formatter)
+
+			# Convert None to empty string
+			return str(value) if value is not None else ""
+
+		return re.sub(pattern, replace_variable, content)
+
+	def parse_math(self, content: str) -> str:
+		pattern = r'\{=([^}]+)\}'
+		def replace_math(match):
+			return self.evaluate_math(match.group(1).strip())
+		return re.sub(pattern, replace_math, content)
+
+	def evaluate_math(self, expr: str) -> str:
+		try:
+			context = self.doc.copy() if hasattr(self.doc, 'copy') else dict(self.doc)
+
+			def _sum(arr, field=None):
+				if not arr: return 0
+				if field: return sum(frappe.utils.flt(row.get(field)) for row in arr if isinstance(row, dict))
+				# Try direct dict access simulation, or fall back to object access
+				return sum(frappe.utils.flt(getattr(row, field, 0)) if not isinstance(row, dict) else 0 for row in arr) if field else sum(frappe.utils.flt(x) for x in arr)
+
+			def _avg(arr, field=None):
+				if not arr: return 0
+				return _sum(arr, field) / len(arr)
+
+			context.update({
+				'sum': _sum,
+				'avg': _avg,
+				'count': lambda arr: len(arr) if arr else 0,
+			})
+
+			res = frappe.safe_eval(expr, None, context)
+			if isinstance(res, float):
+				return str(round(res, 2))
+			return str(res)
+		except Exception as e:
+			frappe.log_error(f"Math Error: {str(e)}", "PrintNebula Parser")
+			return f"[Math Error: {expr}]"
+
+	def parse_media(self, content: str) -> str:
+		pattern_media = r'\{(qrcode|barcode):([^}]+)\}'
+		def replace_media(match):
+			media_type = match.group(1)
+			params = match.group(2).split('|')
+			data = params[0]
+
+			if media_type == 'qrcode':
+				return self.generate_qrcode(data)
+			else:
+				return self.generate_barcode(data)
+
+		return re.sub(pattern_media, replace_media, content)
+
+	def generate_qrcode(self, data: str) -> str:
+		try:
+			import qrcode
+			import io
+			import base64
+			qr = qrcode.QRCode(version=1, box_size=4, border=1)
+			qr.add_data(data)
+			qr.make(fit=True)
+			img = qr.make_image(fill_color="black", back_color="white")
+			buffered = io.BytesIO()
+			img.save(buffered, format="PNG")
+			img_str = base64.b64encode(buffered.getvalue()).decode()
+			return f'<img src="data:image/png;base64,{img_str}" class="printnebula-qrcode" />'
+		except Exception as e:
+			return f"[QR Code Error: {str(e)}]"
+
+	def generate_barcode(self, data: str) -> str:
+		try:
+			import barcode
+			from barcode.writer import ImageWriter
+			import io
+			import base64
+			CODE128 = barcode.get_barcode_class('code128')
+			bc = CODE128(data, writer=ImageWriter())
+			buffered = io.BytesIO()
+			bc.write(buffered, options={'module_width': 0.2, 'module_height': 10, 'font_size': 8})
+			img_str = base64.b64encode(buffered.getvalue()).decode()
+			return f'<img src="data:image/png;base64,{img_str}" class="printnebula-barcode" />'
+		except Exception as e:
+			return f"[Barcode Error: {str(e)}]"
+
+	def parse_conditionals(self, content: str) -> str:
+		"""
+		Parse conditional blocks: {?field}...{/field}
+
+		Args:
+			content: Content with conditional blocks
+
+		Returns:
+			Content with conditionals resolved
+		"""
+		# Pattern: {?field_name}content{/field_name}
+		pattern = r'\{\?([a-zA-Z0-9_.]+)(?:([=!<>]+)([^}]+))?\}(.*?)\{/\1\}'
+
+		def replace_conditional(match):
+			field_path = match.group(1)
+			operator = match.group(2)
+			compare_value = match.group(3)
+			inner_content = match.group(4)
+
+			# Get field value
+			value = self.get_field_value(field_path)
+
+			# Evaluate condition
+			show_content = False
+
+			if operator and compare_value:
+				# Comparison operator specified
+				show_content = self.evaluate_comparison(value, operator, compare_value.strip())
+			else:
+				# Boolean check - show if field has truthy value
+				show_content = bool(value)
+
+			return inner_content if show_content else ""
+
+		return re.sub(pattern, replace_conditional, content, flags=re.DOTALL)
+
+	def get_field_value(self, field_path: str) -> Any:
+		"""
+		Get field value from document with support for nested fields
+
+		Args:
+			field_path: Field path (e.g., "name" or "customer.customer_name")
+
+		Returns:
+			Field value or None
+		"""
+		# Check if field is mapped
+		if field_path in self.mappings:
+			field_path = self.mappings[field_path]
+
+		# Handle nested fields
+		if '.' in field_path:
+			return self.get_nested_field(field_path)
+
+		# Direct field access
+		return self.doc.get(field_path)
+
+	def get_nested_field(self, field_path: str) -> Any:
+		"""
+		Get nested field value (e.g., customer.customer_name)
+
+		Args:
+			field_path: Dot-separated field path
+
+		Returns:
+			Field value or None
+		"""
+		parts = field_path.split('.')
+		current_value = self.doc
+
+		for part in parts:
+			if isinstance(current_value, dict):
+				current_value = current_value.get(part)
+			elif isinstance(current_value, str):
+				# Link field - fetch the linked document
+				try:
+					# Get the doctype from meta
+					meta = frappe.get_meta(self.doc.get('doctype'))
+					field_meta = meta.get_field(parts[0])
+					if field_meta and field_meta.fieldtype == 'Link':
+						linked_doc = frappe.get_doc(field_meta.options, current_value)
+						current_value = linked_doc.get(part)
+					else:
+						return None
+				except Exception:
+					return None
+			else:
+				return None
+
+			if current_value is None:
+				break
+
+		return current_value
+
+	def evaluate_comparison(self, value: Any, operator: str, compare_value: str) -> bool:
+		"""
+		Evaluate comparison operation
+
+		Args:
+			value: Field value
+			operator: Comparison operator (=, !=, >, <, >=, <=)
+			compare_value: Value to compare against
+
+		Returns:
+			Boolean result of comparison
+		"""
+		# Convert to string for comparison and sanitize input
+		import html
+		value_str = str(value) if value is not None else ""
+		compare_str = html.escape(str(compare_value).strip())
+
+		# Try numeric comparison if both are numbers
+		try:
+			value_num = float(value_str)
+			compare_num = float(compare_str)
+
+			if operator == '=' or operator == '==':
+				return value_num == compare_num
+			elif operator == '!=':
+				return value_num != compare_num
+			elif operator == '>':
+				return value_num > compare_num
+			elif operator == '<':
+				return value_num < compare_num
+			elif operator == '>=':
+				return value_num >= compare_num
+			elif operator == '<=':
+				return value_num <= compare_num
+		except (ValueError, TypeError):
+			# Fall back to string comparison
+			if operator == '=' or operator == '==':
+				return value_str == compare_str
+			elif operator == '!=':
+				return value_str != compare_str
+
+		return False
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/engine/renderer.py
+# Copyright (c) 2025, BluePhoenix and contributors
+# For license information, please see license.txt
+
+import frappe
+import json
+from jinja2 import Template, Environment, BaseLoader
+from typing import Dict, Any, Optional
+from functools import lru_cache
+from .parser import VariableParser
+from .formatter import FormatterEngine
+from .resolver import FieldResolver
+
+
+@lru_cache(maxsize=100)
+def get_jinja_template(content: str):
+	env = Environment(loader=BaseLoader())
+	return env.from_string(content)
+
+
+class TemplateRenderer:
+	"""Main template rendering engine"""
+
+	def __init__(self, template_name: str):
+		"""
+		Initialize renderer with template
+
+		Args:
+			template_name: PrintNebula Template name
+		"""
+		self.template = frappe.get_doc("PrintNebula Template", template_name)
+		self.resolver = FieldResolver(self.template.doctype_link)
+
+	def render(self, docname: str) -> str:
+		"""
+		Render template for a document
+
+		Args:
+			docname: Document name
+
+		Returns:
+			Rendered HTML string
+		"""
+		# Fetch document data
+		doc = self.resolver.get_document_with_children(docname)
+
+		# Parse field mappings
+		field_mappings = self.parse_field_mappings()
+
+		# Render header, body, footer
+		header_html = self.render_section(
+			self.template.header or "",
+			doc,
+			field_mappings
+		)
+
+		body_html = self.render_section(
+			self.template.body or "",
+			doc,
+			field_mappings
+		)
+
+		footer_html = self.render_section(
+			self.template.footer or "",
+			doc,
+			field_mappings
+		)
+
+		# Combine sections
+		final_html = self.combine_sections(header_html, body_html, footer_html)
+
+		# Apply custom CSS
+		if self.template.custom_css:
+			final_html = self.apply_custom_css(final_html)
+
+		return final_html
+
+	def render_section(
+		self,
+		section_content: str,
+		doc: Dict[str, Any],
+		field_mappings: Dict
+	) -> str:
+		"""
+		Render a template section (header, body, or footer)
+
+		Args:
+			section_content: Section HTML content
+			doc: Document data
+			field_mappings: Field mappings dictionary
+
+		Returns:
+			Rendered section HTML
+		"""
+		if not section_content:
+			return ""
+
+		# Step 1: Process Jinja2 loops (child tables)
+		section_content = self.process_jinja_loops(section_content, doc)
+
+		# Step 2: Parse curly-brace variables
+		parser = VariableParser(doc, field_mappings)
+		section_content = parser.parse(section_content)
+
+		return section_content
+
+	def process_jinja_loops(self, content: str, doc: Dict[str, Any]) -> str:
+		"""
+		Process Jinja2 loop syntax for child tables
+
+		Args:
+			content: Template content with Jinja2 syntax
+			doc: Document data with child tables
+
+		Returns:
+			Content with loops processed
+		"""
+		try:
+			# Get template from cache
+			template = get_jinja_template(content)
+
+			# Render with document data
+			rendered = template.render(**doc)
+
+			return rendered
+		except Exception as e:
+			frappe.log_error(f"Jinja2 rendering error: {str(e)}", "PrintNebula Jinja Error")
+			return content
+
+	def parse_field_mappings(self) -> Dict:
+		"""
+		Parse field mappings from template
+
+		Returns:
+			Field mappings dictionary
+		"""
+		if not self.template.field_mappings:
+			return {}
+
+		try:
+			return json.loads(self.template.field_mappings)
+		except json.JSONDecodeError:
+			frappe.log_error("Invalid field mappings JSON", "PrintNebula Field Mappings")
+			return {}
+
+	def combine_sections(self, header: str, body: str, footer: str) -> str:
+		"""
+		Combine header, body, and footer into final HTML
+
+		Args:
+			header: Header HTML
+			body: Body HTML
+			footer: Footer HTML
+
+		Returns:
+			Combined HTML document
+		"""
+		watermark_html = ""
+		if self.template.enable_watermark:
+			if self.template.watermark_image:
+				watermark_html = f'<div class="printnebula-watermark"><img src="{self.template.watermark_image}" style="max-width:100%; max-height:100%;"/></div>'
+			elif self.template.watermark_text:
+				watermark_html = f'<div class="printnebula-watermark text-watermark">{self.template.watermark_text}</div>'
+
+		html_template = f"""
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>{self.template.template_name}</title>
+	<style>
+		@page {{
+			size: {self.template.page_size} {self.template.page_orientation.lower()};
+			margin-top: {self.template.margin_top}mm;
+			margin-bottom: {self.template.margin_bottom}mm;
+			margin-left: {self.template.margin_left}mm;
+			margin-right: {self.template.margin_right}mm;
+		}}
+
+		body {{
+			font-family: Arial, sans-serif;
+			font-size: 12pt;
+			line-height: 1.6;
+		}}
+
+		.header {{
+			margin-bottom: 20px;
+		}}
+
+		.footer {{
+			margin-top: 20px;
+		}}
+
+		table {{
+			width: 100%;
+			border-collapse: collapse;
+		}}
+
+		table, th, td {{
+			border: 1px solid #ddd;
+		}}
+
+		th, td {{
+			padding: 8px;
+			text-align: left;
+		}}
+
+		th {{
+			background-color: #f2f2f2;
+		}}
+
+		.printnebula-watermark {{
+			position: fixed;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
+			opacity: 0.15;
+			z-index: -1;
+			pointer-events: none;
+			text-align: center;
+			width: 100%;
+		}}
+
+		.text-watermark {{
+			font-size: 80pt;
+			font-weight: bold;
+			color: #000;
+			transform: translate(-50%, -50%) rotate(-45deg);
+			white-space: nowrap;
+		}}
+	</style>
+</head>
+<body>
+	{watermark_html}
+	{f'<div class="header">{header}</div>' if self.template.enable_header_footer and header else ''}
+
+	<div class="body">
+		{body}
+	</div>
+
+	{f'<div class="footer">{footer}</div>' if self.template.enable_header_footer and footer else ''}
+</body>
+</html>
+"""
+		return html_template
+
+	def apply_custom_css(self, html: str) -> str:
+		"""
+		Apply custom CSS to HTML
+
+		Args:
+			html: HTML content
+
+		Returns:
+			HTML with custom CSS injected
+		"""
+		# Find </style> tag and insert custom CSS before it
+		custom_css = self.template.custom_css
+
+		if "</style>" in html:
+			html = html.replace("</style>", f"\n{custom_css}\n</style>")
+
+		return html
+
+	def get_preview_html(self, docname: str = None, sample_data: Dict = None) -> str:
+		"""
+		Generate preview HTML
+
+		Args:
+			docname: Document name for preview (optional)
+			sample_data: Sample data for preview (optional)
+
+		Returns:
+			Preview HTML
+		"""
+		if docname:
+			return self.render(docname)
+		elif sample_data:
+			# Render with sample data
+			field_mappings = self.parse_field_mappings()
+
+			header_html = self.render_section(
+				self.template.header or "",
+				sample_data,
+				field_mappings
+			)
+
+			body_html = self.render_section(
+				self.template.body or "",
+				sample_data,
+				field_mappings
+			)
+
+			footer_html = self.render_section(
+				self.template.footer or "",
+				sample_data,
+				field_mappings
+			)
+
+			return self.combine_sections(header_html, body_html, footer_html)
+		else:
+			frappe.throw("Either docname or sample_data must be provided for preview")
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/engine/resolver.py
+# Copyright (c) 2025, BluePhoenix and contributors
+# For license information, please see license.txt
+
+import frappe
+from typing import Dict, Any, List
+
+
+class FieldResolver:
+	"""Resolver for fetching field values and metadata from documents"""
+
+	def __init__(self, doctype: str):
+		"""
+		Initialize resolver for a doctype
+
+		Args:
+			doctype: Doctype name
+		"""
+		self.doctype = doctype
+		self.meta = frappe.get_meta(doctype)
+
+	def get_document(self, docname: str) -> Dict[str, Any]:
+		"""
+		Get complete document data
+
+		Args:
+			docname: Document name
+
+		Returns:
+			Document as dictionary
+		"""
+		doc = frappe.get_doc(self.doctype, docname)
+		return doc.as_dict()
+
+	def get_document_with_children(self, docname: str) -> Dict[str, Any]:
+		"""
+		Get document with all child table data
+
+		Args:
+			docname: Document name
+
+		Returns:
+			Document with child tables as dictionary
+		"""
+		doc = frappe.get_doc(self.doctype, docname)
+		doc_dict = doc.as_dict()
+
+		# Get all child table fields
+		child_fields = self.get_child_table_fields()
+
+		for field in child_fields:
+			fieldname = field.fieldname
+			if hasattr(doc, fieldname):
+				child_data = getattr(doc, fieldname)
+				doc_dict[fieldname] = [row.as_dict() for row in child_data]
+
+		return doc_dict
+
+	def get_field_list(self) -> List[Dict[str, str]]:
+		"""
+		Get list of all fields in doctype
+
+		Returns:
+			List of field dictionaries with name, label, type
+		"""
+		fields = []
+
+		for field in self.meta.fields:
+			if field.fieldtype not in ['Section Break', 'Column Break', 'Tab Break', 'HTML']:
+				fields.append({
+					'fieldname': field.fieldname,
+					'label': field.label,
+					'fieldtype': field.fieldtype,
+					'options': field.options
+				})
+
+		return fields
+
+	def get_child_table_fields(self) -> List[Any]:
+		"""
+		Get all child table fields
+
+		Returns:
+			List of child table field objects
+		"""
+		child_fields = []
+
+		for field in self.meta.fields:
+			if field.fieldtype == 'Table':
+				child_fields.append(field)
+
+		return child_fields
+
+	def get_field_meta(self, fieldname: str) -> Dict[str, Any]:
+		"""
+		Get metadata for a specific field
+
+		Args:
+			fieldname: Field name
+
+		Returns:
+			Field metadata dictionary
+		"""
+		field = self.meta.get_field(fieldname)
+
+		if field:
+			return {
+				'fieldname': field.fieldname,
+				'label': field.label,
+				'fieldtype': field.fieldtype,
+				'options': field.options,
+				'reqd': field.reqd,
+				'read_only': field.read_only,
+				'default': field.default
+			}
+
+		return None
+
+	def validate_field_exists(self, fieldname: str) -> bool:
+		"""
+		Check if field exists in doctype
+
+		Args:
+			fieldname: Field name
+
+		Returns:
+			True if field exists, False otherwise
+		"""
+		return self.meta.get_field(fieldname) is not None
+
+	def get_link_field_value(self, doc: Dict, fieldname: str, target_field: str) -> Any:
+		"""
+		Get value from linked document
+
+		Args:
+			doc: Source document
+			fieldname: Link field name in source
+			target_field: Field to fetch from linked document
+
+		Returns:
+			Value from linked document
+		"""
+		field_meta = self.meta.get_field(fieldname)
+
+		if not field_meta or field_meta.fieldtype != 'Link':
+			return None
+
+		link_value = doc.get(fieldname)
+		if not link_value:
+			return None
+
+		try:
+			linked_doc = frappe.get_doc(field_meta.options, link_value)
+			return linked_doc.get(target_field)
+		except Exception:
+			return None
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/engine/validator.py
+# Copyright (c) 2025, BluePhoenix and contributors
+# For license information, please see license.txt
+
+import frappe
+import json
+import re
+from jinja2 import Environment, BaseLoader, TemplateSyntaxError
+from typing import Dict, List
+
+
+class TemplateValidator:
+	"""Validator for template syntax and fields"""
+
+	def __init__(self, template):
+		"""
+		Initialize validator with template
+
+		Args:
+			template: PrintNebula Template document
+		"""
+		self.template = template
+		self.errors = []
+		self.warnings = []
+		self.meta = frappe.get_meta(template.doctype_link) if template.doctype_link else None
+
+	def validate(self) -> Dict:
+		"""
+		Validate template
+
+		Returns:
+			Dictionary with validation results
+		"""
+		self.errors = []
+		self.warnings = []
+
+		# Validate basic info
+		self.validate_basic_info()
+
+		# Validate field mappings
+		self.validate_field_mappings()
+
+		# Validate child table config
+		self.validate_child_table_config()
+
+		# Validate Jinja2 syntax
+		self.validate_jinja_syntax()
+
+		# Validate field references
+		self.validate_field_references()
+
+		# Validate conditions
+		self.validate_conditions_syntax()
+
+		return {
+			'valid': len(self.errors) == 0,
+			'errors': self.errors,
+			'warnings': self.warnings
+		}
+
+	def validate_basic_info(self):
+		"""Validate basic template information"""
+		if not self.template.template_name:
+			self.errors.append("Template name is required")
+
+		if not self.template.doctype_link:
+			self.errors.append("Doctype link is required")
+
+		if not self.template.header and not self.template.body and not self.template.footer:
+			self.warnings.append("Template has no content in any section")
+
+	def validate_field_mappings(self):
+		"""Validate field mappings JSON"""
+		if not self.template.field_mappings:
+			return
+
+		try:
+			mappings = json.loads(self.template.field_mappings)
+
+			if not isinstance(mappings, dict):
+				self.errors.append("Field mappings must be a JSON object")
+				return
+
+			# Validate mapped fields exist
+			for alias, fieldname in mappings.items():
+				if isinstance(fieldname, str) and self.meta:
+					if not self.meta.get_field(fieldname):
+						self.warnings.append(f"Mapped field '{fieldname}' (alias: '{alias}') not found in {self.template.doctype_link}")
+
+		except json.JSONDecodeError as e:
+			self.errors.append(f"Invalid JSON in field mappings: {str(e)}")
+
+	def validate_child_table_config(self):
+		"""Validate child table configuration"""
+		if not self.template.child_table_config:
+			return
+
+		try:
+			config = json.loads(self.template.child_table_config)
+
+			if not isinstance(config, dict):
+				self.errors.append("Child table config must be a JSON object")
+				return
+
+			# Validate child tables exist
+			if self.meta:
+				for table_name, fields in config.items():
+					table_field = self.meta.get_field(table_name)
+
+					if not table_field:
+						self.warnings.append(f"Child table '{table_name}' not found in {self.template.doctype_link}")
+					elif table_field.fieldtype != 'Table':
+						self.errors.append(f"Field '{table_name}' is not a table field")
+
+		except json.JSONDecodeError as e:
+			self.errors.append(f"Invalid JSON in child table config: {str(e)}")
+
+	def validate_jinja_syntax(self):
+		"""Validate Jinja2 syntax in template sections"""
+		sections = {
+			'Header': self.template.header,
+			'Body': self.template.body,
+			'Footer': self.template.footer
+		}
+
+		env = Environment(loader=BaseLoader())
+
+		for section_name, content in sections.items():
+			if not content:
+				continue
+
+			try:
+				# Try to parse Jinja2 template
+				env.from_string(content)
+			except TemplateSyntaxError as e:
+				self.errors.append(f"{section_name} has Jinja2 syntax error: {str(e)}")
+
+	def validate_field_references(self):
+		"""Validate that fields referenced in template exist"""
+		if not self.meta:
+			return
+
+		# Get all field references from template
+		all_content = f"{self.template.header or ''} {self.template.body or ''} {self.template.footer or ''}"
+
+		# Find all {fieldname} references
+		pattern = r'\{([a-zA-Z0-9_]+)(?:\|[^}]+)?\}'
+		matches = re.findall(pattern, all_content)
+
+		# Check each field
+		for fieldname in set(matches):
+			# Skip Jinja2 keywords
+			if fieldname in ['for', 'if', 'else', 'endif', 'endfor', 'row', 'loop']:
+				continue
+
+			# Check if field exists
+			if not self.meta.get_field(fieldname):
+				# Check if it's a standard field
+				if fieldname not in ['name', 'owner', 'creation', 'modified', 'modified_by', 'docstatus']:
+					self.warnings.append(f"Field '{fieldname}' not found in {self.template.doctype_link}")
+
+	def validate_conditions_syntax(self):
+		"""Validate conditions JSON syntax"""
+		if not self.template.conditions:
+			return
+
+		try:
+			conditions = json.loads(self.template.conditions)
+
+			if not isinstance(conditions, list):
+				self.errors.append("Conditions must be a JSON array")
+				return
+
+			# Validate each condition
+			for i, condition in enumerate(conditions):
+				if not isinstance(condition, dict):
+					self.errors.append(f"Condition {i+1} must be a JSON object")
+					continue
+
+				if 'section' not in condition:
+					self.errors.append(f"Condition {i+1} missing 'section' field")
+
+				if 'show_if' not in condition:
+					self.errors.append(f"Condition {i+1} missing 'show_if' field")
+
+		except json.JSONDecodeError as e:
+			self.errors.append(f"Invalid JSON in conditions: {str(e)}")
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/engine/word_renderer.py
+# Copyright (c) 2025, BluePhoenix and contributors
+# For license information, please see license.txt
+
+import frappe
+from docxtpl import DocxTemplate
+from .resolver import FieldResolver
+import os
+
+class WordRenderer:
+	"""Engine for rendering Microsoft Word (.docx) templates"""
+
+	def __init__(self, template_name: str):
+		self.template = frappe.get_doc("PrintNebula Template", template_name)
+		self.resolver = FieldResolver(self.template.doctype_link)
+
+	def render(self, docname: str, output_path: str):
+		if not self.template.word_template:
+			frappe.throw("Word template file not attached.")
+
+		file_doc = frappe.get_doc("File", {"file_url": self.template.word_template})
+		word_file_path = file_doc.get_full_path()
+
+		if not os.path.exists(word_file_path):
+			frappe.throw(f"Word template file does not exist at {word_file_path}")
+
+		# Generate the template
+		tpl = DocxTemplate(word_file_path)
+
+		# Fetch actual record context
+		doc_data = self.resolver.get_document_with_children(docname)
+
+		# Replace variables inside the DOCX using jinja2 context internally supported by docxtpl
+		tpl.render(doc_data)
+
+		# Save directly to requested path
+		tpl.save(output_path)
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/f_printnebula/api/batch_api.py
+# Copyright (c) 2025, BluePhoenix and contributors
+# For license information, please see license.txt
+
+import frappe
+import json
+import os
+import zipfile
+from frappe.utils import get_files_path
+
+@frappe.whitelist()
+def generate_batch(template_name, doctype, docnames):
+	"""Initialize and queue a background batch PDF generation job"""
+	docnames_list = json.loads(docnames)
+	job_id = frappe.generate_hash(length=10)
+
+	frappe.cache().set_value(f"printnebula_batch_{job_id}", {
+		"status": "Starting",
+		"progress": 0,
+		"status_message": "Initializing batch generation...",
+		"file_url": ""
+	}, expires_in_sec=86400)
+
+	frappe.enqueue(
+		"f_printnebula.f_printnebula.api.batch_api.process_batch",
+		queue="long",
+		template_name=template_name,
+		doctype=doctype,
+		docnames=docnames_list,
+		job_id=job_id,
+		user=frappe.session.user
+	)
+
+	return {"job_id": job_id}
+
+@frappe.whitelist()
+def get_job_status(job_id):
+	"""Return the current progress status of a running batch job"""
+	status = frappe.cache().get_value(f"printnebula_batch_{job_id}")
+	if status:
+		return status
+	return {"status": "Unknown", "progress": 0, "status_message": "Job not found or expired"}
+
+def process_batch(template_name, doctype, docnames, job_id, user):
+	"""Background worker logic looping through documents and collecting outputs into a ZIP"""
+	frappe.set_user(user)
+	try:
+		total = len(docnames)
+		files = []
+
+		from f_printnebula.utils.pdf_generator import PDFGenerator
+		generator = PDFGenerator(template_name)
+
+		for i, docname in enumerate(docnames):
+			# Update progress hook
+			progress = (i / total) * 90
+			frappe.cache().set_value(f"printnebula_batch_{job_id}", {
+				"status": "In Progress",
+				"progress": progress,
+				"status_message": f"Generating {i+1} of {total}: {docname}",
+				"file_url": ""
+			}, expires_in_sec=86400)
+
+			try:
+				result = generator.generate(docname=docname, output_format="pdf", save_file=True)
+				file_url = result.get('file_url')
+				if file_url:
+					file_doc = frappe.get_doc("File", {"file_url": file_url})
+					files.append((file_doc.file_name, file_doc.get_full_path()))
+			except Exception as e:
+				frappe.log_error(f"Batch Gen Error for {docname}: {str(e)}", f"Batch {job_id}")
+
+		# Create ZIP archive
+		frappe.cache().set_value(f"printnebula_batch_{job_id}", {
+			"status": "In Progress",
+			"progress": 95,
+			"status_message": "Zipping output files...",
+			"file_url": ""
+		}, expires_in_sec=86400)
+
+		zip_filename = f"PrintNebula_Batch_{job_id}.zip"
+		zip_path = os.path.join(get_files_path(), zip_filename)
+
+		with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+			for file_name, file_path in files:
+				if os.path.exists(file_path):
+					zipf.write(file_path, arcname=file_name)
+
+		# Save zip securely to Frappe Files architecture
+		file_doc = frappe.get_doc({
+			"doctype": "File",
+			"file_name": zip_filename,
+			"is_private": 1,
+			"file_url": f"/private/files/{zip_filename}",
+			"attached_to_doctype": "PrintNebula Template",
+			"attached_to_name": template_name
+		})
+		file_doc.insert(ignore_permissions=True)
+		frappe.db.commit()
+
+		# Flag Complete state containing the download payload
+		frappe.cache().set_value(f"printnebula_batch_{job_id}", {
+			"status": "Completed",
+			"progress": 100,
+			"status_message": "Completed successfully.",
+			"file_url": file_doc.file_url
+		}, expires_in_sec=86400)
+
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(f"Batch generation failed: {str(e)}", f"Batch {job_id}")
+		frappe.cache().set_value(f"printnebula_batch_{job_id}", {
+			"status": "Failed",
+			"progress": 100,
+			"status_message": f"Failed: {str(e)}",
+			"file_url": ""
+		}, expires_in_sec=86400)
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/f_printnebula/api/scheduler.py
+import frappe
+import json
+
+def execute_scheduled_generations(frequency):
+	"""
+	Iterate over all active templates matching the frequency and dispatch batch generation jobs
+	"""
+	templates = frappe.get_all(
+		"PrintNebula Template",
+		filters={"is_active": 1, "enable_scheduled_generation": 1, "schedule_frequency": frequency},
+		fields=["name", "doctype_link", "schedule_filters"]
+	)
+
+	for tmpl in templates:
+		filters = {}
+		if tmpl.schedule_filters:
+			try:
+				filters = json.loads(tmpl.schedule_filters)
+			except Exception as e:
+				frappe.log_error(f"Invalid JSON filters for template {tmpl.name} schedule", "PrintNebula Scheduler")
+				continue
+
+		try:
+			# Pull matching records based on the JSON filters
+			docs = frappe.get_all(tmpl.doctype_link, filters=filters, pluck="name")
+			if not docs:
+				continue
+
+			# Hand off the target array to our Batch UI engine asynchronously!
+			frappe.enqueue(
+				"f_printnebula.f_printnebula.api.batch_api.process_batch",
+				queue="long",
+				job_id=f"scheduled_{tmpl.name}_{frappe.utils.now().replace(':', '-')}".replace(' ', '_'),
+				template=tmpl.name,
+				doctype=tmpl.doctype_link,
+				docnames=json.dumps(docs)
+			)
+			frappe.logger("printnebula").info(f"Queued scheduled {frequency} generation for {tmpl.name} ({len(docs)} documents)")
+		except Exception as e:
+			frappe.log_error(f"Scheduled generation failed for {tmpl.name}: {str(e)}", "PrintNebula Scheduler")
+
+def run_daily():
+	execute_scheduled_generations("Daily")
+
+def run_weekly():
+	execute_scheduled_generations("Weekly")
+
+def run_monthly():
+	execute_scheduled_generations("Monthly")
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/f_printnebula/doctype/printnebula_generation_log/printnebula_generation_log.py
+# Copyright (c) 2025, BluePhoenix and contributors
+# For license information, please see license.txt
+
+from frappe.model.document import Document
+
+
+class PrintNebulaGenerationLog(Document):
+	"""Log entry for tracking PDF generation"""
+	pass
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/f_printnebula/doctype/printnebula_log/printnebula_log.py
+# Copyright (c) 2026, BluePhoenix and contributors
+# For license information, please see license.txt
+
+# import frappe
+from frappe.model.document import Document
+
+
+class PrintNebulaLog(Document):
+	pass
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/f_printnebula/doctype/printnebula_log/test_printnebula_log.py
+# Copyright (c) 2026, BluePhoenix and Contributors
+# See license.txt
+
+# import frappe
+from frappe.tests import IntegrationTestCase
+
+
+# On IntegrationTestCase, the doctype test records and all
+# link-field test record dependencies are recursively loaded
+# Use these module variables to add/remove to/from that list
+EXTRA_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
+IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
+
+
+
+class IntegrationTestPrintNebulaLog(IntegrationTestCase):
+	"""
+	Integration tests for PrintNebulaLog.
+	Use this class for testing interactions between multiple components.
+	"""
+
+	pass
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/f_printnebula/doctype/printnebula_template/printnebula_template.js
+// Copyright (c) 2025, BluePhoenix and contributors
+// For license information, please see license.txt
+
+frappe.ui.form.on("PrintNebula Template", {
+	template_type(frm) {
+		let is_word = frm.doc.template_type === "Word Document";
+		frm.toggle_display(["editor_sections_tab", "styling_tab", "advanced_tab", "conditional_logic_section"], !is_word);
+	},
+	refresh(frm) {
+		frm.trigger('template_type');
+
+		// Add Live Preview button
+		frm.add_custom_button(__("Live Preview"), () => {
+			let docname = frm.doc.name;
+			if (!docname && frm.is_new()) {
+				frappe.msgprint(__("Please save the template first before previewing."));
+				return;
+			}
+
+			// Open a dialog or new window with preview
+			let d = new frappe.ui.Dialog({
+				title: __("Live Preview"),
+				size: "extra-large",
+				fields: [
+					{
+						fieldtype: "HTML",
+						fieldname: "preview_html"
+					}
+				]
+			});
+
+			d.show();
+			d.fields_dict.preview_html.$wrapper.html(`<div class="text-center p-5"><span class="text-muted">${__("Loading preview...")}</span></div>`);
+
+			frappe.call({
+				method: "f_printnebula.api.template_api.preview_template",
+				args: {
+					template: docname
+				},
+				callback: function(r) {
+					if (r.message && r.message.html) {
+						d.fields_dict.preview_html.$wrapper.html(`
+							<div style="border: 1px solid #d1d8dd; border-radius: 4px; padding: 20px; max-height: 70vh; overflow-y: auto; background-color: #fff;">
+								${r.message.html}
+							</div>
+						`);
+					} else {
+						d.fields_dict.preview_html.$wrapper.html(`<div class="text-center p-5 text-danger">${__("Failed to load preview.")}</div>`);
+					}
+				}
+			});
+		}, __("Actions"));
+
+		// Add Field Browser button
+		frm.add_custom_button(__("Field Browser"), () => {
+			if (!frm.doc.doctype_link) {
+				frappe.msgprint(__("Please select a Doctype first."));
+				return;
+			}
+
+			let d = new frappe.ui.Dialog({
+				title: __("Available Fields for {0}", [frm.doc.doctype_link]),
+				fields: [
+					{
+						fieldtype: "HTML",
+						fieldname: "fields_html"
+					}
+				]
+			});
+
+			d.show();
+			d.fields_dict.fields_html.$wrapper.html(`<div class="text-center p-5"><span class="text-muted">${__("Loading fields...")}</span></div>`);
+
+			frappe.model.with_doctype(frm.doc.doctype_link, () => {
+				let meta = frappe.get_meta(frm.doc.doctype_link);
+				let fields = meta.fields.filter(df => !["Section Break", "Column Break", "Tab Break", "HTML"].includes(df.fieldtype));
+
+				let html = `<div class="p-3" style="max-height: 60vh; overflow-y: auto;">
+					<table class="table table-bordered table-hover">
+						<thead>
+							<tr>
+								<th>${__("Label")}</th>
+								<th>${__("Variable Tag")}</th>
+								<th>${__("Type")}</th>
+							</tr>
+						</thead>
+						<tbody>`;
+
+				html += `
+					<tr>
+						<td><strong>Name (ID)</strong></td>
+						<td><code>{name}</code></td>
+						<td><span class="badge badge-default">Data</span></td>
+					</tr>
+				`;
+
+				fields.forEach(f => {
+					html += `
+						<tr>
+							<td>${f.label || f.fieldname}</td>
+							<td><code>{${f.fieldname}}</code></td>
+							<td><span class="badge badge-default">${f.fieldtype}</span></td>
+						</tr>
+					`;
+				});
+
+				html += `</tbody></table></div>`;
+
+				d.fields_dict.fields_html.$wrapper.html(html);
+			});
+		}, __("Actions"));
+	},
+
+	doctype_link(frm) {
+		// When doctype changes, maybe clear preview
+	}
+});
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/f_printnebula/doctype/printnebula_template/printnebula_template.py
+# Copyright (c) 2025, BluePhoenix and contributors
+# For license information, please see license.txt
+
+import frappe
+from frappe.model.document import Document
+import json
+
+
+class PrintNebulaTemplate(Document):
+	"""Controller class for PrintNebula Template doctype"""
+
+	def before_save(self):
+		"""Validate and process template before saving"""
+		self.validate_field_mappings()
+		self.validate_child_table_config()
+		self.validate_conditions()
+		self.set_created_by()
+
+	def validate_field_mappings(self):
+		"""Validate field mappings JSON"""
+		if self.field_mappings:
+			try:
+				mappings = json.loads(self.field_mappings)
+				if not isinstance(mappings, dict):
+					frappe.throw("Field Mappings must be a JSON object")
+			except json.JSONDecodeError as e:
+				frappe.throw(f"Invalid JSON in Field Mappings: {str(e)}")
+
+	def validate_child_table_config(self):
+		"""Validate child table configuration JSON"""
+		if self.child_table_config:
+			try:
+				config = json.loads(self.child_table_config)
+				if not isinstance(config, dict):
+					frappe.throw("Child Table Config must be a JSON object")
+			except json.JSONDecodeError as e:
+				frappe.throw(f"Invalid JSON in Child Table Config: {str(e)}")
+
+	def validate_conditions(self):
+		"""Validate conditions JSON"""
+		if self.conditions:
+			try:
+				conditions = json.loads(self.conditions)
+				if not isinstance(conditions, list):
+					frappe.throw("Conditions must be a JSON array")
+			except json.JSONDecodeError as e:
+				frappe.throw(f"Invalid JSON in Conditions: {str(e)}")
+
+	def set_created_by(self):
+		"""Set created_by field on first save"""
+		if not self.created_by:
+			self.created_by = frappe.session.user
+
+	def on_update(self):
+		"""Handle template updates"""
+		self.update_default_template()
+		self.sync_frappe_print_format()
+
+	def on_trash(self):
+		self.delete_frappe_print_format()
+
+	def get_preview_html(self, docname):
+		"""Returns generated HTML for frappe Print Format integration"""
+		from f_printnebula.engine.renderer import TemplateRenderer
+		renderer = TemplateRenderer(self.name)
+		return renderer.render(docname)
+
+	def sync_frappe_print_format(self):
+		"""Automatically create/update standard Frappe Print Format for native integration"""
+		print_format_name = f"PrintNebula - {self.template_name}"
+
+		# Prevent recursive saving or missing fields
+		if not self.template_name or not self.doctype_link:
+			return
+
+		if not frappe.db.exists("Print Format", print_format_name):
+			doc = frappe.new_doc("Print Format")
+			doc.name = print_format_name
+			doc.doc_type = self.doctype_link
+			doc.custom_format = 1
+			doc.print_format_type = "Jinja"
+			doc.module = "F Printnebula" # Link to our module
+		else:
+			doc = frappe.get_doc("Print Format", print_format_name)
+
+		doc.doc_type = self.doctype_link
+
+		if self.get("template_type") == "Word Document":
+			doc.html = f"""<div style="text-align: center; padding: 50px;">
+				<h3>Generate Word Document</h3>
+				<p>This is a Word Document Template.</p>
+				<p>Please use the PrintNebula APIs directly to output DOCX payloads.</p>
+			</div>"""
+		else:
+			doc.html = f"{{{{ frappe.get_doc('PrintNebula Template', '{self.name}').get_preview_html(doc.name) }}}}"
+
+		doc.save(ignore_permissions=True)
+
+	def delete_frappe_print_format(self):
+		print_format_name = f"PrintNebula - {self.template_name}"
+		if frappe.db.exists("Print Format", print_format_name):
+			frappe.delete_doc("Print Format", print_format_name, ignore_permissions=True)
+
+	def update_default_template(self):
+		"""If this is set as default, unset other default templates for the same doctype"""
+		if self.is_default:
+			frappe.db.sql("""
+				UPDATE `tabPrintNebula Template`
+				SET is_default = 0
+				WHERE doctype_link = %s AND name != %s
+			""", (self.doctype_link, self.name))
+
+	def increment_usage_count(self):
+		"""Increment usage counter"""
+		self.usage_count = (self.usage_count or 0) + 1
+		self.last_used = frappe.utils.now()
+		self.save(ignore_permissions=True)
+
+
+@frappe.whitelist()
+def get_template_for_doctype(doctype, template_name=None):
+	"""
+	Get template for a specific doctype
+
+	Args:
+		doctype (str): The doctype name
+		template_name (str, optional): Specific template name. If not provided, returns default template.
+
+	Returns:
+		dict: Template document as dict
+	"""
+	filters = {
+		"doctype_link": doctype,
+		"is_active": 1
+	}
+
+	if template_name:
+		filters["name"] = template_name
+	else:
+		filters["is_default"] = 1
+
+	template = frappe.get_all(
+		"PrintNebula Template",
+		filters=filters,
+		fields=["*"],
+		limit=1
+	)
+
+	if template:
+		return template[0]
+
+	frappe.throw(f"No active template found for {doctype}")
+
+
+@frappe.whitelist()
+def get_templates_for_doctype(doctype):
+	"""
+	Get all templates for a specific doctype
+
+	Args:
+		doctype (str): The doctype name
+
+	Returns:
+		list: List of template documents
+	"""
+	templates = frappe.get_all(
+		"PrintNebula Template",
+		filters={
+			"doctype_link": doctype,
+			"is_active": 1
+		},
+		fields=["name", "template_name", "is_default", "description"],
+		order_by="is_default DESC, template_name ASC"
+	)
+
+	return templates
+
+
+@frappe.whitelist()
+def clone_template(template_name, new_name):
+	"""
+	Clone an existing template
+
+	Args:
+		template_name (str): Source template name
+		new_name (str): New template name
+
+	Returns:
+		dict: New template document
+	"""
+	source = frappe.get_doc("PrintNebula Template", template_name)
+
+	# Create new template
+	new_template = frappe.copy_doc(source)
+	new_template.template_name = new_name
+	new_template.is_default = 0
+	new_template.parent_template = template_name
+	new_template.usage_count = 0
+	new_template.last_used = None
+	new_template.change_log = f"Cloned from {template_name}"
+
+	new_template.insert()
+
+	return new_template.as_dict()
+
+
+@frappe.whitelist()
+def validate_template_syntax(template_name):
+	"""
+	Validate template syntax and fields
+
+	Args:
+		template_name (str): Template name to validate
+
+	Returns:
+		dict: Validation result with errors and warnings
+	"""
+	from f_printnebula.engine.validator import TemplateValidator
+
+	template = frappe.get_doc("PrintNebula Template", template_name)
+	validator = TemplateValidator(template)
+
+	return validator.validate()
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/f_printnebula/doctype/printnebula_template_role/printnebula_template_role.py
+# Copyright (c) 2025, BluePhoenix and contributors
+# For license information, please see license.txt
+
+from frappe.model.document import Document
+
+
+class PrintNebulaTemplateRole(Document):
+	"""Child table for template role permissions"""
+	pass
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/f_printnebula/doctype/printnebula_template_version/printnebula_template_version.py
+# Copyright (c) 2025, BluePhoenix and contributors
+# For license information, please see license.txt
+
+from frappe.model.document import Document
+
+
+class PrintNebulaTemplateVersion(Document):
+	"""Version control for templates"""
+	pass
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/f_printnebula/page/printnebula_batch/printnebula_batch.js
+frappe.pages['printnebula_batch'].on_page_load = function(wrapper) {
+	var page = frappe.ui.make_app_page({
+		parent: wrapper,
+		title: 'PrintNebula Batch Generator',
+		single_column: true
+	});
+
+	page.set_secondary_action('Refresh', () => render_ui(page), 'refresh');
+
+	render_ui(page);
+}
+
+function render_ui(page) {
+	$(page.body).empty();
+
+	let container = $(`
+		<div class="printnebula-batch-app" style="margin: 20px;">
+			<div class="row">
+				<div class="col-md-4">
+					<div class="form-group">
+						<label>1. Select Doctype</label>
+						<select id="pn-doctype-select" class="form-control"></select>
+					</div>
+				</div>
+				<div class="col-md-4">
+					<div class="form-group">
+						<label>2. Select Template</label>
+						<select id="pn-template-select" class="form-control" disabled></select>
+					</div>
+				</div>
+				<div class="col-md-4">
+					<div class="form-group">
+						<label>&nbsp;</label>
+						<br>
+						<button id="pn-fetch-docs" class="btn btn-primary" disabled>Fetch Documents</button>
+					</div>
+				</div>
+			</div>
+
+			<div id="pn-progress-container" style="display: none; margin-top: 20px;">
+				<h5>Generation Progress</h5>
+				<div class="progress">
+				  <div id="pn-progress-bar" class="progress-bar progress-bar-striped active" role="progressbar" style="width: 0%">
+				    0%
+				  </div>
+				</div>
+				<p id="pn-progress-text" class="text-muted mt-2">Initializing...</p>
+			</div>
+
+			<div id="pn-docs-container" style="margin-top: 30px;">
+				<table class="table table-bordered">
+					<thead>
+						<tr>
+							<th style="width: 50px;"><input type="checkbox" id="pn-select-all"></th>
+							<th>Document Name</th>
+							<th>Status</th>
+						</tr>
+					</thead>
+					<tbody id="pn-docs-body">
+						<tr><td colspan="3" class="text-center text-muted">Select a Doctype and click Fetch</td></tr>
+					</tbody>
+				</table>
+			</div>
+
+			<div style="margin-top: 20px;">
+				<button id="pn-generate-batch" class="btn btn-success" disabled>Generate PDFs</button>
+			</div>
+		</div>
+	`).appendTo(page.body);
+
+	// Load Doctypes with templates
+	frappe.call({
+		method: 'frappe.client.get_list',
+		args: {
+			doctype: 'PrintNebula Template',
+			fields: ['doctype_link'],
+			limit: 0
+		},
+		callback: function(r) {
+			if (r.message) {
+				let doctypes = [...new Set(r.message.map(d => d.doctype_link))];
+				let html = '<option value="">-- Select Doctype --</option>';
+				doctypes.forEach(d => { html += `<option value="${d}">${d}</option>`; });
+				$('#pn-doctype-select').html(html);
+			}
+		}
+	});
+
+	$('#pn-doctype-select').on('change', function() {
+		let doctype = $(this).val();
+		if (!doctype) {
+			$('#pn-template-select').prop('disabled', true).html('');
+			$('#pn-fetch-docs').prop('disabled', true);
+			return;
+		}
+
+		frappe.call({
+			method: 'f_printnebula.f_printnebula.api.template_api.get_templates_for_doctype',
+			args: { doctype: doctype },
+			callback: function(r) {
+				if (r.message) {
+					let html = '<option value="">-- Select Template --</option>';
+					r.message.forEach(t => { html += `<option value="${t.name}">${t.template_name}</option>`; });
+					$('#pn-template-select').html(html).prop('disabled', false);
+					$('#pn-fetch-docs').prop('disabled', false);
+				}
+			}
+		});
+	});
+
+	$('#pn-fetch-docs').on('click', function() {
+		let doctype = $('#pn-doctype-select').val();
+		if (!doctype) return;
+
+		$('#pn-docs-body').html('<tr><td colspan="3" class="text-center">Loading...</td></tr>');
+
+		frappe.call({
+			method: 'frappe.client.get_list',
+			args: {
+				doctype: doctype,
+				fields: ['name'],
+				limit: 50,
+				order_by: 'creation desc'
+			},
+			callback: function(r) {
+				if (r.message && r.message.length > 0) {
+					let html = '';
+					r.message.forEach(d => {
+						html += `
+							<tr>
+								<td><input type="checkbox" class="pn-doc-row" value="${d.name}"></td>
+								<td>${d.name}</td>
+								<td class="pn-status">Pending</td>
+							</tr>
+						`;
+					});
+					$('#pn-docs-body').html(html);
+					$('#pn-generate-batch').prop('disabled', false);
+				} else {
+					$('#pn-docs-body').html('<tr><td colspan="3" class="text-center">No documents found.</td></tr>');
+					$('#pn-generate-batch').prop('disabled', true);
+				}
+			}
+		});
+	});
+
+	$('#pn-select-all').on('change', function() {
+		$('.pn-doc-row').prop('checked', $(this).prop('checked'));
+	});
+
+	$('#pn-generate-batch').on('click', function() {
+		let selected = [];
+		$('.pn-doc-row:checked').each(function() { selected.push($(this).val()); });
+
+		let template = $('#pn-template-select').val();
+		let doctype = $('#pn-doctype-select').val();
+
+		if (selected.length === 0) {
+			frappe.msgprint("Please select at least one document.");
+			return;
+		}
+		if (!template) {
+			frappe.msgprint("Please select a template.");
+			return;
+		}
+
+		$('#pn-progress-container').show();
+		$('#pn-generate-batch').prop('disabled', true);
+
+		frappe.call({
+			method: 'f_printnebula.f_printnebula.api.batch_api.generate_batch',
+			args: {
+				template_name: template,
+				doctype: doctype,
+				docnames: JSON.stringify(selected)
+			},
+			callback: function(r) {
+				if (r.message && r.message.job_id) {
+					monitor_job(r.message.job_id);
+				} else {
+					frappe.msgprint("Failed to start batch job.");
+					$('#pn-generate-batch').prop('disabled', false);
+				}
+			}
+		});
+	});
+
+	function monitor_job(job_id) {
+		let interval = setInterval(() => {
+			frappe.call({
+				method: 'f_printnebula.f_printnebula.api.batch_api.get_job_status',
+				args: { job_id: job_id },
+				callback: function(r) {
+					if (r.message) {
+						let progress = r.message.progress;
+						$('#pn-progress-bar').css('width', progress + '%').text(Math.round(progress) + '%');
+						$('#pn-progress-text').text(r.message.status_message);
+
+						if (r.message.status === 'Completed') {
+							clearInterval(interval);
+							frappe.msgprint(`Batch Generation Complete. <a href="${r.message.file_url}" target="_blank">Download ZIP</a>`);
+							$('#pn-generate-batch').prop('disabled', false);
+						} else if (r.message.status === 'Failed') {
+							clearInterval(interval);
+							frappe.msgprint("Batch Generation Failed.");
+							$('#pn-generate-batch').prop('disabled', false);
+						}
+					}
+				}
+			});
+		}, 3000);
+	}
+}
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/hooks.py
+app_name = "f_printnebula"
+app_title = "F Printnebula"
+app_publisher = "BluePhoenix"
+app_description = "A powerful template engine to create Word-style print formats with curly-brace fields, loops, and dynamic PDF generation."
+app_email = "bluephoenix00995@gmail.com"
+app_license = "gpl-3.0"
+
+# Apps
+# ------------------
+
+# required_apps = []
+
+# Each item in the list will be shown as an app in the apps page
+# add_to_apps_screen = [
+# 	{
+# 		"name": "f_printnebula",
+# 		"logo": "/assets/f_printnebula/logo.png",
+# 		"title": "F Printnebula",
+# 		"route": "/f_printnebula",
+# 		"has_permission": "f_printnebula.api.permission.has_app_permission"
+# 	}
+# ]
+
+# Includes in <head>
+# ------------------
+
+# include js, css files in header of desk.html
+# app_include_css = "/assets/f_printnebula/css/f_printnebula.css"
+# app_include_js = "/assets/f_printnebula/js/f_printnebula.js"
+
+# include js, css files in header of web template
+# web_include_css = "/assets/f_printnebula/css/f_printnebula.css"
+# web_include_js = "/assets/f_printnebula/js/f_printnebula.js"
+
+# include custom scss in every website theme (without file extension ".scss")
+# website_theme_scss = "f_printnebula/public/scss/website"
+
+# include js, css files in header of web form
+# webform_include_js = {"doctype": "public/js/doctype.js"}
+# webform_include_css = {"doctype": "public/css/doctype.css"}
+
+# include js in page
+# page_js = {"page" : "public/js/file.js"}
+
+# include js in doctype views
+# doctype_js = {"doctype" : "public/js/doctype.js"}
+# doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
+# doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
+# doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
+
+# Svg Icons
+# ------------------
+# include app icons in desk
+# app_include_icons = "f_printnebula/public/icons.svg"
+
+# Home Pages
+# ----------
+
+# application home page (will override Website Settings)
+# home_page = "login"
+
+# website user home page (by Role)
+# role_home_page = {
+# 	"Role": "home_page"
+# }
+
+# Generators
+# ----------
+
+# automatically create page for each record of this doctype
+# website_generators = ["Web Page"]
+
+# Jinja
+# ----------
+
+# add methods and filters to jinja environment
+# jinja = {
+# 	"methods": "f_printnebula.utils.jinja_methods",
+# 	"filters": "f_printnebula.utils.jinja_filters"
+# }
+
+# Installation
+# ------------
+
+# before_install = "f_printnebula.install.before_install"
+# after_install = "f_printnebula.install.after_install"
+
+# Uninstallation
+# ------------
+
+# before_uninstall = "f_printnebula.uninstall.before_uninstall"
+# after_uninstall = "f_printnebula.uninstall.after_uninstall"
+
+# Integration Setup
+# ------------------
+# To set up dependencies/integrations with other apps
+# Name of the app being installed is passed as an argument
+
+# before_app_install = "f_printnebula.utils.before_app_install"
+# after_app_install = "f_printnebula.utils.after_app_install"
+
+# Integration Cleanup
+# -------------------
+# To clean up dependencies/integrations with other apps
+# Name of the app being uninstalled is passed as an argument
+
+# before_app_uninstall = "f_printnebula.utils.before_app_uninstall"
+# after_app_uninstall = "f_printnebula.utils.after_app_uninstall"
+
+# Desk Notifications
+# ------------------
+# See frappe.core.notifications.get_notification_config
+
+# notification_config = "f_printnebula.notifications.get_notification_config"
+
+# Permissions
+# -----------
+# Permissions evaluated in scripted ways
+
+# permission_query_conditions = {
+# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
+# }
+#
+# has_permission = {
+# 	"Event": "frappe.desk.doctype.event.event.has_permission",
+# }
+
+# DocType Class
+# ---------------
+# Override standard doctype classes
+
+# override_doctype_class = {
+# 	"ToDo": "custom_app.overrides.CustomToDo"
+# }
+
+# Document Events
+# ---------------
+# Hook on document methods and events
+
+doc_events = {
+	"*": {
+		"on_submit": "f_printnebula.api.automation.send_auto_emails"
+	}
+}
+
+# Scheduled Tasks
+# ---------------
+
+scheduler_events = {
+	"daily": [
+		"f_printnebula.f_printnebula.api.scheduler.run_daily"
+	],
+	"weekly": [
+		"f_printnebula.f_printnebula.api.scheduler.run_weekly"
+	],
+	"monthly": [
+		"f_printnebula.f_printnebula.api.scheduler.run_monthly"
+	],
+}
+
+# Testing
+# -------
+
+# before_tests = "f_printnebula.install.before_tests"
+
+# Overriding Methods
+# ------------------------------
+#
+# override_whitelisted_methods = {
+# 	"frappe.desk.doctype.event.event.get_events": "f_printnebula.event.get_events"
+# }
+#
+# each overriding function accepts a `data` argument;
+# generated from the base implementation of the doctype dashboard,
+# along with any modifications made in other Frappe apps
+# override_doctype_dashboards = {
+# 	"Task": "f_printnebula.task.get_dashboard_data"
+# }
+
+# exempt linked doctypes from being automatically cancelled
+#
+# auto_cancel_exempted_doctypes = ["Auto Repeat"]
+
+# Ignore links to specified DocTypes when deleting documents
+# -----------------------------------------------------------
+
+# ignore_links_on_delete = ["Communication", "ToDo"]
+
+# Request Events
+# ----------------
+# before_request = ["f_printnebula.utils.before_request"]
+# after_request = ["f_printnebula.utils.after_request"]
+
+# Job Events
+# ----------
+# before_job = ["f_printnebula.utils.before_job"]
+# after_job = ["f_printnebula.utils.after_job"]
+
+# User Data Protection
+# --------------------
+
+# user_data_fields = [
+# 	{
+# 		"doctype": "{doctype_1}",
+# 		"filter_by": "{filter_by}",
+# 		"redact_fields": ["{field_1}", "{field_2}"],
+# 		"partial": 1,
+# 	},
+# 	{
+# 		"doctype": "{doctype_2}",
+# 		"filter_by": "{filter_by}",
+# 		"partial": 1,
+# 	},
+# 	{
+# 		"doctype": "{doctype_3}",
+# 		"strict": False,
+# 	},
+# 	{
+# 		"doctype": "{doctype_4}"
+# 	}
+# ]
+
+# Authentication and authorization
+# --------------------------------
+
+# auth_hooks = [
+# 	"f_printnebula.auth.validate"
+# ]
+
+# Automatically update python controller files with type annotations for this app.
+# export_python_type_annotations = True
+
+# default_log_clearing_doctypes = {
+# 	"Logging DocType Name": 30  # days to retain logs
+# }
+
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/setup_phase4.py
+import frappe
+import sys
+
+def setup():
+	frappe.init(site="genbi")
+	frappe.connect()
+
+	try:
+		# 1. PrintNebula Snippet Doctype
+		if not frappe.db.exists("DocType", "PrintNebula Snippet"):
+			doc = frappe.get_doc({
+				"doctype": "DocType",
+				"name": "PrintNebula Snippet",
+				"module": "F Printnebula",
+				"custom": 0,
+				"naming_rule": "By fieldname",
+				"autoname": "field:snippet_name",
+				"fields": [
+					{"fieldname": "snippet_name", "fieldtype": "Data", "label": "Snippet Name", "reqd": 1, "unique": 1},
+					{"fieldname": "html_content", "fieldtype": "Text Editor", "label": "HTML Content"}
+				],
+				"permissions": [
+					{"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1}
+				]
+			})
+			doc.insert(ignore_permissions=True)
+
+		# 2. PrintNebula Log Doctype
+		if not frappe.db.exists("DocType", "PrintNebula Log"):
+			doc = frappe.get_doc({
+				"doctype": "DocType",
+				"name": "PrintNebula Log",
+				"module": "F Printnebula",
+				"custom": 0,
+				"fields": [
+					{"fieldname": "template", "fieldtype": "Data", "label": "Template"},
+					{"fieldname": "doctype_link", "fieldtype": "Link", "options": "DocType", "label": "Target DocType"},
+					{"fieldname": "docname", "fieldtype": "Dynamic Link", "options": "doctype_link", "label": "Document Name"},
+					{"fieldname": "status", "fieldtype": "Select", "options": "Success\nFailed", "label": "Status"},
+					{"fieldname": "duration", "fieldtype": "Float", "label": "Duration (s)"},
+					{"fieldname": "error_log", "fieldtype": "Text", "label": "Error Log"}
+				],
+				"permissions": [
+					{"role": "All", "read": 1, "write": 1, "create": 1}
+				]
+			})
+			doc.insert(ignore_permissions=True)
+
+		frappe.db.commit()
+		print("Successfully created PrintNebula Snippet and PrintNebula Log Doctypes.")
+	except Exception as e:
+		print(f"Error: {str(e)}")
+		sys.exit(1)
+
+setup()
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/f_printnebula/f_printnebula/utils/pdf_generator.py
+# Copyright (c) 2025, BluePhoenix and contributors
+# For license information, please see license.txt
+
+import frappe
+from frappe.utils.pdf import get_pdf
+from frappe.utils import get_files_path, now
+import os
+import time
+from typing import Dict, Optional
+
+
+class PDFGenerator:
+	"""Generator for creating PDFs from HTML"""
+
+	def __init__(self, template_name: str):
+		"""
+		Initialize PDF generator
+
+		Args:
+			template_name: PrintNebula Template name
+		"""
+		self.template_name = template_name
+		self.template = frappe.get_doc("PrintNebula Template", template_name)
+
+	def generate(
+		self,
+		docname: str,
+		output_format: str = "pdf",
+		save_file: bool = True
+	) -> Dict:
+		"""
+		Generate PDF for a document
+
+		Args:
+			docname: Document name
+			output_format: Output format (pdf, html, docx)
+			save_file: Whether to save file to disk
+
+		Returns:
+			Dictionary with file info
+		"""
+		start_time = time.time()
+		status = "Success"
+		error_msg = ""
+		file_data = {}
+
+		try:
+			if self.template.template_type == "Word Document":
+				from f_printnebula.engine.word_renderer import WordRenderer
+				renderer = WordRenderer(self.template_name)
+				file_name = f"{self.template.doctype_link}_{docname}_{now()}.docx".replace(" ", "_").replace(":", "-")
+				file_path = os.path.join(get_files_path(), file_name)
+
+				renderer.render(docname, file_path)
+
+				if save_file:
+					file_doc = frappe.get_doc({
+						"doctype": "File",
+						"file_name": file_name,
+						"is_private": 1,
+						"file_url": f"/private/files/{file_name}",
+						"attached_to_doctype": self.template.doctype_link,
+						"attached_to_name": docname
+					})
+					file_doc.insert(ignore_permissions=True)
+					file_url = file_doc.file_url
+				else:
+					file_url = None
+
+				file_data = {
+					'file_url': file_url,
+					'file_size': os.path.getsize(file_path),
+					'file_name': file_name
+				}
+				output_format = "docx"
+			else:
+				# Render HTML
+				from f_printnebula.engine.renderer import TemplateRenderer
+				renderer = TemplateRenderer(self.template_name)
+				html_content = renderer.render(docname)
+
+				# Generate based on format
+				if output_format.lower() == "pdf":
+					file_data = self.generate_pdf(html_content, docname, save_file)
+				elif output_format.lower() == "html":
+					file_data = self.generate_html(html_content, docname, save_file)
+				else:
+					frappe.throw(f"Unsupported output format: {output_format}")
+			return {
+				'success': True,
+				'file_url': file_data.get('file_url'),
+				'file_size': file_data.get('file_size'),
+				'format': output_format
+			}
+		except Exception as e:
+			status = "Failed"
+			error_msg = str(e)
+			frappe.throw(f"PDF generation failed: {str(e)}")
+		finally:
+			# Log generation metrics
+			duration = time.time() - start_time
+			file_url = file_data.get('file_url', "")
+			try:
+				import frappe.utils.background_jobs
+				frappe.enqueue(
+					"f_printnebula.api.automation.log_generation",
+					queue="short",
+					template=self.template_name,
+					doctype_link=self.template.doctype_link,
+					docname=docname,
+					status=status,
+					duration=duration,
+					error_log=error_msg
+				)
+			except Exception:
+				pass
+
+	def generate_pdf(self, html_content: str, docname: str, save_file: bool) -> Dict:
+		"""
+		Generate PDF from HTML
+
+		Args:
+			html_content: HTML content
+			docname: Document name
+			save_file: Whether to save to disk
+
+		Returns:
+			File info dictionary
+		"""
+		# Get PDF options from template
+		options = self.get_pdf_options()
+
+		# Generate PDF
+		pdf_data = get_pdf(html_content, options=options)
+
+		if save_file:
+			# Save to file
+			file_name = f"{self.template.doctype_link}_{docname}_{now()}.pdf".replace(" ", "_").replace(":", "-")
+			file_path = os.path.join(get_files_path(), file_name)
+
+			with open(file_path, "wb") as f:
+				f.write(pdf_data)
+
+			# Create file document
+			file_doc = frappe.get_doc({
+				"doctype": "File",
+				"file_name": file_name,
+				"is_private": 1,
+				"file_url": f"/private/files/{file_name}",
+				"attached_to_doctype": self.template.doctype_link,
+				"attached_to_name": docname
+			})
+			file_doc.insert(ignore_permissions=True)
+
+			return {
+				'file_url': file_doc.file_url,
+				'file_size': len(pdf_data),
+				'file_name': file_name
+			}
+		else:
+			return {
+				'file_data': pdf_data,
+				'file_size': len(pdf_data)
+			}
+
+	def generate_html(self, html_content: str, docname: str, save_file: bool) -> Dict:
+		"""
+		Save HTML to file
+
+		Args:
+			html_content: HTML content
+			docname: Document name
+			save_file: Whether to save to disk
+
+		Returns:
+			File info dictionary
+		"""
+		if save_file:
+			file_name = f"{self.template.doctype_link}_{docname}_{now()}.html".replace(" ", "_").replace(":", "-")
+			file_path = os.path.join(get_files_path(), file_name)
+
+			with open(file_path, "w", encoding="utf-8") as f:
+				f.write(html_content)
+
+			# Create file document
+			file_doc = frappe.get_doc({
+				"doctype": "File",
+				"file_name": file_name,
+				"is_private": 1,
+				"file_url": f"/private/files/{file_name}",
+				"attached_to_doctype": self.template.doctype_link,
+				"attached_to_name": docname
+			})
+			file_doc.insert(ignore_permissions=True)
+
+			return {
+				'file_url': file_doc.file_url,
+				'file_size': len(html_content.encode('utf-8')),
+				'file_name': file_name
+			}
+		else:
+			return {
+				'file_data': html_content,
+				'file_size': len(html_content.encode('utf-8'))
+			}
+
+	def get_pdf_options(self) -> Dict:
+		"""
+		Get PDF generation options from template
+
+		Returns:
+			PDF options dictionary
+		"""
+		options = {
+			'page-size': self.template.page_size or 'A4',
+			'orientation': self.template.page_orientation or 'Portrait',
+			'margin-top': f"{self.template.margin_top or 15}mm",
+			'margin-bottom': f"{self.template.margin_bottom or 15}mm",
+			'margin-left': f"{self.template.margin_left or 15}mm",
+			'margin-right': f"{self.template.margin_right or 15}mm"
+		}
+
+		return options
+
+

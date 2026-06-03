@@ -1,0 +1,3333 @@
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/.github/CONTRIBUTING.md
+### Introduction (first timers)
+
+Thank you for your interest in raising an Issue with the Frappe Framework. An Issue could mean a bug report or a request for a missing feature. By raising a bug report, you are contributing to the development of the Frappe Framework and this is the first step of participating in the community. Bug reports are very helpful for developers as they quickly fix the issue before other users start facing it.
+
+Feature requests are also a great way to take the product forward. New ideas can come in any user scenario and the issue list also acts a roadmap of future features.
+
+When you are raising an Issue, you should keep a few things in mind. Remember that the developer does not have access to your machine so you must give all the information you can while raising an Issue. If you are suggesting a feature, you should be very clear about what you want.
+
+The Issue list is not the right place to ask a question or start a general discussion. If you want to do that , then the right place is the forum ~~~~ => [stackoverflow](https://stackoverflow.com/questions/tagged/frappe) tagged under `frappe`.
+
+### Reply and Closing Policy
+
+If your issue is not clear or does not meet the guidelines, then it will be closed. If it is closed, please supply the information asked and re-open it.
+
+### General Issue Guidelines
+
+1. **Search existing Issues:** Before raising a Issue, search if it has been raised before. Maybe add a 👍 or give additional help by creating a mockup if it is not already created.
+2. **Report each issue separately:** Don't club multiple, unrelated issues in one note.
+3. **Brief:** Please don't include long explanations. Use screenshots and bullet points instead of descriptive paragraphs.
+
+### Bug Report Guidelines
+
+1. **Steps to Reproduce:** The bug report must have a list of steps needed to reproduce a bug. If we cannot reproduce it, then we cannot solve it.
+1. **Version Number:** Please add the version number in your report. Often a bug is fixed in the latest version
+1. **Clear Title:** Add a clear subject to your bug report like "Unable to submit Purchase Order without Basic Rate" instead of just "Cannot Submit"
+1. **Screenshots:** Screenshots are a great way of communicating the issues. Try adding annotations or using LiceCAP to take a screencast in `gif`.
+
+### Feature Request Guidelines
+
+1. **Clarity:** Clearly specify how do you want the feature to behave. Don't just say "I would like multiple PDF formats", say that "Ability to add multiple print formats for customers with different languages".
+1. **Solution:** Try and identify how the feature should look like.
+1. **Mockups:** Mockups are a great way to explain your requirement.
+
+### What if my Issue is closed
+
+Don't worry, take the feedback, supply the correct information and re-open it!
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/.github/ISSUE_TEMPLATE/bug_report.md
+---
+name: Bug report
+about: Report a bug encountered while using the Frappe Framework
+labels: bug
+---
+
+
+
+## Description of the issue
+
+## Context information (for bug reports)
+
+**Output of `bench version`**
+```
+(paste here)
+```
+
+## Steps to reproduce the issue
+
+1.
+2.
+3.
+
+### Observed result
+
+### Expected result
+
+### Stacktrace / full error message
+
+```
+(paste here)
+```
+
+## Additional information
+
+OS version / distribution, `Frappe` install method, etc.
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/.github/ISSUE_TEMPLATE/feature_request.md
+---
+name: Feature request
+about: Suggest an idea to improve Frappe
+labels: feature-request
+---
+
+
+
+**Is your feature request related to a problem? Please describe.**
+A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+
+**Describe the solution you'd like**
+A clear and concise description of what you want to happen.
+
+**Describe alternatives you've considered**
+A clear and concise description of any alternative solutions or features you've considered.
+
+**Additional context**
+Add any other context or screenshots about the feature request here.
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/.github/ISSUE_TEMPLATE/question-about-using-frappe.md
+---
+name: Question about using Frappe/Frappe Apps
+about: This is not the appropriate channel
+labels: invalid
+---
+
+Please post on our forums:
+
+for questions about using the `Frappe Framework`: ~~https://discuss.frappe.io~~ => [stackoverflow](https://stackoverflow.com/questions/tagged/frappe) tagged under `frappe`
+
+for questions about using `ERPNext`: https://discuss.erpnext.com
+
+for questions about using `bench`, probably the best place to start is the [bench repo](https://github.com/frappe/bench)
+
+For documentation issues, use the [Frappe Framework Documentation](https://frappeframework.com/docs) or the [developer cheetsheet](https://github.com/frappe/frappe/wiki/Developer-Cheatsheet)
+
+For a slightly outdated yet informative developer guide: https://www.youtube.com/playlist?list=PL3lFfCEoMxvzHtsZHFJ4T3n5yMM3nGJ1W
+
+> **Posts that are not bug reports or feature requests will not be addressed on this issue tracker.**
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/.github/PULL_REQUEST_TEMPLATE.md
+https://github.com/frappe/erpnext/wiki/Updating-Documentation
+
+- Contribution Guide => https://github.com/frappe/frappe/blob/develop/.github/CONTRIBUTING.md
+
+- Pull Request Checklist => https://github.com/frappe/erpnext/wiki/Pull-Request-Checklist
+
+-->
+
+> Please provide enough information so that others can review your pull request:
+
+
+
+> Explain the **details** for making this change. What existing problem does the pull request solve?
+
+
+
+> Screenshots/GIFs
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/CODE_OF_CONDUCT.md
+# Contributor Covenant Code of Conduct
+
+## Our Pledge
+
+In the interest of fostering an open and welcoming environment, we as contributors and maintainers pledge to make participation in our project and our community a harassment-free experience for everyone, regardless of age, body size, disability, ethnicity, gender identity and expression, level of experience, nationality, personal appearance, race, religion, or sexual identity and orientation.
+
+## Our Standards
+
+Examples of behavior that contributes to creating a positive environment include:
+
+* Using welcoming and inclusive language
+* Being respectful of differing viewpoints and experiences
+* Gracefully accepting constructive criticism
+* Focusing on what is best for the community
+* Showing empathy towards other community members
+
+Examples of unacceptable behavior by participants include:
+
+* The use of sexualized language or imagery and unwelcome sexual attention or advances
+* Trolling, insulting/derogatory comments, and personal or political attacks
+* Public or private harassment
+* Publishing others' private information, such as a physical or electronic address, without explicit permission
+* Other conduct that could reasonably be considered inappropriate in a professional setting
+
+## Our Responsibilities
+
+Project maintainers are responsible for clarifying the standards of acceptable behavior and are expected to take appropriate and fair corrective action in response to any instances of unacceptable behavior.
+
+Project maintainers have the right and responsibility to remove, edit, or reject comments, commits, code, wiki edits, issues, and other contributions that are not aligned with this Code of Conduct, or to ban temporarily or permanently any contributor for other behaviors that they deem inappropriate, threatening, offensive, or harmful.
+
+## Scope
+
+This Code of Conduct applies both within project spaces and in public spaces when an individual is representing the project or its community. Examples of representing a project or community include using an official project e-mail address, posting via an official social media account, or acting as an appointed representative at an online or offline event. Representation of a project may be further defined and clarified by project maintainers.
+
+## Enforcement
+
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the project team at hello@frappe.io. The project team will review and investigate all complaints, and will respond in a way that it deems appropriate to the circumstances. The project team is obligated to maintain confidentiality with regard to the reporter of an incident. Further details of specific enforcement policies may be posted separately.
+
+Project maintainers who do not follow or enforce the Code of Conduct in good faith may face temporary or permanent repercussions as determined by other members of the project's leadership.
+
+## Attribution
+
+This Code of Conduct is adapted from the [Contributor Covenant][homepage], version 1.4, available at [http://contributor-covenant.org/version/1/4][version]
+
+[homepage]: http://contributor-covenant.org
+[version]: http://contributor-covenant.org/version/1/4/
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/README.md
+Frappe Framework
+
+ **Low Code Web Framework For Real World Applications, In Python And JavaScript**
+
+
+
+	
+	
+
+
+	
+
+
+    Website
+    -
+    Documentation
+
+
+## Frappe Framework
+Full-stack web application framework that uses Python and MariaDB on the server side and a tightly integrated client side library. Built for ERPNext.
+
+## Philosophy
+
+> The best code is the one that is not written
+
+Started in 2005, Frappe Framework was inspired by the Semantic Web. The "big idea" behind semantic web was of a framework that not only described how information is shown (like headings, body etc), but also what it means, like name, address etc.
+
+By creating a web framework that allowed for easy definition of metadata, it made building complex applications easy. Applications are usually designed around how users interact with a system, but not based on semantics of the underlying system. Applications built on semantics end up being much more consistent and extensible. 
+
+The first application built on Framework was ERPNext, a beast with more than 700 object types. Framework is not for the light hearted - it is not the first thing you might want to learn if you are beginning to learn web programming, but if you are ready to do real work, then Framework is the right tool for the job.
+
+### Key Features
+
+- **Full-Stack Framework**: Frappe covers both front-end and back-end development, allowing developers to build complete applications using a single framework.
+
+- **Built-in Admin Interface**: Provides a pre-built, customizable admin dashboard for managing application data, reducing development time and effort.
+
+- **Role-Based Permissions**: Comprehensive user and role management system to control access and permissions within the application.
+
+- **REST API**: Automatically generated RESTful API for all models, enabling easy integration with other systems and services.
+
+- **Customizable Forms and Views**: Flexible form and view customization using server-side scripting and client-side JavaScript.
+
+- **Report Builder**: Powerful reporting tool that allows users to create custom reports without writing any code.
+
+
+Screenshots
+
+![List View](.github/fw-list-view.png)
+![Form View](.github/fw-form-view.png)
+![Role Permission Manager](.github/fw-rpm.png)
+
+
+## Production Setup
+
+### Managed Hosting
+
+You can try [Frappe Cloud](https://frappecloud.com), a simple, user-friendly and sophisticated [open-source](https://github.com/frappe/press) platform to host Frappe applications with peace of mind.
+
+It takes care of installation, setup, upgrades, monitoring, maintenance and support of your Frappe deployments. It is a fully featured developer platform with an ability to manage and control multiple Frappe deployments.
+
+
+    
+        
+            
+            
+        
+    
+
+
+### Self Hosting
+
+### Docker
+Prerequisites: docker, docker-compose, git. Refer [Docker Documentation](https://docs.docker.com) for more details on Docker setup.
+
+Run the following commands:
+
+```
+git clone https://github.com/frappe/frappe_docker
+cd frappe_docker
+docker compose -f pwd.yml up -d
+```
+
+After a couple of minutes, site should be accessible on your localhost port: 8080. Use below default login credentials to access the site.
+- Username: Administrator
+- Password: admin
+
+See [Frappe Docker](https://github.com/frappe/frappe_docker?tab=readme-ov-file#to-run-on-arm64-architecture-follow-this-instructions) for ARM based docker setup.
+
+## Development Setup
+### Manual Install
+
+The Easy Way: our install script for bench will install all dependencies (e.g. MariaDB). See https://github.com/frappe/bench for more details.
+
+New passwords will be created for the Frappe "Administrator" user, the MariaDB root user, and the frappe user (the script displays the passwords and saves them to ~/frappe_passwords.txt).
+
+### Local
+
+To setup the repository locally follow the steps mentioned below:
+
+1. Setup bench by following the [Installation Steps](https://docs.frappe.io/framework/user/en/installation) and start the server
+   ```
+   bench start
+   ```
+
+2. In a separate terminal window, run the following commands:
+   ```
+   # Create a new site
+   bench new-site frappe.localhost
+   ```
+
+3. Open the URL `http://frappe.localhost:8000/app` in your browser, you should see the app running
+
+## Learning and community
+
+1. [Frappe School](https://frappe.school) - Learn Frappe Framework and ERPNext from the various courses by the maintainers or from the community.
+2. [Official documentation](https://docs.frappe.io/framework) - Extensive documentation for Frappe Framework.
+3. [Discussion Forum](https://discuss.frappe.io/) - Engage with community of Frappe Framework users and service providers.
+4. [buildwithhussain.com](https://buildwithhussain.com) - Watch Frappe Framework being used in the wild to build world-class web apps.
+
+## Contributing
+
+1. [Issue Guidelines](https://github.com/frappe/erpnext/wiki/Issue-Guidelines)
+1. [Report Security Vulnerabilities](https://frappe.io/security)
+1. [Pull Request Requirements](https://github.com/frappe/erpnext/wiki/Contribution-Guidelines)
+2. [Translations](https://crowdin.com/project/frappe)
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/SECURITY.md
+# Security Policy
+
+The Frappe team and community take security issues in the Frappe Framework seriously. To report a security issue, please go through the information mentioned [here](https://frappe.io/security).
+
+You can help us make Frappe and consequently all Frappe dependent apps like [ERPNext](https://erpnext.com) more secure by following the [Reporting guidelines](https://erpnext.com/security).
+
+We appreciate your efforts to responsibly disclose your findings. We'll endeavor to respond quickly, and will keep you updated throughout the process.
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/attributions.md
+## 3rd-Party Software Report
+
+The following 3rd-party software packages may be used by or distributed with .
+
+- Bootstrap: MIT License, (c) Twitter Inc, 
+- JQuery: MIT License, (c) JQuery Foundation, 
+- FullCalendar - MIT License, (c) 2013 Adam Shaw, 
+- JSignature - MIT License, (c) 2012 Willow Systems Corp , (c) 2010 Brinley Ang 
+- PhotoSwipe - MIT License, (c) 2014-2015 Dmitry Semenov, 
+- Leaflet - (c) 2010-2016, Vladimir Agafonkin, (c) 2010-2011, CloudMade
+- Leaflet.Locate - (c) 2016 Dominik Moritz
+- Leaflet.draw - (c) 2012-2017, Jacob Toye, Jon West, Smartrak
+- Leaflet.EasyButton - MIT License, (C) 2014 Daniel Montague
+- Identicons - MIT License, (C) 2015, 
+
+### Icon Fonts
+
+- Font Awesome - 
+  - Font License: SIL OFL 1.1 ()
+  - Code License: MIT ()
+- Octicons (c) GitHub Inc, 
+  - Font License: SIL OFL 1.1 ()
+  - Code License: MIT ()
+- Inter - SIL Open Font License, 1.1 (c) 2020 Rasmus Andersson ()
+
+---
+
+Last updated: 4th July 2022
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v10/v10_0_0.md
+- Enhanced Data Import Tool
+	- Data Import Tool is now a normal form, you can maintain records for each Data Import.
+	- Better error handling
+	- Background processing for large files
+
+- Frappe now has a github connector
+
+- Any doctype can have a calendar view
+
+- Frappe has a new simple, responsive, modern SVG [charts library](https://github.com/frappe/charts), developed by us
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v11/v11_1_0.md
+- Dynamic [Frappe Charts](https://github.com/frappe/charts) with Report Builder (built by @pratu16x7)
+- New Frappe Chat for easier internal communication (built by @achillesrasquinha)
+- [Frappe DataTable](https://github.com/frappe/datatable) for better reports (built by @netchampfaris)
+- Google Calendar can now be integrated with Frappe
+- Files can now be uploaded using drag-and-drop
+- Enhanced List View and Tree View
+- Bulk Actions from List View
+- Quill editor has been introduced in place of Summernote
+- HTML Editor has been introduced
+- New User Permissions
+- Subscriptions in ERPNext now moved to Auto Repeat in Frappe
+- Support for Razorpay and PayPal subscriptions
+- Better Social login, Workflow
+- Messages for when user goes online/offline
+- Logout from all sessions on password change
+- Desktop icons can now be selected from a dialog box
+- Changes have been made to ensure Frappe is compatible with Python 3
+- Better documentation is now available with support for more languages
+- A lot of other fixes have been done to ensure a better overall user experience
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v12/v12_0_0.md
+# Version 12 Release Notes
+
+### UI/UX Enhancements
+1. [New Desktop](https://erpnext.com/docs/user/manual/en/using-erpnext/desktop)
+1. [Keyboard Navigation](https://erpnext.com/docs/user/manual/en/using-erpnext/articles/keyboard-shortcuts)
+1. [Link Preview](https://erpnext.com/version-12/release-notes/features#link-preview)
+1. [New Upload Dialog](https://erpnext.com/version-12/release-notes/features#new-upload-dialog)
+1. [Frequently visited links appear in Awesomebar results](https://erpnext.com/version-12/release-notes/features#frequently-visited-links-appear-in-awesomebar-results)
+1. [Full Width Container]((https://erpnext.com/version-12/release-notes/features#full-width-container))
+1. [List View Enhancements](https://erpnext.com/version-12/release-notes/features#list-view-enhancements)
+
+### New Automation Module
+1. [Assignment Rule](https://erpnext.com/docs/user/manual/en/setting-up/automation/assignment-rule)
+1. [Milestones](https://erpnext.com/docs/user/manual/en/setting-up/automation/milestone-tracker)
+1. [Auto Repeat](https://erpnext.com/docs/user/manual/en/setting-up/automation/auto-repeat)
+
+### Other Changes & Enhancements
+1. [Document Follow](https://erpnext.com/docs/user/manual/en/setting-up/email/document-follow)
+1. [Energy Points](https://erpnext.com/docs/user/manual/en/setting-up/energy-point-system)
+1. [Dashboards](https://erpnext.com/docs/user/manual/en/customize-erpnext/dashboard)
+1. [Disable customization for single doctypes](https://erpnext.com/version-12/release-notes/features#disable-customization-for-single-doctypes)
+1. [Email Linking](https://erpnext.com/docs/user/manual/en/setting-up/email/linking-emails-to-document)
+1. [Google Contacts](https://erpnext.com/docs/user/manual/en/erpnext_integration/google_contacts)
+1. [PDF Encryption](https://erpnext.com/version-12/release-notes/features#pdf-encryption)
+1. [Raw Printing](https://erpnext.com/docs/user/manual/en/setting-up/print/raw-printing)
+1. [Web Form Refactor](https://erpnext.com/version-12/release-notes/features#web-form-refactor)
+1. [Website Refactor](https://erpnext.com/docs/user/manual/en/website)
+1. [Added Track Views field to Customize Form](https://erpnext.com/version-12/release-notes/features#added-track-views-field-to-customize-form)
+1. [Add custom columns to any report](https://erpnext.com/version-12/release-notes/features#add-custom-columns-to-any-report)
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v13/v13_0_0.md
+# Version 13.0.0 Release Notes
+
+## Highlights
+
+- Re-branded UI 💎 ✨🎊 ([#12277](https://github.com/frappe/frappe/pull/12277))
+- New Page Builder in Web Page ([#10035](https://github.com/frappe/frappe/pull/10035))
+- Customizable desk ([#9617](https://github.com/frappe/frappe/pull/9617))
+- Custom Dashboard for DocTypes ([#9872](https://github.com/frappe/frappe/pull/9872))
+- Widgets to make dashboards ([#9693](https://github.com/frappe/frappe/pull/9693))
+- Events Streaming ([#8567](https://github.com/frappe/frappe/pull/8567))
+- Contextual translation and Translation Tool ([#9636](https://github.com/frappe/frappe/pull/9636))
+
+### Other Features & Enhancements
+
+- Added permission to grant only `Select` access ([#12063](https://github.com/frappe/frappe/pull/12063))
+- Add columns and filters for reports via configuration ([#11287](https://github.com/frappe/frappe/pull/11287))
+- Configurable Navbar logo and dropdowns ([#11213](https://github.com/frappe/frappe/pull/11213))
+- Rule based naming of documents ([#11439](https://github.com/frappe/frappe/pull/11439))
+- New routing style, not using hashes, also /desk -> /app ([#11917](https://github.com/frappe/frappe/pull/11917))
+- Web Page tracking ([#9959](https://github.com/frappe/frappe/pull/9959))
+- Introduced "Yesterday" and "Tomorrow" options for Timespan filter ([12179](https://github.com/frappe/frappe/pull/12179))
+- Child table pagination ([#8786](https://github.com/frappe/frappe/pull/8786))
+- Introduced Duration Control ([#10248](https://github.com/frappe/frappe/pull/10248))
+- Form Tour feature ([#10287](https://github.com/frappe/frappe/pull/10287))
+
+More
+
+- Introduced Map View ([#11202](https://github.com/frappe/frappe/pull/11202))
+- Custom JS & CSS support in Web Form ([#9121](https://github.com/frappe/frappe/pull/9121)) ([#9610](https://github.com/frappe/frappe/pull/9610))
+- Ability to attach photo from webcam ([#12160](https://github.com/frappe/frappe/pull/12160))
+- Added a System Console to help in debugging ([#11306](https://github.com/frappe/frappe/pull/11306))
+- Introduced System Settings to automatically delete old Prepared Reports ([#9751](https://github.com/frappe/frappe/pull/9751))
+- "Mandatory Depends On" and "Read Only Depends On" option for document fields ([#8820](https://github.com/frappe/frappe/pull/8820))
+- Added 2FA for LDAP users ([#10001](https://github.com/frappe/frappe/pull/10001))
+- Introduced Help Article Feedback system ([#10260](https://github.com/frappe/frappe/pull/10260))
+- Introduced Razorpay client ([#11418](https://github.com/frappe/frappe/pull/11418))
+- Rate Limiting ([#10310](https://github.com/frappe/frappe/pull/10310))
+- Introduced Log Settings ([#11699](https://github.com/frappe/frappe/pull/11699))
+- Enhancements in notifications ([#11398](https://github.com/frappe/frappe/pull/11398)) ([#11409](https://github.com/frappe/frappe/pull/11409))
+- Added a field-level permission check for report data ([12163](https://github.com/frappe/frappe/pull/12163))
+- Ability to cancel all linked document with a single click ([#8905](https://github.com/frappe/frappe/pull/8905))
+- Made checkboxes navigable via tab key ([#11030](https://github.com/frappe/frappe/pull/11030))
+- Renamed "Custom Script" to "Client Script" ([#12324](https://github.com/frappe/frappe/pull/12324))
+
+
+
+### Performance
+
+- Faster application load ([#12364](https://github.com/frappe/frappe/pull/12364)) ([#10229](https://github.com/frappe/frappe/pull/10229)) ([#10147](https://github.com/frappe/frappe/pull/10147)) ([#9930](https://github.com/frappe/frappe/pull/9930))
+- Theme files will now be compressed to make the website load faster ([#11048](https://github.com/frappe/frappe/pull/11048))
+- Confirmation emails will be sent instantly ([#10790](https://github.com/frappe/frappe/pull/10790))
+- Faster scheduled job processing ([#9928](https://github.com/frappe/frappe/pull/9928))
+- Faster data imports ([#12565](https://github.com/frappe/frappe/pull/12565))
+- Faster CLI commands ([#12447](https://github.com/frappe/frappe/pull/12447))
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v13/v13_1_0.md
+# Version 13.1.0 Release Notes
+
+### Features & Enhancements
+
+- Automated mail notifications will be shown in timeline ([#12693](https://github.com/frappe/frappe/pull/12693))
+- Introduced Client Script for List views ([#12590](https://github.com/frappe/frappe/pull/12590))
+- Introduced language switcher for guest users on website navbar ([#12813](https://github.com/frappe/frappe/pull/12813))
+- Option to give submit permission while sharing a document ([#12799](https://github.com/frappe/frappe/pull/12799))
+- Added option to set `autoname` in Customize Form ([#12413](https://github.com/frappe/frappe/pull/12413))
+- Virtual DocType ([#12121](https://github.com/frappe/frappe/pull/12121))
+
+### Fixes
+
+- Workspace fixes ([#12650](https://github.com/frappe/frappe/pull/12650)) ([#12655](https://github.com/frappe/frappe/pull/12655)) ([#12869](https://github.com/frappe/frappe/pull/12869))
+- Fixed an issue where select options were not getting updated in Grid ([#12839](https://github.com/frappe/frappe/pull/12839))
+- Webform Fixes ([#12630](https://github.com/frappe/frappe/pull/12630)) ([#12756](https://github.com/frappe/frappe/pull/12756)) ([#12819](https://github.com/frappe/frappe/pull/12819))
+- Fixed timespan filter for next and last timespans ([#12509](https://github.com/frappe/frappe/pull/12509))
+- System Notification fixes ([#12719](https://github.com/frappe/frappe/pull/12719))
+- Design Fixes ([#12669](https://github.com/frappe/frappe/pull/12669)) ([#12591](https://github.com/frappe/frappe/pull/12591)) ([#12557](https://github.com/frappe/frappe/pull/12557)) ([#12751](https://github.com/frappe/frappe/pull/12751)) ([#12864](https://github.com/frappe/frappe/pull/12864))
+- Fixed Multi-column paste in grid ([#12861](https://github.com/frappe/frappe/pull/12861))
+- Fixed grid validation ([#12744](https://github.com/frappe/frappe/pull/12744))
+- Fixed currency value formatting in dashboard chart ([#12613](https://github.com/frappe/frappe/pull/12613))
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v13/v13_2_0.md
+# Version 13.2.0 Release Notes
+
+### Features & Enhancements
+
+- Add option to mention a group of users ([#12844](https://github.com/frappe/frappe/pull/12844))
+- Copy DocType / documents across sites ([#12872](https://github.com/frappe/frappe/pull/12872))
+- Scheduler log in notifications ([#1135](https://github.com/frappe/frappe/pull/1135))
+- Add Enable/Disable Webhook via Check Field ([#12842](https://github.com/frappe/frappe/pull/12842))
+- Allow query/custom reports to save custom data in the json field ([#12534](https://github.com/frappe/frappe/pull/12534))
+
+### Fixes
+
+- Load server translations in boot (backport #12848) ([#12852](https://github.com/frappe/frappe/pull/12852))
+- Allow to override dashboard chart properties type/color ([#12846](https://github.com/frappe/frappe/pull/12846))
+- Multi-column paste in grid ([#12861](https://github.com/frappe/frappe/pull/12861))
+- Add log_error and FrappeClient to restricted python ([#12857](https://github.com/frappe/frappe/pull/12857))
+- Redirect Web Form user directly to success URL, if no amount is due ([#12661](https://github.com/frappe/frappe/pull/12661))
+- Attachment pill lock icon redirects to File ([#12864](https://github.com/frappe/frappe/pull/12864))
+- Redirect Web Form user directly to success URL, if no amount is due (backport #12661) ([#12856](https://github.com/frappe/frappe/pull/12856))
+- Remove events to redraw charts ([#12973](https://github.com/frappe/frappe/pull/12973))
+- Don't allow user to remove/change data source file in data import ([#12827](https://github.com/frappe/frappe/pull/12827))
+- Load server translations in boot ([#12848](https://github.com/frappe/frappe/pull/12848))
+- Newly created Workspace not being accessible unless a shortcut u… ([#12866](https://github.com/frappe/frappe/pull/12866))
+- Currency labels in grids ([#12974](https://github.com/frappe/frappe/pull/12974))
+- Handle error while session start ([#12933](https://github.com/frappe/frappe/pull/12933))
+- Add field type check in custom field validation ([#12858](https://github.com/frappe/frappe/pull/12858))
+- Make language select optional and fix breakpoint issues ([#12860](https://github.com/frappe/frappe/pull/12860))
+- Form Dashboard reference link ([#12945](https://github.com/frappe/frappe/pull/12945))
+- Invalid HTML generated by the base template ([#12953](https://github.com/frappe/frappe/pull/12953))
+- Default values were not triggering change event ([#12975](https://github.com/frappe/frappe/pull/12975))
+- Make strings translatable ([#12877](https://github.com/frappe/frappe/pull/12877))
+- Added build-message-files command ([#12950](https://github.com/frappe/frappe/pull/12950))
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v13/v13_3_0.md
+# Version 13.3.0 Release Notes
+
+### Features & Enhancements
+
+- Deletion Steps in Data Deletion Tool ([#13124](https://github.com/frappe/frappe/pull/13124))
+- Format Option for list-apps in bench CLI ([#13125](https://github.com/frappe/frappe/pull/13125))
+- Add password fieldtype option for Web Form ([#13093](https://github.com/frappe/frappe/pull/13093))
+- Add simple __repr__ for DocTypes ([#13151](https://github.com/frappe/frappe/pull/13151))
+- Switch theme with left/right keys ([#13077](https://github.com/frappe/frappe/pull/13077))
+- sourceURL for injected javascript ([#13022](https://github.com/frappe/frappe/pull/13022))
+
+### Fixes
+
+- Decode uri before importing file via weblink ([#13026](https://github.com/frappe/frappe/pull/13026))
+- Respond to /api requests as JSON by default ([#13053](https://github.com/frappe/frappe/pull/13053))
+- Disabled checkbox should be disabled ([#13021](https://github.com/frappe/frappe/pull/13021))
+- Moving Site folder across different FileSystems failed ([#13038](https://github.com/frappe/frappe/pull/13038))
+- Freeze screen till the background request is complete ([#13078](https://github.com/frappe/frappe/pull/13078))
+- Added conditional rendering for content field in split section w… ([#13075](https://github.com/frappe/frappe/pull/13075))
+- Show delete button on portal if user has permission to delete document ([#13149](https://github.com/frappe/frappe/pull/13149))
+- Dont disable dialog scroll on focusing a Link/Autocomplete field ([#13119](https://github.com/frappe/frappe/pull/13119))
+- Typo in RecorderDetail.vue ([#13086](https://github.com/frappe/frappe/pull/13086))
+- Error for bench drop-site. Added missing import. ([#13064](https://github.com/frappe/frappe/pull/13064))
+- Report column context ([#13090](https://github.com/frappe/frappe/pull/13090))
+- Different service name for push and pull request events ([#13094](https://github.com/frappe/frappe/pull/13094))
+- Moving Site folder across different FileSystems failed ([#13033](https://github.com/frappe/frappe/pull/13033))
+- Consistent checkboxes on all browsers ([#13042](https://github.com/frappe/frappe/pull/13042))
+- Changed shorcut widgets color picker to dropdown ([#13073](https://github.com/frappe/frappe/pull/13073))
+- Error while exporting reports with duration field ([#13118](https://github.com/frappe/frappe/pull/13118))
+- Add margin to download backup card ([#13079](https://github.com/frappe/frappe/pull/13079))
+- Move mention list generation logic to server-side ([#13074](https://github.com/frappe/frappe/pull/13074))
+- Make strings translatable ([#13046](https://github.com/frappe/frappe/pull/13046))
+- Don't evaluate dynamic properties to check if conflicts exist ([#13186](https://github.com/frappe/frappe/pull/13186))
+- Add __ function in vue global for translation in recorder ([#13089](https://github.com/frappe/frappe/pull/13089))
+- Make strings translatable ([#13076](https://github.com/frappe/frappe/pull/13076))
+- Show config in bench CLI ([#13128](https://github.com/frappe/frappe/pull/13128))
+- Add breadcrumbs for list view ([#13091](https://github.com/frappe/frappe/pull/13091))
+- Do not skip data in save while using shortcut ([#13182](https://github.com/frappe/frappe/pull/13182))
+- Use docfields from options if no docfields are returned from meta ([#13188](https://github.com/frappe/frappe/pull/13188))
+- Disable reloading files in `__pycache__` directory ([#13109](https://github.com/frappe/frappe/pull/13109))
+- RTL stylesheet route to load RTL style on demand. ([#13007](https://github.com/frappe/frappe/pull/13007))
+- Do not show messsage when exception is handled ([#13111](https://github.com/frappe/frappe/pull/13111))
+- Replace parseFloat by Number ([#13082](https://github.com/frappe/frappe/pull/13082))
+- Add margin to download backup card ([#13050](https://github.com/frappe/frappe/pull/13050))
+- Translate report column labels ([#13083](https://github.com/frappe/frappe/pull/13083))
+- Grid row color picker field not working ([#13040](https://github.com/frappe/frappe/pull/13040))
+- Improve oauthlib implementation ([#13045](https://github.com/frappe/frappe/pull/13045))
+- Replace filter_by like with full text filter ([#13126](https://github.com/frappe/frappe/pull/13126))
+- Focus jumps to first field ([#13067](https://github.com/frappe/frappe/pull/13067))
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v5/v5_0_18.md
+#### Updates to Web Forms
+
+- Web Forms list now is a standard portal list and includes paging and other extensions
+- Section, Column Breaks in Web Forms
+- Consistent User Interface
+- Cleanup of Portal Pages
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v5/v5_0_32.md
+- Reports are now searchable from awesome bar
+- Show currect label for title in list views
+- Datepicker now sets default value as Today
+- Map child table as per meta, if not mentioned in table_map via mapper
+- Re-enable save button on error
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v5/v5_1_0.md
+- Change print font from Setup > Print Settings or set it for each Print Format. Font options are "Default", "Arial", "Helvetica", "Verdana", "Monospace".
+- Print and full-page print preview in user's language
+- Fixed inconsistent visibility of a logged-in user's image in website
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v5/v5_3_0.md
+- Added Language Support for Following languages
+
+
+    
+        bo*
+        ལྷ་སའི་སྐད་
+    
+    
+        fi
+        suomalainen
+    
+    
+        km
+        ភាសាខ្មែរ
+    
+    
+        mk
+        македонски
+    
+    
+        my
+        Melayu
+    
+    
+        no
+        norsk
+    
+    
+        sv
+        Svenska
+    
+    
+        sq
+        shqiptar
+    
+
+
+* Unable to find translations for Tibetian via Google
+
+- To contribute to translations, please login to [https://translate.erpnext.com](https://translate.erpnext.com)
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v6/v6_0_0.md
+- **Realtime updates** for new comments and list view
+- Get warned if someone else modified the document that you are working on
+- You can now quickly assign a document to yourself by clicking on "Assign to me"
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v6/v6_13_0.md
+- Attachments can now be marked as **Private**
+	- Private files cannot be accessed unless you are logged in
+	- To access a private file, you need to have read permission on the file or read permission on the document to which the file is attached
+	- All attachments in a new incoming email are private
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v6/v6_15_0.md
+- **For Developers:** Automatic logging of request errors and its context in **Error Snapshot**    
+	- Thank you [Maxwell Morais](https://discuss.erpnext.com/users/max_morais_dmm/activity) for this useful feature
+	- You can access it from *Developer > Logs > Error Snapshot*
+- Added language support for [Gujarati](https://translate.erpnext.com/view?lang=gu): **gu - ગુજરાતી**
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v6/v6_1_0.md
+- Sections can now be set as **Collapsible**.
+- Collapsible sections can be shown as collapsed based on certain rules defined in the **Collapsible Depends On** property of the document field (DocField).
+- Title is now editable from the form if the `fieldname` of the title field is **title**.
+- Document can now be renamed by clicking the page heading.
+- Fields can be set as **Bold** so that they can be easily identified in long forms.
+- Fixed mobile views
+- See Data Import progress in realtime
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v6/v6_20_0.md
+- Fixed **Export** for large reports
+- Added language support for:
+	- [Estonian](https://translate.erpnext.com/view?lang=et): **et - eesti**
+	- [Telugu](https://translate.erpnext.com/view?lang=te): **te - తెలుగు**
+	- [Urdu](https://translate.erpnext.com/view?lang=ur): **ur - اردو**
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v6/v6_27_1.md
+- Configurable Desktop
+	- Add any Documents, Reports, Modules, Pages to the desktop
+	- Remove all the unwanted icons
+- **Module Page New Design**
+	- New module design now shows all documents in a module together
+	- [Read the Details](https://frappe.io/blog/erpnext-features/configurable-desktop)
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v6/v6_2_0.md
+- **Permissions:** 
+	- If User Permissions are missing for a DocType, don't show non-matching records.
+	- If **Ignore User Permissions If Missing** is checked in System Settings, show records even if User Permissions are not defined.
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v6/v6_4_8.md
+- Added Language Support for Following languages
+
+
+    
+        bn
+        বাংলা 
+    
+    
+        da-DK
+        dansk (Danmark)
+    
+    
+        es-PE
+        Español (Perú)
+    
+    
+        si
+        slovenščina
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v6/v6_5_0.md
+- **Linked With** will now show links from Dynamic Links
+- **Data** field-type size truncated to 140 characters from 255 (by default). Can be changed by setting the **length** property from **Customize Form View**
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v7/v7_0_0.md
+#### UI
+- Editable Grids
+- Image Field in DocType, form and list
+- Dashboard, Heatmap, Graphs on Form View
+- Document Flow in forms
+- List views: remembers user settings
+
+#### Celery to RQ
+
+#### Quick Entry
+
+#### Razorpay Integration
+
+#### Passwords
+
+#### Portals
+- Statics (`www` folder): directly served from templates
+- New Routing
+- Web Forms
+
+#### Limits
+- Expiry, space etc
+- Usage Info Page
+
+#### Minor
+- **Rename:** Bulk Email is now Email Queue
+- `frappe.require` is async
+- `flot.js` replaced by `c3.js`
+- Most popular links on the top
+- Standard Replies configurable
+- Timeline permisions (not based on user permissions)
+- "Track Seen" feature in doctypes
+- Moved: "Edit Profile" page is now in frappe (moved from ERPNext)
+- Cleanup UI for chat
+- New default user icons (based on initials)
+- Multiple assign (add a document to multiple users)
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v7/v7_1_0.md
+#### Gantt View
+- New Gantt view for documents where date range is available
+
+#### In-App Help
+- Search for help from within the app. Click on "Help"
+
+#### Web Form
+- Add grids (child tables)
+- Add page breaks (for long forms)
+- Add payment gateway
+- Add attachments
+
+#### Auto Email Report
+- Email reports automatically on daily / weekly / monthly basis
+
+#### Other Fixes
+- Send a popup to all users on login for a new Note by checking on "Notify users with a popup when they log in"
+- Portal Users (Customers, Supplier, Students) can now have roles
+- Sidebar in portal view will be rendered as per roles and can be configured from Portal Settings
+- Restrict the number of backups to be saved in System Settings
+- Scheduler log is now error log and as MyISAM
+- A better way to export customzations and Email Alert directly from Customize Form
+- Option to send email from Data Import Tool where applicable
+- Integration Broker
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v7/v7_2_0.md
+- Filters Dashboard
+	- Dashboard with pre-defined filters in List/Report View
+- Tag Category
+	- Show/Group tags based on category
+- Updated Font Awesome version to 4.x.x
+- Checkboxes in grid
+	- Delete selected rows
+	- Map selected rows from one document to another.
+- Show Totals button in report
+- OpenID Connect for Frappe
+- Threading based on message id in Email Queue
+- New control object daterangepicker for filtering
+- Orientation selection in PDF
+- Expand/Collapse All buttons in tree view reports
+- Add attachment from email and copy attachments to Communication Record
+- Bulk Upload from zip file
+- Tree view decoration
+- Custom menu for report view
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v8/v8_0_0.md
+#### Global Search
+- Now, from awesome bar, you can search all the documents related to a specific keyword.
+- For example, you can get all Quotations, Sales Orders and Sales Invoices related to a Customer, by searching with customer's email address / mobile no.
+
+#### Kanban View
+- Kanban Board allows you to identify a field based on which documents will be categorised and viewed together.
+- From the board itself, you can update the status of teh document, comment on it or assign it someone.
+
+#### Document Versioning
+- Now the system maintains all the changes of a document with the information of user and timestamp.
+
+#### Delete and Restore
+- In version 8, all the deleted documents are stored in the "Deleted Documents" table, which can be restored later
+- To permanently delete a record, you need to delete it from "Deleted Documents".
+
+#### Email Inbox
+- We have introduced an Inbox View for all the communications. 
+- It has all the basic functionalities of an Email Client like Inbox, Sent Mails, Trash and Spam folders, Contact list, Read/Unread, forwarding of an email etc.
+- Issue, Lead and Opportunity can be created directly from the Communication.
+
+#### Custom Permissions
+- Now, all the customised permissions are stored separately in a Custom DocPerm table.
+
+#### Permissions for Reports and Page
+- Report and Page have it's own dedicated permission table now, it's no more dependent on the reference Doctype for permissions.
+- There is a page "Role Permission for Page and Report", from where you will be able to customize the permissions for reports and pages.
+
+#### Newsletter Enhancements
+- In the new version, newsletter can be sent to multiple email groups.
+- You will also be able to send the attachments with the newsletter.
+- Unsubscribe link is optional now
+
+#### New Calendar and Date Picker
+- Get a more crisp view of calendar and events.
+- Date picker also has been updated in the version.
+
+#### Summernote Text Editor
+- We have also integrated Summernote text editor in the ERPNext. It has many tools to create better texts.
+
+#### Export report in Excel format
+- Reports can now also be exported in Excel format.
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/change_log/v8/v8_7_0.md
+### User Permissions
+- User Permission is now a DocType, a new UX for the existing Role and User Permission managers to make it easy to enter permissions. For more details please check User Permissions
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/core/doctype/docfield/README.md
+Represents a field of a DocType analogous to a table column in the database. DocFields represent the properties both the model and the view and hence may or may not have database columns associated (for example, Section Break does not have any column associated.)
+
+See Standard Field Types
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/core/doctype/doctype/README.md
+DocType is the basic building block of an application and encompasses all the three elements i.e. model, view and controller. It represents a:
+
+- Table in the database
+- Form in the application
+- Controller (class) to execute business logic
+
+#### Single Type
+
+DocTypes can be of "Single" type where they do not represent a table, and only one instance is maintained. This can be used where the DocType is required only for its view features or to store some configurations in one place.
+
+#### Child Tables
+
+DocTypes can be child tables of other DocTypes. In such cases, they must defined `parent`, `parenttype` and `parentfield` properties to uniquely identify its placement.
+
+In the parent DocType, the position of a child in the field sequence is defined by the `Table` field type.
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/core/doctype/package/licenses/GNU Affero General Public License.md
+### GNU AFFERO GENERAL PUBLIC LICENSE
+
+Version 3, 19 November 2007
+
+Copyright (C) 2007 Free Software Foundation, Inc.
+
+
+Everyone is permitted to copy and distribute verbatim copies of this
+license document, but changing it is not allowed.
+
+### Preamble
+
+The GNU Affero General Public License is a free, copyleft license for
+software and other kinds of works, specifically designed to ensure
+cooperation with the community in the case of network server software.
+
+The licenses for most software and other practical works are designed
+to take away your freedom to share and change the works. By contrast,
+our General Public Licenses are intended to guarantee your freedom to
+share and change all versions of a program--to make sure it remains
+free software for all its users.
+
+When we speak of free software, we are referring to freedom, not
+price. Our General Public Licenses are designed to make sure that you
+have the freedom to distribute copies of free software (and charge for
+them if you wish), that you receive source code or can get it if you
+want it, that you can change the software or use pieces of it in new
+free programs, and that you know you can do these things.
+
+Developers that use our General Public Licenses protect your rights
+with two steps: (1) assert copyright on the software, and (2) offer
+you this License which gives you legal permission to copy, distribute
+and/or modify the software.
+
+A secondary benefit of defending all users' freedom is that
+improvements made in alternate versions of the program, if they
+receive widespread use, become available for other developers to
+incorporate. Many developers of free software are heartened and
+encouraged by the resulting cooperation. However, in the case of
+software used on network servers, this result may fail to come about.
+The GNU General Public License permits making a modified version and
+letting the public access it on a server without ever releasing its
+source code to the public.
+
+The GNU Affero General Public License is designed specifically to
+ensure that, in such cases, the modified source code becomes available
+to the community. It requires the operator of a network server to
+provide the source code of the modified version running there to the
+users of that server. Therefore, public use of a modified version, on
+a publicly accessible server, gives the public access to the source
+code of the modified version.
+
+An older license, called the Affero General Public License and
+published by Affero, was designed to accomplish similar goals. This is
+a different license, not a version of the Affero GPL, but Affero has
+released a new version of the Affero GPL which permits relicensing
+under this license.
+
+The precise terms and conditions for copying, distribution and
+modification follow.
+
+### TERMS AND CONDITIONS
+
+#### 0. Definitions.
+
+"This License" refers to version 3 of the GNU Affero General Public
+License.
+
+"Copyright" also means copyright-like laws that apply to other kinds
+of works, such as semiconductor masks.
+
+"The Program" refers to any copyrightable work licensed under this
+License. Each licensee is addressed as "you". "Licensees" and
+"recipients" may be individuals or organizations.
+
+To "modify" a work means to copy from or adapt all or part of the work
+in a fashion requiring copyright permission, other than the making of
+an exact copy. The resulting work is called a "modified version" of
+the earlier work or a work "based on" the earlier work.
+
+A "covered work" means either the unmodified Program or a work based
+on the Program.
+
+To "propagate" a work means to do anything with it that, without
+permission, would make you directly or secondarily liable for
+infringement under applicable copyright law, except executing it on a
+computer or modifying a private copy. Propagation includes copying,
+distribution (with or without modification), making available to the
+public, and in some countries other activities as well.
+
+To "convey" a work means any kind of propagation that enables other
+parties to make or receive copies. Mere interaction with a user
+through a computer network, with no transfer of a copy, is not
+conveying.
+
+An interactive user interface displays "Appropriate Legal Notices" to
+the extent that it includes a convenient and prominently visible
+feature that (1) displays an appropriate copyright notice, and (2)
+tells the user that there is no warranty for the work (except to the
+extent that warranties are provided), that licensees may convey the
+work under this License, and how to view a copy of this License. If
+the interface presents a list of user commands or options, such as a
+menu, a prominent item in the list meets this criterion.
+
+#### 1. Source Code.
+
+The "source code" for a work means the preferred form of the work for
+making modifications to it. "Object code" means any non-source form of
+a work.
+
+A "Standard Interface" means an interface that either is an official
+standard defined by a recognized standards body, or, in the case of
+interfaces specified for a particular programming language, one that
+is widely used among developers working in that language.
+
+The "System Libraries" of an executable work include anything, other
+than the work as a whole, that (a) is included in the normal form of
+packaging a Major Component, but which is not part of that Major
+Component, and (b) serves only to enable use of the work with that
+Major Component, or to implement a Standard Interface for which an
+implementation is available to the public in source code form. A
+"Major Component", in this context, means a major essential component
+(kernel, window system, and so on) of the specific operating system
+(if any) on which the executable work runs, or a compiler used to
+produce the work, or an object code interpreter used to run it.
+
+The "Corresponding Source" for a work in object code form means all
+the source code needed to generate, install, and (for an executable
+work) run the object code and to modify the work, including scripts to
+control those activities. However, it does not include the work's
+System Libraries, or general-purpose tools or generally available free
+programs which are used unmodified in performing those activities but
+which are not part of the work. For example, Corresponding Source
+includes interface definition files associated with source files for
+the work, and the source code for shared libraries and dynamically
+linked subprograms that the work is specifically designed to require,
+such as by intimate data communication or control flow between those
+subprograms and other parts of the work.
+
+The Corresponding Source need not include anything that users can
+regenerate automatically from other parts of the Corresponding Source.
+
+The Corresponding Source for a work in source code form is that same
+work.
+
+#### 2. Basic Permissions.
+
+All rights granted under this License are granted for the term of
+copyright on the Program, and are irrevocable provided the stated
+conditions are met. This License explicitly affirms your unlimited
+permission to run the unmodified Program. The output from running a
+covered work is covered by this License only if the output, given its
+content, constitutes a covered work. This License acknowledges your
+rights of fair use or other equivalent, as provided by copyright law.
+
+You may make, run and propagate covered works that you do not convey,
+without conditions so long as your license otherwise remains in force.
+You may convey covered works to others for the sole purpose of having
+them make modifications exclusively for you, or provide you with
+facilities for running those works, provided that you comply with the
+terms of this License in conveying all material for which you do not
+control copyright. Those thus making or running the covered works for
+you must do so exclusively on your behalf, under your direction and
+control, on terms that prohibit them from making any copies of your
+copyrighted material outside their relationship with you.
+
+Conveying under any other circumstances is permitted solely under the
+conditions stated below. Sublicensing is not allowed; section 10 makes
+it unnecessary.
+
+#### 3. Protecting Users' Legal Rights From Anti-Circumvention Law.
+
+No covered work shall be deemed part of an effective technological
+measure under any applicable law fulfilling obligations under article
+11 of the WIPO copyright treaty adopted on 20 December 1996, or
+similar laws prohibiting or restricting circumvention of such
+measures.
+
+When you convey a covered work, you waive any legal power to forbid
+circumvention of technological measures to the extent such
+circumvention is effected by exercising rights under this License with
+respect to the covered work, and you disclaim any intention to limit
+operation or modification of the work as a means of enforcing, against
+the work's users, your or third parties' legal rights to forbid
+circumvention of technological measures.
+
+#### 4. Conveying Verbatim Copies.
+
+You may convey verbatim copies of the Program's source code as you
+receive it, in any medium, provided that you conspicuously and
+appropriately publish on each copy an appropriate copyright notice;
+keep intact all notices stating that this License and any
+non-permissive terms added in accord with section 7 apply to the code;
+keep intact all notices of the absence of any warranty; and give all
+recipients a copy of this License along with the Program.
+
+You may charge any price or no price for each copy that you convey,
+and you may offer support or warranty protection for a fee.
+
+#### 5. Conveying Modified Source Versions.
+
+You may convey a work based on the Program, or the modifications to
+produce it from the Program, in the form of source code under the
+terms of section 4, provided that you also meet all of these
+conditions:
+
+-   a) The work must carry prominent notices stating that you modified
+    it, and giving a relevant date.
+-   b) The work must carry prominent notices stating that it is
+    released under this License and any conditions added under
+    section 7. This requirement modifies the requirement in section 4
+    to "keep intact all notices".
+-   c) You must license the entire work, as a whole, under this
+    License to anyone who comes into possession of a copy. This
+    License will therefore apply, along with any applicable section 7
+    additional terms, to the whole of the work, and all its parts,
+    regardless of how they are packaged. This License gives no
+    permission to license the work in any other way, but it does not
+    invalidate such permission if you have separately received it.
+-   d) If the work has interactive user interfaces, each must display
+    Appropriate Legal Notices; however, if the Program has interactive
+    interfaces that do not display Appropriate Legal Notices, your
+    work need not make them do so.
+
+A compilation of a covered work with other separate and independent
+works, which are not by their nature extensions of the covered work,
+and which are not combined with it such as to form a larger program,
+in or on a volume of a storage or distribution medium, is called an
+"aggregate" if the compilation and its resulting copyright are not
+used to limit the access or legal rights of the compilation's users
+beyond what the individual works permit. Inclusion of a covered work
+in an aggregate does not cause this License to apply to the other
+parts of the aggregate.
+
+#### 6. Conveying Non-Source Forms.
+
+You may convey a covered work in object code form under the terms of
+sections 4 and 5, provided that you also convey the machine-readable
+Corresponding Source under the terms of this License, in one of these
+ways:
+
+-   a) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by the
+    Corresponding Source fixed on a durable physical medium
+    customarily used for software interchange.
+-   b) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by a
+    written offer, valid for at least three years and valid for as
+    long as you offer spare parts or customer support for that product
+    model, to give anyone who possesses the object code either (1) a
+    copy of the Corresponding Source for all the software in the
+    product that is covered by this License, on a durable physical
+    medium customarily used for software interchange, for a price no
+    more than your reasonable cost of physically performing this
+    conveying of source, or (2) access to copy the Corresponding
+    Source from a network server at no charge.
+-   c) Convey individual copies of the object code with a copy of the
+    written offer to provide the Corresponding Source. This
+    alternative is allowed only occasionally and noncommercially, and
+    only if you received the object code with such an offer, in accord
+    with subsection 6b.
+-   d) Convey the object code by offering access from a designated
+    place (gratis or for a charge), and offer equivalent access to the
+    Corresponding Source in the same way through the same place at no
+    further charge. You need not require recipients to copy the
+    Corresponding Source along with the object code. If the place to
+    copy the object code is a network server, the Corresponding Source
+    may be on a different server (operated by you or a third party)
+    that supports equivalent copying facilities, provided you maintain
+    clear directions next to the object code saying where to find the
+    Corresponding Source. Regardless of what server hosts the
+    Corresponding Source, you remain obligated to ensure that it is
+    available for as long as needed to satisfy these requirements.
+-   e) Convey the object code using peer-to-peer transmission,
+    provided you inform other peers where the object code and
+    Corresponding Source of the work are being offered to the general
+    public at no charge under subsection 6d.
+
+A separable portion of the object code, whose source code is excluded
+from the Corresponding Source as a System Library, need not be
+included in conveying the object code work.
+
+A "User Product" is either (1) a "consumer product", which means any
+tangible personal property which is normally used for personal,
+family, or household purposes, or (2) anything designed or sold for
+incorporation into a dwelling. In determining whether a product is a
+consumer product, doubtful cases shall be resolved in favor of
+coverage. For a particular product received by a particular user,
+"normally used" refers to a typical or common use of that class of
+product, regardless of the status of the particular user or of the way
+in which the particular user actually uses, or expects or is expected
+to use, the product. A product is a consumer product regardless of
+whether the product has substantial commercial, industrial or
+non-consumer uses, unless such uses represent the only significant
+mode of use of the product.
+
+"Installation Information" for a User Product means any methods,
+procedures, authorization keys, or other information required to
+install and execute modified versions of a covered work in that User
+Product from a modified version of its Corresponding Source. The
+information must suffice to ensure that the continued functioning of
+the modified object code is in no case prevented or interfered with
+solely because modification has been made.
+
+If you convey an object code work under this section in, or with, or
+specifically for use in, a User Product, and the conveying occurs as
+part of a transaction in which the right of possession and use of the
+User Product is transferred to the recipient in perpetuity or for a
+fixed term (regardless of how the transaction is characterized), the
+Corresponding Source conveyed under this section must be accompanied
+by the Installation Information. But this requirement does not apply
+if neither you nor any third party retains the ability to install
+modified object code on the User Product (for example, the work has
+been installed in ROM).
+
+The requirement to provide Installation Information does not include a
+requirement to continue to provide support service, warranty, or
+updates for a work that has been modified or installed by the
+recipient, or for the User Product in which it has been modified or
+installed. Access to a network may be denied when the modification
+itself materially and adversely affects the operation of the network
+or violates the rules and protocols for communication across the
+network.
+
+Corresponding Source conveyed, and Installation Information provided,
+in accord with this section must be in a format that is publicly
+documented (and with an implementation available to the public in
+source code form), and must require no special password or key for
+unpacking, reading or copying.
+
+#### 7. Additional Terms.
+
+"Additional permissions" are terms that supplement the terms of this
+License by making exceptions from one or more of its conditions.
+Additional permissions that are applicable to the entire Program shall
+be treated as though they were included in this License, to the extent
+that they are valid under applicable law. If additional permissions
+apply only to part of the Program, that part may be used separately
+under those permissions, but the entire Program remains governed by
+this License without regard to the additional permissions.
+
+When you convey a copy of a covered work, you may at your option
+remove any additional permissions from that copy, or from any part of
+it. (Additional permissions may be written to require their own
+removal in certain cases when you modify the work.) You may place
+additional permissions on material, added by you to a covered work,
+for which you have or can give appropriate copyright permission.
+
+Notwithstanding any other provision of this License, for material you
+add to a covered work, you may (if authorized by the copyright holders
+of that material) supplement the terms of this License with terms:
+
+-   a) Disclaiming warranty or limiting liability differently from the
+    terms of sections 15 and 16 of this License; or
+-   b) Requiring preservation of specified reasonable legal notices or
+    author attributions in that material or in the Appropriate Legal
+    Notices displayed by works containing it; or
+-   c) Prohibiting misrepresentation of the origin of that material,
+    or requiring that modified versions of such material be marked in
+    reasonable ways as different from the original version; or
+-   d) Limiting the use for publicity purposes of names of licensors
+    or authors of the material; or
+-   e) Declining to grant rights under trademark law for use of some
+    trade names, trademarks, or service marks; or
+-   f) Requiring indemnification of licensors and authors of that
+    material by anyone who conveys the material (or modified versions
+    of it) with contractual assumptions of liability to the recipient,
+    for any liability that these contractual assumptions directly
+    impose on those licensors and authors.
+
+All other non-permissive additional terms are considered "further
+restrictions" within the meaning of section 10. If the Program as you
+received it, or any part of it, contains a notice stating that it is
+governed by this License along with a term that is a further
+restriction, you may remove that term. If a license document contains
+a further restriction but permits relicensing or conveying under this
+License, you may add to a covered work material governed by the terms
+of that license document, provided that the further restriction does
+not survive such relicensing or conveying.
+
+If you add terms to a covered work in accord with this section, you
+must place, in the relevant source files, a statement of the
+additional terms that apply to those files, or a notice indicating
+where to find the applicable terms.
+
+Additional terms, permissive or non-permissive, may be stated in the
+form of a separately written license, or stated as exceptions; the
+above requirements apply either way.
+
+#### 8. Termination.
+
+You may not propagate or modify a covered work except as expressly
+provided under this License. Any attempt otherwise to propagate or
+modify it is void, and will automatically terminate your rights under
+this License (including any patent licenses granted under the third
+paragraph of section 11).
+
+However, if you cease all violation of this License, then your license
+from a particular copyright holder is reinstated (a) provisionally,
+unless and until the copyright holder explicitly and finally
+terminates your license, and (b) permanently, if the copyright holder
+fails to notify you of the violation by some reasonable means prior to
+60 days after the cessation.
+
+Moreover, your license from a particular copyright holder is
+reinstated permanently if the copyright holder notifies you of the
+violation by some reasonable means, this is the first time you have
+received notice of violation of this License (for any work) from that
+copyright holder, and you cure the violation prior to 30 days after
+your receipt of the notice.
+
+Termination of your rights under this section does not terminate the
+licenses of parties who have received copies or rights from you under
+this License. If your rights have been terminated and not permanently
+reinstated, you do not qualify to receive new licenses for the same
+material under section 10.
+
+#### 9. Acceptance Not Required for Having Copies.
+
+You are not required to accept this License in order to receive or run
+a copy of the Program. Ancillary propagation of a covered work
+occurring solely as a consequence of using peer-to-peer transmission
+to receive a copy likewise does not require acceptance. However,
+nothing other than this License grants you permission to propagate or
+modify any covered work. These actions infringe copyright if you do
+not accept this License. Therefore, by modifying or propagating a
+covered work, you indicate your acceptance of this License to do so.
+
+#### 10. Automatic Licensing of Downstream Recipients.
+
+Each time you convey a covered work, the recipient automatically
+receives a license from the original licensors, to run, modify and
+propagate that work, subject to this License. You are not responsible
+for enforcing compliance by third parties with this License.
+
+An "entity transaction" is a transaction transferring control of an
+organization, or substantially all assets of one, or subdividing an
+organization, or merging organizations. If propagation of a covered
+work results from an entity transaction, each party to that
+transaction who receives a copy of the work also receives whatever
+licenses to the work the party's predecessor in interest had or could
+give under the previous paragraph, plus a right to possession of the
+Corresponding Source of the work from the predecessor in interest, if
+the predecessor has it or can get it with reasonable efforts.
+
+You may not impose any further restrictions on the exercise of the
+rights granted or affirmed under this License. For example, you may
+not impose a license fee, royalty, or other charge for exercise of
+rights granted under this License, and you may not initiate litigation
+(including a cross-claim or counterclaim in a lawsuit) alleging that
+any patent claim is infringed by making, using, selling, offering for
+sale, or importing the Program or any portion of it.
+
+#### 11. Patents.
+
+A "contributor" is a copyright holder who authorizes use under this
+License of the Program or a work on which the Program is based. The
+work thus licensed is called the contributor's "contributor version".
+
+A contributor's "essential patent claims" are all patent claims owned
+or controlled by the contributor, whether already acquired or
+hereafter acquired, that would be infringed by some manner, permitted
+by this License, of making, using, or selling its contributor version,
+but do not include claims that would be infringed only as a
+consequence of further modification of the contributor version. For
+purposes of this definition, "control" includes the right to grant
+patent sublicenses in a manner consistent with the requirements of
+this License.
+
+Each contributor grants you a non-exclusive, worldwide, royalty-free
+patent license under the contributor's essential patent claims, to
+make, use, sell, offer for sale, import and otherwise run, modify and
+propagate the contents of its contributor version.
+
+In the following three paragraphs, a "patent license" is any express
+agreement or commitment, however denominated, not to enforce a patent
+(such as an express permission to practice a patent or covenant not to
+sue for patent infringement). To "grant" such a patent license to a
+party means to make such an agreement or commitment not to enforce a
+patent against the party.
+
+If you convey a covered work, knowingly relying on a patent license,
+and the Corresponding Source of the work is not available for anyone
+to copy, free of charge and under the terms of this License, through a
+publicly available network server or other readily accessible means,
+then you must either (1) cause the Corresponding Source to be so
+available, or (2) arrange to deprive yourself of the benefit of the
+patent license for this particular work, or (3) arrange, in a manner
+consistent with the requirements of this License, to extend the patent
+license to downstream recipients. "Knowingly relying" means you have
+actual knowledge that, but for the patent license, your conveying the
+covered work in a country, or your recipient's use of the covered work
+in a country, would infringe one or more identifiable patents in that
+country that you have reason to believe are valid.
+
+If, pursuant to or in connection with a single transaction or
+arrangement, you convey, or propagate by procuring conveyance of, a
+covered work, and grant a patent license to some of the parties
+receiving the covered work authorizing them to use, propagate, modify
+or convey a specific copy of the covered work, then the patent license
+you grant is automatically extended to all recipients of the covered
+work and works based on it.
+
+A patent license is "discriminatory" if it does not include within the
+scope of its coverage, prohibits the exercise of, or is conditioned on
+the non-exercise of one or more of the rights that are specifically
+granted under this License. You may not convey a covered work if you
+are a party to an arrangement with a third party that is in the
+business of distributing software, under which you make payment to the
+third party based on the extent of your activity of conveying the
+work, and under which the third party grants, to any of the parties
+who would receive the covered work from you, a discriminatory patent
+license (a) in connection with copies of the covered work conveyed by
+you (or copies made from those copies), or (b) primarily for and in
+connection with specific products or compilations that contain the
+covered work, unless you entered into that arrangement, or that patent
+license was granted, prior to 28 March 2007.
+
+Nothing in this License shall be construed as excluding or limiting
+any implied license or other defenses to infringement that may
+otherwise be available to you under applicable patent law.
+
+#### 12. No Surrender of Others' Freedom.
+
+If conditions are imposed on you (whether by court order, agreement or
+otherwise) that contradict the conditions of this License, they do not
+excuse you from the conditions of this License. If you cannot convey a
+covered work so as to satisfy simultaneously your obligations under
+this License and any other pertinent obligations, then as a
+consequence you may not convey it at all. For example, if you agree to
+terms that obligate you to collect a royalty for further conveying
+from those to whom you convey the Program, the only way you could
+satisfy both those terms and this License would be to refrain entirely
+from conveying the Program.
+
+#### 13. Remote Network Interaction; Use with the GNU General Public License.
+
+Notwithstanding any other provision of this License, if you modify the
+Program, your modified version must prominently offer all users
+interacting with it remotely through a computer network (if your
+version supports such interaction) an opportunity to receive the
+Corresponding Source of your version by providing access to the
+Corresponding Source from a network server at no charge, through some
+standard or customary means of facilitating copying of software. This
+Corresponding Source shall include the Corresponding Source for any
+work covered by version 3 of the GNU General Public License that is
+incorporated pursuant to the following paragraph.
+
+Notwithstanding any other provision of this License, you have
+permission to link or combine any covered work with a work licensed
+under version 3 of the GNU General Public License into a single
+combined work, and to convey the resulting work. The terms of this
+License will continue to apply to the part which is the covered work,
+but the work with which it is combined will remain governed by version
+3 of the GNU General Public License.
+
+#### 14. Revised Versions of this License.
+
+The Free Software Foundation may publish revised and/or new versions
+of the GNU Affero General Public License from time to time. Such new
+versions will be similar in spirit to the present version, but may
+differ in detail to address new problems or concerns.
+
+Each version is given a distinguishing version number. If the Program
+specifies that a certain numbered version of the GNU Affero General
+Public License "or any later version" applies to it, you have the
+option of following the terms and conditions either of that numbered
+version or of any later version published by the Free Software
+Foundation. If the Program does not specify a version number of the
+GNU Affero General Public License, you may choose any version ever
+published by the Free Software Foundation.
+
+If the Program specifies that a proxy can decide which future versions
+of the GNU Affero General Public License can be used, that proxy's
+public statement of acceptance of a version permanently authorizes you
+to choose that version for the Program.
+
+Later license versions may give you additional or different
+permissions. However, no additional obligations are imposed on any
+author or copyright holder as a result of your choosing to follow a
+later version.
+
+#### 15. Disclaimer of Warranty.
+
+THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY
+APPLICABLE LAW. EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT
+HOLDERS AND/OR OTHER PARTIES PROVIDE THE PROGRAM "AS IS" WITHOUT
+WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE. THE ENTIRE RISK AS TO THE QUALITY AND
+PERFORMANCE OF THE PROGRAM IS WITH YOU. SHOULD THE PROGRAM PROVE
+DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING, REPAIR OR
+CORRECTION.
+
+#### 16. Limitation of Liability.
+
+IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
+WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR
+CONVEYS THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES,
+INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES
+ARISING OUT OF THE USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT
+NOT LIMITED TO LOSS OF DATA OR DATA BEING RENDERED INACCURATE OR
+LOSSES SUSTAINED BY YOU OR THIRD PARTIES OR A FAILURE OF THE PROGRAM
+TO OPERATE WITH ANY OTHER PROGRAMS), EVEN IF SUCH HOLDER OR OTHER
+PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+#### 17. Interpretation of Sections 15 and 16.
+
+If the disclaimer of warranty and limitation of liability provided
+above cannot be given local legal effect according to their terms,
+reviewing courts shall apply local law that most closely approximates
+an absolute waiver of all civil liability in connection with the
+Program, unless a warranty or assumption of liability accompanies a
+copy of the Program in return for a fee.
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/core/doctype/package/licenses/GNU General Public License.md
+### GNU GENERAL PUBLIC LICENSE
+
+Version 3, 29 June 2007
+
+Copyright (C) 2007 Free Software Foundation, Inc.
+
+
+Everyone is permitted to copy and distribute verbatim copies of this
+license document, but changing it is not allowed.
+
+### Preamble
+
+The GNU General Public License is a free, copyleft license for
+software and other kinds of works.
+
+The licenses for most software and other practical works are designed
+to take away your freedom to share and change the works. By contrast,
+the GNU General Public License is intended to guarantee your freedom
+to share and change all versions of a program--to make sure it remains
+free software for all its users. We, the Free Software Foundation, use
+the GNU General Public License for most of our software; it applies
+also to any other work released this way by its authors. You can apply
+it to your programs, too.
+
+When we speak of free software, we are referring to freedom, not
+price. Our General Public Licenses are designed to make sure that you
+have the freedom to distribute copies of free software (and charge for
+them if you wish), that you receive source code or can get it if you
+want it, that you can change the software or use pieces of it in new
+free programs, and that you know you can do these things.
+
+To protect your rights, we need to prevent others from denying you
+these rights or asking you to surrender the rights. Therefore, you
+have certain responsibilities if you distribute copies of the
+software, or if you modify it: responsibilities to respect the freedom
+of others.
+
+For example, if you distribute copies of such a program, whether
+gratis or for a fee, you must pass on to the recipients the same
+freedoms that you received. You must make sure that they, too, receive
+or can get the source code. And you must show them these terms so they
+know their rights.
+
+Developers that use the GNU GPL protect your rights with two steps:
+(1) assert copyright on the software, and (2) offer you this License
+giving you legal permission to copy, distribute and/or modify it.
+
+For the developers' and authors' protection, the GPL clearly explains
+that there is no warranty for this free software. For both users' and
+authors' sake, the GPL requires that modified versions be marked as
+changed, so that their problems will not be attributed erroneously to
+authors of previous versions.
+
+Some devices are designed to deny users access to install or run
+modified versions of the software inside them, although the
+manufacturer can do so. This is fundamentally incompatible with the
+aim of protecting users' freedom to change the software. The
+systematic pattern of such abuse occurs in the area of products for
+individuals to use, which is precisely where it is most unacceptable.
+Therefore, we have designed this version of the GPL to prohibit the
+practice for those products. If such problems arise substantially in
+other domains, we stand ready to extend this provision to those
+domains in future versions of the GPL, as needed to protect the
+freedom of users.
+
+Finally, every program is threatened constantly by software patents.
+States should not allow patents to restrict development and use of
+software on general-purpose computers, but in those that do, we wish
+to avoid the special danger that patents applied to a free program
+could make it effectively proprietary. To prevent this, the GPL
+assures that patents cannot be used to render the program non-free.
+
+The precise terms and conditions for copying, distribution and
+modification follow.
+
+### TERMS AND CONDITIONS
+
+#### 0. Definitions.
+
+"This License" refers to version 3 of the GNU General Public License.
+
+"Copyright" also means copyright-like laws that apply to other kinds
+of works, such as semiconductor masks.
+
+"The Program" refers to any copyrightable work licensed under this
+License. Each licensee is addressed as "you". "Licensees" and
+"recipients" may be individuals or organizations.
+
+To "modify" a work means to copy from or adapt all or part of the work
+in a fashion requiring copyright permission, other than the making of
+an exact copy. The resulting work is called a "modified version" of
+the earlier work or a work "based on" the earlier work.
+
+A "covered work" means either the unmodified Program or a work based
+on the Program.
+
+To "propagate" a work means to do anything with it that, without
+permission, would make you directly or secondarily liable for
+infringement under applicable copyright law, except executing it on a
+computer or modifying a private copy. Propagation includes copying,
+distribution (with or without modification), making available to the
+public, and in some countries other activities as well.
+
+To "convey" a work means any kind of propagation that enables other
+parties to make or receive copies. Mere interaction with a user
+through a computer network, with no transfer of a copy, is not
+conveying.
+
+An interactive user interface displays "Appropriate Legal Notices" to
+the extent that it includes a convenient and prominently visible
+feature that (1) displays an appropriate copyright notice, and (2)
+tells the user that there is no warranty for the work (except to the
+extent that warranties are provided), that licensees may convey the
+work under this License, and how to view a copy of this License. If
+the interface presents a list of user commands or options, such as a
+menu, a prominent item in the list meets this criterion.
+
+#### 1. Source Code.
+
+The "source code" for a work means the preferred form of the work for
+making modifications to it. "Object code" means any non-source form of
+a work.
+
+A "Standard Interface" means an interface that either is an official
+standard defined by a recognized standards body, or, in the case of
+interfaces specified for a particular programming language, one that
+is widely used among developers working in that language.
+
+The "System Libraries" of an executable work include anything, other
+than the work as a whole, that (a) is included in the normal form of
+packaging a Major Component, but which is not part of that Major
+Component, and (b) serves only to enable use of the work with that
+Major Component, or to implement a Standard Interface for which an
+implementation is available to the public in source code form. A
+"Major Component", in this context, means a major essential component
+(kernel, window system, and so on) of the specific operating system
+(if any) on which the executable work runs, or a compiler used to
+produce the work, or an object code interpreter used to run it.
+
+The "Corresponding Source" for a work in object code form means all
+the source code needed to generate, install, and (for an executable
+work) run the object code and to modify the work, including scripts to
+control those activities. However, it does not include the work's
+System Libraries, or general-purpose tools or generally available free
+programs which are used unmodified in performing those activities but
+which are not part of the work. For example, Corresponding Source
+includes interface definition files associated with source files for
+the work, and the source code for shared libraries and dynamically
+linked subprograms that the work is specifically designed to require,
+such as by intimate data communication or control flow between those
+subprograms and other parts of the work.
+
+The Corresponding Source need not include anything that users can
+regenerate automatically from other parts of the Corresponding Source.
+
+The Corresponding Source for a work in source code form is that same
+work.
+
+#### 2. Basic Permissions.
+
+All rights granted under this License are granted for the term of
+copyright on the Program, and are irrevocable provided the stated
+conditions are met. This License explicitly affirms your unlimited
+permission to run the unmodified Program. The output from running a
+covered work is covered by this License only if the output, given its
+content, constitutes a covered work. This License acknowledges your
+rights of fair use or other equivalent, as provided by copyright law.
+
+You may make, run and propagate covered works that you do not convey,
+without conditions so long as your license otherwise remains in force.
+You may convey covered works to others for the sole purpose of having
+them make modifications exclusively for you, or provide you with
+facilities for running those works, provided that you comply with the
+terms of this License in conveying all material for which you do not
+control copyright. Those thus making or running the covered works for
+you must do so exclusively on your behalf, under your direction and
+control, on terms that prohibit them from making any copies of your
+copyrighted material outside their relationship with you.
+
+Conveying under any other circumstances is permitted solely under the
+conditions stated below. Sublicensing is not allowed; section 10 makes
+it unnecessary.
+
+#### 3. Protecting Users' Legal Rights From Anti-Circumvention Law.
+
+No covered work shall be deemed part of an effective technological
+measure under any applicable law fulfilling obligations under article
+11 of the WIPO copyright treaty adopted on 20 December 1996, or
+similar laws prohibiting or restricting circumvention of such
+measures.
+
+When you convey a covered work, you waive any legal power to forbid
+circumvention of technological measures to the extent such
+circumvention is effected by exercising rights under this License with
+respect to the covered work, and you disclaim any intention to limit
+operation or modification of the work as a means of enforcing, against
+the work's users, your or third parties' legal rights to forbid
+circumvention of technological measures.
+
+#### 4. Conveying Verbatim Copies.
+
+You may convey verbatim copies of the Program's source code as you
+receive it, in any medium, provided that you conspicuously and
+appropriately publish on each copy an appropriate copyright notice;
+keep intact all notices stating that this License and any
+non-permissive terms added in accord with section 7 apply to the code;
+keep intact all notices of the absence of any warranty; and give all
+recipients a copy of this License along with the Program.
+
+You may charge any price or no price for each copy that you convey,
+and you may offer support or warranty protection for a fee.
+
+#### 5. Conveying Modified Source Versions.
+
+You may convey a work based on the Program, or the modifications to
+produce it from the Program, in the form of source code under the
+terms of section 4, provided that you also meet all of these
+conditions:
+
+-   a) The work must carry prominent notices stating that you modified
+    it, and giving a relevant date.
+-   b) The work must carry prominent notices stating that it is
+    released under this License and any conditions added under
+    section 7. This requirement modifies the requirement in section 4
+    to "keep intact all notices".
+-   c) You must license the entire work, as a whole, under this
+    License to anyone who comes into possession of a copy. This
+    License will therefore apply, along with any applicable section 7
+    additional terms, to the whole of the work, and all its parts,
+    regardless of how they are packaged. This License gives no
+    permission to license the work in any other way, but it does not
+    invalidate such permission if you have separately received it.
+-   d) If the work has interactive user interfaces, each must display
+    Appropriate Legal Notices; however, if the Program has interactive
+    interfaces that do not display Appropriate Legal Notices, your
+    work need not make them do so.
+
+A compilation of a covered work with other separate and independent
+works, which are not by their nature extensions of the covered work,
+and which are not combined with it such as to form a larger program,
+in or on a volume of a storage or distribution medium, is called an
+"aggregate" if the compilation and its resulting copyright are not
+used to limit the access or legal rights of the compilation's users
+beyond what the individual works permit. Inclusion of a covered work
+in an aggregate does not cause this License to apply to the other
+parts of the aggregate.
+
+#### 6. Conveying Non-Source Forms.
+
+You may convey a covered work in object code form under the terms of
+sections 4 and 5, provided that you also convey the machine-readable
+Corresponding Source under the terms of this License, in one of these
+ways:
+
+-   a) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by the
+    Corresponding Source fixed on a durable physical medium
+    customarily used for software interchange.
+-   b) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by a
+    written offer, valid for at least three years and valid for as
+    long as you offer spare parts or customer support for that product
+    model, to give anyone who possesses the object code either (1) a
+    copy of the Corresponding Source for all the software in the
+    product that is covered by this License, on a durable physical
+    medium customarily used for software interchange, for a price no
+    more than your reasonable cost of physically performing this
+    conveying of source, or (2) access to copy the Corresponding
+    Source from a network server at no charge.
+-   c) Convey individual copies of the object code with a copy of the
+    written offer to provide the Corresponding Source. This
+    alternative is allowed only occasionally and noncommercially, and
+    only if you received the object code with such an offer, in accord
+    with subsection 6b.
+-   d) Convey the object code by offering access from a designated
+    place (gratis or for a charge), and offer equivalent access to the
+    Corresponding Source in the same way through the same place at no
+    further charge. You need not require recipients to copy the
+    Corresponding Source along with the object code. If the place to
+    copy the object code is a network server, the Corresponding Source
+    may be on a different server (operated by you or a third party)
+    that supports equivalent copying facilities, provided you maintain
+    clear directions next to the object code saying where to find the
+    Corresponding Source. Regardless of what server hosts the
+    Corresponding Source, you remain obligated to ensure that it is
+    available for as long as needed to satisfy these requirements.
+-   e) Convey the object code using peer-to-peer transmission,
+    provided you inform other peers where the object code and
+    Corresponding Source of the work are being offered to the general
+    public at no charge under subsection 6d.
+
+A separable portion of the object code, whose source code is excluded
+from the Corresponding Source as a System Library, need not be
+included in conveying the object code work.
+
+A "User Product" is either (1) a "consumer product", which means any
+tangible personal property which is normally used for personal,
+family, or household purposes, or (2) anything designed or sold for
+incorporation into a dwelling. In determining whether a product is a
+consumer product, doubtful cases shall be resolved in favor of
+coverage. For a particular product received by a particular user,
+"normally used" refers to a typical or common use of that class of
+product, regardless of the status of the particular user or of the way
+in which the particular user actually uses, or expects or is expected
+to use, the product. A product is a consumer product regardless of
+whether the product has substantial commercial, industrial or
+non-consumer uses, unless such uses represent the only significant
+mode of use of the product.
+
+"Installation Information" for a User Product means any methods,
+procedures, authorization keys, or other information required to
+install and execute modified versions of a covered work in that User
+Product from a modified version of its Corresponding Source. The
+information must suffice to ensure that the continued functioning of
+the modified object code is in no case prevented or interfered with
+solely because modification has been made.
+
+If you convey an object code work under this section in, or with, or
+specifically for use in, a User Product, and the conveying occurs as
+part of a transaction in which the right of possession and use of the
+User Product is transferred to the recipient in perpetuity or for a
+fixed term (regardless of how the transaction is characterized), the
+Corresponding Source conveyed under this section must be accompanied
+by the Installation Information. But this requirement does not apply
+if neither you nor any third party retains the ability to install
+modified object code on the User Product (for example, the work has
+been installed in ROM).
+
+The requirement to provide Installation Information does not include a
+requirement to continue to provide support service, warranty, or
+updates for a work that has been modified or installed by the
+recipient, or for the User Product in which it has been modified or
+installed. Access to a network may be denied when the modification
+itself materially and adversely affects the operation of the network
+or violates the rules and protocols for communication across the
+network.
+
+Corresponding Source conveyed, and Installation Information provided,
+in accord with this section must be in a format that is publicly
+documented (and with an implementation available to the public in
+source code form), and must require no special password or key for
+unpacking, reading or copying.
+
+#### 7. Additional Terms.
+
+"Additional permissions" are terms that supplement the terms of this
+License by making exceptions from one or more of its conditions.
+Additional permissions that are applicable to the entire Program shall
+be treated as though they were included in this License, to the extent
+that they are valid under applicable law. If additional permissions
+apply only to part of the Program, that part may be used separately
+under those permissions, but the entire Program remains governed by
+this License without regard to the additional permissions.
+
+When you convey a copy of a covered work, you may at your option
+remove any additional permissions from that copy, or from any part of
+it. (Additional permissions may be written to require their own
+removal in certain cases when you modify the work.) You may place
+additional permissions on material, added by you to a covered work,
+for which you have or can give appropriate copyright permission.
+
+Notwithstanding any other provision of this License, for material you
+add to a covered work, you may (if authorized by the copyright holders
+of that material) supplement the terms of this License with terms:
+
+-   a) Disclaiming warranty or limiting liability differently from the
+    terms of sections 15 and 16 of this License; or
+-   b) Requiring preservation of specified reasonable legal notices or
+    author attributions in that material or in the Appropriate Legal
+    Notices displayed by works containing it; or
+-   c) Prohibiting misrepresentation of the origin of that material,
+    or requiring that modified versions of such material be marked in
+    reasonable ways as different from the original version; or
+-   d) Limiting the use for publicity purposes of names of licensors
+    or authors of the material; or
+-   e) Declining to grant rights under trademark law for use of some
+    trade names, trademarks, or service marks; or
+-   f) Requiring indemnification of licensors and authors of that
+    material by anyone who conveys the material (or modified versions
+    of it) with contractual assumptions of liability to the recipient,
+    for any liability that these contractual assumptions directly
+    impose on those licensors and authors.
+
+All other non-permissive additional terms are considered "further
+restrictions" within the meaning of section 10. If the Program as you
+received it, or any part of it, contains a notice stating that it is
+governed by this License along with a term that is a further
+restriction, you may remove that term. If a license document contains
+a further restriction but permits relicensing or conveying under this
+License, you may add to a covered work material governed by the terms
+of that license document, provided that the further restriction does
+not survive such relicensing or conveying.
+
+If you add terms to a covered work in accord with this section, you
+must place, in the relevant source files, a statement of the
+additional terms that apply to those files, or a notice indicating
+where to find the applicable terms.
+
+Additional terms, permissive or non-permissive, may be stated in the
+form of a separately written license, or stated as exceptions; the
+above requirements apply either way.
+
+#### 8. Termination.
+
+You may not propagate or modify a covered work except as expressly
+provided under this License. Any attempt otherwise to propagate or
+modify it is void, and will automatically terminate your rights under
+this License (including any patent licenses granted under the third
+paragraph of section 11).
+
+However, if you cease all violation of this License, then your license
+from a particular copyright holder is reinstated (a) provisionally,
+unless and until the copyright holder explicitly and finally
+terminates your license, and (b) permanently, if the copyright holder
+fails to notify you of the violation by some reasonable means prior to
+60 days after the cessation.
+
+Moreover, your license from a particular copyright holder is
+reinstated permanently if the copyright holder notifies you of the
+violation by some reasonable means, this is the first time you have
+received notice of violation of this License (for any work) from that
+copyright holder, and you cure the violation prior to 30 days after
+your receipt of the notice.
+
+Termination of your rights under this section does not terminate the
+licenses of parties who have received copies or rights from you under
+this License. If your rights have been terminated and not permanently
+reinstated, you do not qualify to receive new licenses for the same
+material under section 10.
+
+#### 9. Acceptance Not Required for Having Copies.
+
+You are not required to accept this License in order to receive or run
+a copy of the Program. Ancillary propagation of a covered work
+occurring solely as a consequence of using peer-to-peer transmission
+to receive a copy likewise does not require acceptance. However,
+nothing other than this License grants you permission to propagate or
+modify any covered work. These actions infringe copyright if you do
+not accept this License. Therefore, by modifying or propagating a
+covered work, you indicate your acceptance of this License to do so.
+
+#### 10. Automatic Licensing of Downstream Recipients.
+
+Each time you convey a covered work, the recipient automatically
+receives a license from the original licensors, to run, modify and
+propagate that work, subject to this License. You are not responsible
+for enforcing compliance by third parties with this License.
+
+An "entity transaction" is a transaction transferring control of an
+organization, or substantially all assets of one, or subdividing an
+organization, or merging organizations. If propagation of a covered
+work results from an entity transaction, each party to that
+transaction who receives a copy of the work also receives whatever
+licenses to the work the party's predecessor in interest had or could
+give under the previous paragraph, plus a right to possession of the
+Corresponding Source of the work from the predecessor in interest, if
+the predecessor has it or can get it with reasonable efforts.
+
+You may not impose any further restrictions on the exercise of the
+rights granted or affirmed under this License. For example, you may
+not impose a license fee, royalty, or other charge for exercise of
+rights granted under this License, and you may not initiate litigation
+(including a cross-claim or counterclaim in a lawsuit) alleging that
+any patent claim is infringed by making, using, selling, offering for
+sale, or importing the Program or any portion of it.
+
+#### 11. Patents.
+
+A "contributor" is a copyright holder who authorizes use under this
+License of the Program or a work on which the Program is based. The
+work thus licensed is called the contributor's "contributor version".
+
+A contributor's "essential patent claims" are all patent claims owned
+or controlled by the contributor, whether already acquired or
+hereafter acquired, that would be infringed by some manner, permitted
+by this License, of making, using, or selling its contributor version,
+but do not include claims that would be infringed only as a
+consequence of further modification of the contributor version. For
+purposes of this definition, "control" includes the right to grant
+patent sublicenses in a manner consistent with the requirements of
+this License.
+
+Each contributor grants you a non-exclusive, worldwide, royalty-free
+patent license under the contributor's essential patent claims, to
+make, use, sell, offer for sale, import and otherwise run, modify and
+propagate the contents of its contributor version.
+
+In the following three paragraphs, a "patent license" is any express
+agreement or commitment, however denominated, not to enforce a patent
+(such as an express permission to practice a patent or covenant not to
+sue for patent infringement). To "grant" such a patent license to a
+party means to make such an agreement or commitment not to enforce a
+patent against the party.
+
+If you convey a covered work, knowingly relying on a patent license,
+and the Corresponding Source of the work is not available for anyone
+to copy, free of charge and under the terms of this License, through a
+publicly available network server or other readily accessible means,
+then you must either (1) cause the Corresponding Source to be so
+available, or (2) arrange to deprive yourself of the benefit of the
+patent license for this particular work, or (3) arrange, in a manner
+consistent with the requirements of this License, to extend the patent
+license to downstream recipients. "Knowingly relying" means you have
+actual knowledge that, but for the patent license, your conveying the
+covered work in a country, or your recipient's use of the covered work
+in a country, would infringe one or more identifiable patents in that
+country that you have reason to believe are valid.
+
+If, pursuant to or in connection with a single transaction or
+arrangement, you convey, or propagate by procuring conveyance of, a
+covered work, and grant a patent license to some of the parties
+receiving the covered work authorizing them to use, propagate, modify
+or convey a specific copy of the covered work, then the patent license
+you grant is automatically extended to all recipients of the covered
+work and works based on it.
+
+A patent license is "discriminatory" if it does not include within the
+scope of its coverage, prohibits the exercise of, or is conditioned on
+the non-exercise of one or more of the rights that are specifically
+granted under this License. You may not convey a covered work if you
+are a party to an arrangement with a third party that is in the
+business of distributing software, under which you make payment to the
+third party based on the extent of your activity of conveying the
+work, and under which the third party grants, to any of the parties
+who would receive the covered work from you, a discriminatory patent
+license (a) in connection with copies of the covered work conveyed by
+you (or copies made from those copies), or (b) primarily for and in
+connection with specific products or compilations that contain the
+covered work, unless you entered into that arrangement, or that patent
+license was granted, prior to 28 March 2007.
+
+Nothing in this License shall be construed as excluding or limiting
+any implied license or other defenses to infringement that may
+otherwise be available to you under applicable patent law.
+
+#### 12. No Surrender of Others' Freedom.
+
+If conditions are imposed on you (whether by court order, agreement or
+otherwise) that contradict the conditions of this License, they do not
+excuse you from the conditions of this License. If you cannot convey a
+covered work so as to satisfy simultaneously your obligations under
+this License and any other pertinent obligations, then as a
+consequence you may not convey it at all. For example, if you agree to
+terms that obligate you to collect a royalty for further conveying
+from those to whom you convey the Program, the only way you could
+satisfy both those terms and this License would be to refrain entirely
+from conveying the Program.
+
+#### 13. Use with the GNU Affero General Public License.
+
+Notwithstanding any other provision of this License, you have
+permission to link or combine any covered work with a work licensed
+under version 3 of the GNU Affero General Public License into a single
+combined work, and to convey the resulting work. The terms of this
+License will continue to apply to the part which is the covered work,
+but the special requirements of the GNU Affero General Public License,
+section 13, concerning interaction through a network will apply to the
+combination as such.
+
+#### 14. Revised Versions of this License.
+
+The Free Software Foundation may publish revised and/or new versions
+of the GNU General Public License from time to time. Such new versions
+will be similar in spirit to the present version, but may differ in
+detail to address new problems or concerns.
+
+Each version is given a distinguishing version number. If the Program
+specifies that a certain numbered version of the GNU General Public
+License "or any later version" applies to it, you have the option of
+following the terms and conditions either of that numbered version or
+of any later version published by the Free Software Foundation. If the
+Program does not specify a version number of the GNU General Public
+License, you may choose any version ever published by the Free
+Software Foundation.
+
+If the Program specifies that a proxy can decide which future versions
+of the GNU General Public License can be used, that proxy's public
+statement of acceptance of a version permanently authorizes you to
+choose that version for the Program.
+
+Later license versions may give you additional or different
+permissions. However, no additional obligations are imposed on any
+author or copyright holder as a result of your choosing to follow a
+later version.
+
+#### 15. Disclaimer of Warranty.
+
+THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY
+APPLICABLE LAW. EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT
+HOLDERS AND/OR OTHER PARTIES PROVIDE THE PROGRAM "AS IS" WITHOUT
+WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE. THE ENTIRE RISK AS TO THE QUALITY AND
+PERFORMANCE OF THE PROGRAM IS WITH YOU. SHOULD THE PROGRAM PROVE
+DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING, REPAIR OR
+CORRECTION.
+
+#### 16. Limitation of Liability.
+
+IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
+WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR
+CONVEYS THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES,
+INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES
+ARISING OUT OF THE USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT
+NOT LIMITED TO LOSS OF DATA OR DATA BEING RENDERED INACCURATE OR
+LOSSES SUSTAINED BY YOU OR THIRD PARTIES OR A FAILURE OF THE PROGRAM
+TO OPERATE WITH ANY OTHER PROGRAMS), EVEN IF SUCH HOLDER OR OTHER
+PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+#### 17. Interpretation of Sections 15 and 16.
+
+If the disclaimer of warranty and limitation of liability provided
+above cannot be given local legal effect according to their terms,
+reviewing courts shall apply local law that most closely approximates
+an absolute waiver of all civil liability in connection with the
+Program, unless a warranty or assumption of liability accompanies a
+copy of the Program in return for a fee.
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/core/doctype/package/licenses/MIT License.md
+### MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this
+software and associated documentation files (the "Software"), to deal in the Software
+without restriction, including without limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
+to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies
+or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/core/doctype/page/README.md
+A page (view) in the application. A page is made to define custom user interfaces and contains server side and client side code. Standard events are attached to the page and called when the page is loaded, shown etc.
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/core/doctype/user_invitation/internal_doc/index.md
+# User Invitation
+
+## Index
+
+- [Motivation](#motivation)
+- [How to use it?](#how-to-use-it)
+- [Whitelisted functions](#whitelisted-functions)
+  - [`invite_by_email`](#invite_by_email)
+  - [`accept_invitation`](#accept_invitation)
+  - [`get_pending_invitations`](#get_pending_invitations)
+  - [`cancel_invitation`](#cancel_invitation)
+- [Normal flow](#normal-flow)
+- [Important points](#important-points)
+
+## Motivation
+
+- Until now, there was no way to invite and create a new user based on a sent invitation that can be accepted or rejected by the invitee.
+- Due to this, custom Framework applications have to implement a user invitation flow. But most of the rules around this flow are generic enough to let Framework store all of the common logic associated with a typical user invitation flow.
+- This will help ensure consistency and prevent code duplication for custom Framework applications that need this type of feature.
+
+## How to use it?
+
+Define user invitation hooks in your app's `hooks.py` file. An example is shown below.
+
+![user invitation hooks example](./user_invitation_hooks_example.png)
+
+- `allowed_roles`
+
+  A map of `only_for` roles to a list of roles that are allowed to be invited to your app.
+
+- `after_accept`
+
+  Dot path of the function to execute after the user accepts the invitation.
+
+  ```python
+  from frappe.model.document import Document
+
+  def after_accept(
+   invitation: Document,
+   user: Document,
+   user_inserted: bool
+  ) -> None:
+      # your business logic here
+  ```
+
+> `after_accept` is optional and should be used only if required.
+
+At this point, you can start using the whitelisted functions under the `apis` section (`frappe/core/api/user_invitation.py`). For more information, read [whitelisted functions](#whitelisted-functions).
+
+By default, only `System Manager`s can create a new invitation, view the list of invitations, or view more details associated with a single invitation **using the desk**. To enable users with specific roles to perform the mentioned actions, you might want to provide `create`, `read`, and `write` access to the relevant roles.
+
+Example - If a user having the `Agent Manager` role should be able to use all of the user invitation features using the desk, these should be enabled:
+
+- User Invitation doctype
+  ![user invitation doctype's role permissions manager entry](./user_invitation_doc_role_permissions_manager.png)
+
+- Role doctype
+  ![role doctype's role permissions manager entry](./role_doc_role_permissions_manager.png)
+
+## Whitelisted functions
+
+There are a few whitelisted functions that can be used to manage invitations. All of the whitelisted functions are in `frappe/core/api/user_invitation.py`.
+
+### `invite_by_email`
+
+Invite new emails to your application.
+
+![invite by email api example](./invite_by_email_api_example.png)
+
+> The invited email will receive an email with a link to accept the invitation.
+
+### `accept_invitation`
+
+Enables invitees to accept the sent invitations.
+
+> This function should not be used directly. The only reason this function is whitelisted is because the sent invitations contain a link that the invitees use to accept the invitations.
+
+### `get_pending_invitations`
+
+Get all of the pending invitations associated with an installed Framework application.
+
+![get pending invitations api example](./get_pending_invitations_api_example.png)
+
+### `cancel_invitation`
+
+Cancels a specific pending invitation associated with an installed Framework application.
+
+![cancel invitation api example](./cancel_invitation_api_example.png)
+
+## Normal flow
+
+1. Invitations are created from the desk or by using the [`invite_by_email`](#invite_by_email) whitelisted function. An email is sent to the invited email with a link to accept the invitation.
+2. The app administrator or anyone able to use the desk can cancel invitations. Once an invitation is cancelled, an email is sent to the creator of the invitation.
+3. Once the invitation is accepted, a new user is created (if required) with the roles specified in the invitation and is redirected to the specified path.
+4. If the invitee doesn't accept the invitation within three days, the invitation is marked as expired by a background job that executes every day. Currently, there is no way to customize the expiration time.
+
+## Important points:
+
+- There can't be multiple pending invitations for the same app.
+- Once an invitation document is created from Desk, all of the fields are immutable except the `Redirect To Path` field which is mutable only when the invitation status is `Pending`.
+- To manually mark an invitation as expired, you can use the `expire` method on the invitation document.
+- To manually cancel an invitation, you can use the `cancel_invite` method on the invitation document.
+- Disabled users cannot be invited. Trying to invite a disabled user from the Desk will generate an error and the whitelisted functions will ignore emails associated with disabled users.
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/custom/doctype/client_script/README.md
+Client or server script appended to standard DocType code.
+
+For client:
+
+- Code is appended to the js code.
+- Best practice is to declare additional methods beginning with prefix `custom_` e.g. `custom_validate` to standard events.
+
+For server:
+
+- Script is appended to module code before DocType is `execute`d. 
+- All class methods must be written with a tab
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/custom/doctype/property_setter/README.md
+Overrides standard DocType, DocField properties. The standard application is configured with properties for forms and fields (like, whether they are hidden or not). These can be overridden by a System Manager who can configure DocTypes based on custom requirements.
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/email/email.md
+# Email Architecture
+
+This document describes the high-level architecture of how emails work in frappe.
+
+> NOTE: There are mentions of different types of workers to execute jobs from different types of queues in the explanations below, however only a single type of worker can also be used to do the same.
+
+### High-Level View
+
+#### Pulling/Sending:
+
+![email-pull-flow](assets/images/email-pull-flow.png)
+
+The same follows for email sending with the only difference being in the jobs queued.
+
+The scheduler schedules/pushes the `email.pull`/`queue.flush` job into the default queue which is picked up by the default worker and upon execution enqueues `pull_from_email_account`/`send_mail` job into the short queue and the job is then picked up by the short worker and the email is pulled in/sent out of the system.
+
+
+### Code Map
+
+This section talks briefly about various important directories/files.
+
+#### `doctype/email_queue`
+
+Contains all logic about email sending. Every email to be sent is stored in `Email Queue` DocType (Newsletter(s) included).
+
+#### `receive.py`
+
+Contains all the logic and classes about email receiving.
+
+#### `doctype/email_account`
+
+Contains logic for validating connection/auth for email account(s).
+
+Also, contains the abstraction for facilitating email receiving.
+
+#### `doctype/newsletter`
+
+Contains all the logic about newsletter scheduling, subscribing and unsubscribing.
+
+Newsletter has a similar design as to how normal emails are sent except for the initial scheduled job (`newsletter.send_scheduled_email`) and the fact that newsletter recipients are batched, primarily for SMTP connection reusing & mitigating any potential timeouts (available as a general feature as well).
+
+Each batch is queued as a separate job (`QueueBuilder.send_emails`) into the long queue by the default worker which is then picked up by the long worker.
+
+#### `doctype/notification`
+
+Contains all logic about handling various types of notifications by the system.
+
+#### `email_body.py`
+
+Contains logic about creating the email body. We use Python's email std lib for body generation.
+
+The email message format/syntax is described in [RFC5322](https://datatracker.ietf.org/doc/html/rfc5322)
+
+
+### Observability
+
+At the application level,
+
+`RQ Job` DocType is the most useful in knowing the status of any type of "recent" email job (pull/send).
+
+`Email Queue` DocType is self-contained and stores all the errored out (along with traceback) as well as the sent/partially sent mails from the system.
+
+`Communication` DocType stores all the successfully received emails and `Unhandled Email` DocType stores all the "unhandled" ones during receiving.
+
+Apart from these, the `Error Log` DocType also comes into help from time to time.
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/integrations/README.md
+# Integrations
+
+## OAuth 2
+
+Frappe Framework uses [`oauthlib`](https://github.com/oauthlib/oauthlib) to manage OAuth2 requirements. A Frappe instance can function as all of these:
+
+1. **Resource Server**: contains resources, for example the data in your DocTypes.
+2. **Authorization Server**: server that issues tokens to access some resource.
+3. **Client**: app that requires access to some resource on a resource server.
+
+DocTypes pertaining to the above roles:
+
+1. **Common**
+   - **OAuth Settings**: allows configuring certain OAuth features pertaining to the three roles.
+2. **Authorization Server**
+   - **OAuth Client**: keeps records of _clients_ registered with the frappe instance.
+   - **OAuth Bearer Token**: tokens given out to registered _clients_ are maintained here.
+   - **OAuth Authorization Code**: keeps track of OAuth codes a client responds with in exchange for a token.
+   - **OAuth Provider Settings**: allows skipping authorization. `[DEPRECATED]` use **OAuth Settings** instead.
+3. **Client**
+   - **Connected App**: keeps records of _authorization servers_ against whom this frappe instance is registered as a _client_ so some resource can be accessed. Eg. a users Google Drive account.
+   - **Social Key Login**: similar to **Connected App**, but for the purpose of logging into the frappe instance. Eg. a users Google account to enable "Login with Google".
+   - **Token Cache**: tokens received by the Frappe instance when accessing a **Connected App**.
+
+### Features
+
+Additional features over `oauthlib` that have implemented in the Framework:
+
+- **Dynamic Client Registration**: allows a client to register itself without manual configuration by the resource owner. [RFC7591](https://datatracker.ietf.org/doc/html/rfc7591)
+- **Authorization Server Metadata Discovery**: allows a client to view the instance's auth server (itself) metadata such as auth end points. [RFC8414](https://datatracker.ietf.org/doc/html/rfc8414)
+- **Resource Server Metadata Discovery**: allows a client to view the instance's resource server metadata such as documentation, auth servers, etc. [RFC9728](https://datatracker.ietf.org/doc/html/rfc9728)
+
+### Additional Docs
+
+Documentation of various OAuth2 features:
+
+1. [How to setup OAuth 2?](https://docs.frappe.io/framework/user/en/guides/integration/how_to_set_up_oauth)
+2. [OAuth 2](https://docs.frappe.io/framework/user/en/guides/integration/rest_api/oauth-2)
+3. [Token Based Authentication](https://docs.frappe.io/framework/user/en/guides/integration/rest_api/token_based_authentication)
+4. [Using Frappe as OAuth Service](https://docs.frappe.io/framework/user/en/using_frappe_as_oauth_service)
+5. [Social Login Key](https://docs.frappe.io/framework/user/en/guides/integration/social_login_key)
+6. [Connected App](https://docs.frappe.io/framework/user/en/guides/app-development/connected-app)
+
+> [!WARNING]
+>
+> Some of these might be outdated, it is always recommended to check the code
+> when in doubt.
+
+### OAuth Settings
+
+A Single doctype that allows configuring OAuth2 related features. It is
+recommended to open the DocType page itself as each field and section has a
+sufficiently descriptive help text.
+
+The settings allow toggling the following features:
+
+- Authorization check when active token is present using the _Skip Authorization_ field. _**Note**: Keep this unchecked in production._
+- **Authorization Server Metadata Discovery**: by toggling the _Show Auth Server Metadata_ field.
+- **Dynamic Client Registration**: by toggling the _Enable Dynamic Client Registration_ field.
+- **Resource Server Metadata Discovery**: by toggling the _Show Protected Resource Metadata_.
+
+The remaining fields (in the **Resource** section) are used only when responding to requests on `/.well-known/oauth-protected-resource`
+
+> **Regarding Public Clients**
+>
+> Public clients, for example an SPA, have restricted access by default. This
+> restriction is applied by use of CORS.
+>
+> To side-step this restriction for certain trusted clients, you may add their
+> hostnames to the **Allowed Public Client Origins** field.
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/patches.txt
+[pre_model_sync]
+frappe.patches.v16_0.enable_setup_complete #01-07-2025 re-run-patch
+frappe.patches.v15_0.remove_implicit_primary_key
+frappe.patches.v12_0.remove_deprecated_fields_from_doctype #3
+execute:frappe.utils.global_search.setup_global_search_table()
+execute:frappe.reload_doc('core', 'doctype', 'doctype_action', force=True) #2019-09-23
+execute:frappe.reload_doc('core', 'doctype', 'doctype_link', force=True) #2020-10-17
+execute:frappe.reload_doc('core', 'doctype', 'doctype_state', force=True) #2021-12-15
+execute:frappe.reload_doc('core', 'doctype', 'doctype', force=True) #2017-09-22
+execute:frappe.reload_doc('core', 'doctype', 'docfield', force=True) #2018-02-20
+frappe.patches.v11_0.drop_column_apply_user_permissions
+execute:frappe.reload_doc('core', 'doctype', 'custom_docperm')
+execute:frappe.reload_doc('core', 'doctype', 'docperm') #2018-05-29
+execute:frappe.reload_doc('core', 'doctype', 'comment')
+execute:frappe.reload_doc('core', 'doctype', 'document_naming_rule', force=True)
+execute:frappe.reload_doc('core', 'doctype', 'module_def') #2020-08-28
+execute:frappe.reload_doc('core', 'doctype', 'version') #2017-04-01
+execute:frappe.reload_doc('email', 'doctype', 'document_follow')
+execute:frappe.reload_doc('core', 'doctype', 'communication_link') #2019-10-02
+execute:frappe.reload_doc('core', 'doctype', 'has_role')
+execute:frappe.reload_doc('core', 'doctype', 'communication') #2019-10-02
+execute:frappe.reload_doc('core', 'doctype', 'server_script')
+frappe.patches.v11_0.replicate_old_user_permissions
+frappe.patches.v11_0.reload_and_rename_view_log #2019-01-03
+frappe.patches.v11_0.copy_fetch_data_from_options
+frappe.patches.v11_0.change_email_signature_fieldtype
+execute:frappe.reload_doc('core', 'doctype', 'activity_log')
+execute:frappe.reload_doc('core', 'doctype', 'deleted_document')
+execute:frappe.reload_doc('core', 'doctype', 'domain_settings')
+frappe.patches.v13_0.rename_custom_client_script
+execute:frappe.reload_doc('core', 'doctype', 'role') #2017-05-23
+execute:frappe.reload_doc('core', 'doctype', 'user') #2017-10-27
+execute:frappe.reload_doc('core', 'doctype', 'report_column')
+execute:frappe.reload_doc('core', 'doctype', 'report_filter')
+execute:frappe.reload_doc('core', 'doctype', 'report') #2020-08-25
+execute:frappe.get_doc("User", "Guest").save()
+execute:frappe.delete_doc("DocType", "Control Panel", force=1)
+execute:frappe.delete_doc("DocType", "Tag")
+execute:frappe.db.sql("delete from `tabProperty Setter` where `property` in ('idx', '_idx')")
+execute:frappe.db.sql("update tabUser set new_password='' where ifnull(new_password, '')!=''")
+execute:frappe.permissions.reset_perms("DocType")
+execute:frappe.db.sql("delete from `tabProperty Setter` where `property` = 'idx'")
+execute:frappe.db.sql("delete from tabSessions where user is null")
+execute:frappe.delete_doc("DocType", "Backup Manager")
+execute:frappe.permissions.reset_perms("Web Page")
+execute:frappe.db.sql("delete from `tabWeb Page` where ifnull(template_path, '')!=''")
+execute:frappe.db.set_value("Print Settings", "Print Settings", "add_draft_heading", 1)
+execute:frappe.db.set_default('language', '')
+execute:frappe.db.sql("update tabCommunication set communication_date = creation where time(communication_date) = 0")
+execute:frappe.rename_doc('Country', 'Macedonia, Republic of', 'Macedonia', ignore_if_exists=True)
+execute:frappe.rename_doc('Country', 'Iran, Islamic Republic of', 'Iran', ignore_if_exists=True)
+execute:frappe.rename_doc('Country', 'Tanzania, United Republic of', 'Tanzania', ignore_if_exists=True)
+execute:frappe.rename_doc('Country', 'Syrian Arab Republic', 'Syria', ignore_if_exists=True)
+execute:frappe.reload_doc('desk', 'doctype', 'notification_log')
+execute:frappe.db.sql('update tabReport set module="Desk" where name="ToDo"')
+execute:frappe.delete_doc('Page', 'data-import-tool', ignore_missing=True)
+frappe.patches.v10_0.reload_countries_and_currencies # 2021-02-03
+frappe.patches.v10_0.refactor_social_login_keys
+frappe.patches.v10_0.enable_chat_by_default_within_system_settings
+frappe.patches.v10_0.remove_custom_field_for_disabled_domain
+execute:frappe.delete_doc("Page", "chat")
+frappe.patches.v11_0.rename_standard_reply_to_email_template
+execute:frappe.delete_doc_if_exists('Page', 'user-permissions')
+frappe.patches.v10_0.set_no_copy_to_workflow_state
+frappe.patches.v10_0.increase_single_table_column_length
+frappe.patches.v11_0.create_contact_for_user
+frappe.patches.v11_0.update_list_user_settings
+frappe.patches.v11_0.rename_workflow_action_to_workflow_action_master #13-06-2018
+frappe.patches.v11_0.rename_email_alert_to_notification #13-06-2018
+frappe.patches.v11_0.delete_duplicate_user_permissions
+frappe.patches.v11_0.set_dropbox_file_backup
+frappe.patches.v10_0.set_default_locking_time
+frappe.patches.v10_0.modify_smallest_currency_fraction
+frappe.patches.v10_0.modify_naming_series_table
+frappe.patches.v10_0.enhance_security
+frappe.patches.v11_0.multiple_references_in_events
+frappe.patches.v11_0.set_allow_self_approval_in_workflow
+frappe.patches.v11_0.remove_skip_for_doctype
+frappe.patches.v11_0.migrate_report_settings_for_new_listview
+frappe.patches.v11_0.delete_all_prepared_reports
+frappe.patches.v11_0.fix_order_by_in_reports_json
+execute:frappe.delete_doc('Page', 'applications', ignore_missing=True)
+frappe.patches.v11_0.set_missing_creation_and_modified_value_for_user_permissions
+frappe.patches.v11_0.set_default_letter_head_source
+frappe.patches.v12_0.set_primary_key_in_series
+execute:frappe.delete_doc("Page", "modules", ignore_missing=True)
+frappe.patches.v12_0.setup_comments_from_communications
+frappe.patches.v12_0.replace_null_values_in_tables
+frappe.patches.v12_0.reset_home_settings
+frappe.patches.v12_0.update_print_format_type
+frappe.patches.v11_0.remove_doctype_user_permissions_for_page_and_report #2019-05-01
+frappe.patches.v11_0.apply_customization_to_custom_doctype
+frappe.patches.v12_0.remove_feedback_rating
+frappe.patches.v12_0.move_form_attachments_to_attachments_folder
+frappe.patches.v12_0.move_timeline_links_to_dynamic_links
+frappe.patches.v12_0.delete_feedback_request_if_exists #1
+frappe.patches.v12_0.rename_events_repeat_on
+frappe.patches.v12_0.fix_public_private_files
+frappe.patches.v12_0.move_email_and_phone_to_child_table
+frappe.patches.v12_0.delete_duplicate_indexes  # 2022-12-15
+frappe.patches.v12_0.set_default_incoming_email_port
+frappe.patches.v12_0.update_global_search
+frappe.patches.v12_0.setup_tags
+frappe.patches.v12_0.update_auto_repeat_status_and_not_submittable
+frappe.patches.v12_0.create_notification_settings_for_user
+frappe.patches.v11_0.make_all_prepared_report_attachments_private #2019-11-26
+frappe.patches.v12_0.change_existing_dashboard_chart_filters
+frappe.patches.v12_0.set_correct_assign_value_in_docs #2020-07-13
+execute:frappe.delete_doc('DocType', 'Test Runner') # 2022-05-19
+execute:frappe.delete_doc_if_exists('DocType', 'Google Maps Settings')
+execute:frappe.db.set_default('desktop:home_page', 'workspace')
+execute:frappe.delete_doc_if_exists('DocType', 'GSuite Settings')
+execute:frappe.delete_doc_if_exists('DocType', 'GSuite Templates')
+execute:frappe.delete_doc_if_exists('DocType', 'GCalendar Account')
+execute:frappe.delete_doc_if_exists('DocType', 'GCalendar Settings')
+frappe.patches.v12_0.remove_example_email_thread_notify
+execute:from frappe.desk.page.setup_wizard.install_fixtures import update_genders;update_genders()
+frappe.patches.v12_0.set_correct_url_in_files
+execute:frappe.reload_doc('core', 'doctype', 'doctype') #2022-06-21
+execute:frappe.reload_doc('custom', 'doctype', 'property_setter')
+frappe.patches.v13_0.remove_invalid_options_for_data_fields
+frappe.patches.v13_0.website_theme_custom_scss
+frappe.patches.v13_0.make_user_type
+frappe.patches.v13_0.set_existing_dashboard_charts_as_public
+frappe.patches.v13_0.set_path_for_homepage_in_web_page_view
+frappe.patches.v13_0.migrate_translation_column_data
+frappe.patches.v13_0.set_read_times
+frappe.patches.v13_0.remove_web_view
+frappe.patches.v13_0.site_wise_logging
+frappe.patches.v13_0.set_unique_for_page_view
+frappe.patches.v13_0.remove_tailwind_from_page_builder
+frappe.patches.v13_0.rename_onboarding
+frappe.patches.v13_0.email_unsubscribe
+execute:frappe.delete_doc("Web Template", "Section with Left Image", force=1)
+execute:frappe.delete_doc("DocType", "Onboarding Slide")
+execute:frappe.delete_doc("DocType", "Onboarding Slide Field")
+execute:frappe.delete_doc("DocType", "Onboarding Slide Help Link")
+frappe.patches.v13_0.update_date_filters_in_user_settings
+frappe.patches.v13_0.update_duration_options
+frappe.patches.v13_0.replace_old_data_import # 2020-06-24
+frappe.patches.v13_0.create_custom_dashboards_cards_and_charts
+frappe.patches.v13_0.rename_is_custom_field_in_dashboard_chart
+frappe.patches.v13_0.add_standard_navbar_items # 2020-12-15
+frappe.patches.v13_0.generate_theme_files_in_public_folder
+frappe.patches.v13_0.increase_password_length
+frappe.patches.v12_0.fix_email_id_formatting
+frappe.patches.v13_0.add_toggle_width_in_navbar_settings
+frappe.patches.v13_0.rename_notification_fields
+frappe.patches.v13_0.remove_duplicate_navbar_items
+frappe.patches.v13_0.set_social_icons
+frappe.patches.v12_0.set_default_password_reset_limit
+frappe.patches.v13_0.set_route_for_blog_category
+frappe.patches.v13_0.enable_custom_script
+frappe.patches.v13_0.update_newsletter_content_type
+execute:frappe.db.set_value('Website Settings', 'Website Settings', {'navbar_template': 'Standard Navbar', 'footer_template': 'Standard Footer'})
+frappe.patches.v13_0.web_template_set_module #2020-10-05
+frappe.patches.v13_0.remove_custom_link
+execute:frappe.delete_doc("DocType", "Footer Item")
+execute:frappe.reload_doctype('user')
+execute:frappe.reload_doctype('docperm')
+frappe.patches.v13_0.replace_field_target_with_open_in_new_tab
+frappe.patches.v13_0.add_switch_theme_to_navbar_settings
+frappe.patches.v13_0.update_icons_in_customized_desk_pages
+execute:frappe.db.set_default('desktop:home_page', 'space')
+execute:frappe.delete_doc_if_exists('Page', 'workspace')
+execute:frappe.delete_doc_if_exists('Page', 'dashboard', force=1)
+frappe.core.doctype.page.patches.drop_unused_pages
+frappe.patches.v13_0.remove_chat
+frappe.patches.v13_0.rename_desk_page_to_workspace # 02.02.2021
+frappe.patches.v13_0.delete_package_publish_tool
+frappe.patches.v13_0.rename_list_view_setting_to_list_view_settings
+frappe.patches.v13_0.remove_twilio_settings
+frappe.patches.v12_0.rename_uploaded_files_with_proper_name
+frappe.patches.v13_0.queryreport_columns
+frappe.patches.v13_0.jinja_hook
+frappe.patches.v13_0.update_notification_channel_if_empty
+frappe.patches.v13_0.set_first_day_of_the_week
+frappe.patches.v13_0.encrypt_2fa_secrets
+frappe.patches.v13_0.reset_corrupt_defaults
+frappe.patches.v13_0.remove_share_for_std_users
+execute:frappe.reload_doc('custom', 'doctype', 'custom_field')
+frappe.email.doctype.email_queue.patches.drop_search_index_on_message_id
+frappe.patches.v14_0.save_ratings_in_fraction #23-12-2021
+frappe.patches.v14_0.transform_todo_schema
+frappe.patches.v14_0.remove_post_and_post_comment
+frappe.patches.v14_0.reset_creation_datetime
+frappe.patches.v14_0.remove_is_first_startup
+frappe.patches.v14_0.clear_long_pending_stale_logs
+frappe.patches.v14_0.log_settings_migration
+frappe.patches.v14_0.setup_likes_from_feedback
+frappe.patches.v14_0.update_webforms
+frappe.patches.v14_0.delete_payment_gateways
+frappe.patches.v15_0.remove_event_streaming
+frappe.patches.v15_0.copy_disable_prepared_report_to_prepared_report
+execute:frappe.reload_doc("desk", "doctype", "Form Tour")
+execute:frappe.delete_doc('Page', 'recorder', ignore_missing=True, force=True)
+frappe.patches.v14_0.modify_value_column_size_for_singles
+frappe.integrations.doctype.oauth_bearer_token.patches.clear_old_tokens
+execute:frappe.db.truncate("Desktop Icon")
+
+[post_model_sync]
+execute:frappe.get_doc('Role', 'Guest').save() # remove desk access
+frappe.core.doctype.role.patches.v13_set_default_desk_properties
+frappe.patches.v14_0.update_workspace2 # 06.06.2023
+frappe.patches.v14_0.drop_data_import_legacy
+frappe.patches.v14_0.copy_mail_data #08.03.21
+frappe.patches.v14_0.update_github_endpoints #08-11-2021
+frappe.patches.v14_0.remove_db_aggregation
+frappe.patches.v14_0.update_color_names_in_kanban_board_column
+frappe.patches.v14_0.update_is_system_generated_flag
+frappe.patches.v14_0.update_auto_account_deletion_duration
+frappe.patches.v14_0.update_integration_request
+frappe.patches.v14_0.set_document_expiry_default
+frappe.patches.v14_0.delete_data_migration_tool
+frappe.patches.v14_0.set_suspend_email_queue_default
+frappe.patches.v14_0.different_encryption_key
+frappe.patches.v14_0.update_multistep_webforms
+execute:frappe.delete_doc('Page', 'background_jobs', ignore_missing=True, force=True)
+frappe.patches.v14_0.drop_unused_indexes
+frappe.patches.v15_0.drop_modified_index
+frappe.patches.v14_0.update_attachment_comment
+frappe.patches.v15_0.set_contact_full_name
+execute:frappe.delete_doc("Page", "activity", force=1)
+frappe.patches.v14_0.disable_email_accounts_with_oauth
+execute:frappe.delete_doc("Page", "translation-tool", force=1)
+frappe.patches.v15_0.remove_prepared_report_settings_from_system_settings
+frappe.patches.v14_0.remove_manage_subscriptions_from_navbar
+frappe.patches.v15_0.remove_background_jobs_from_dropdown
+frappe.desk.doctype.form_tour.patches.introduce_ui_tours
+execute:frappe.delete_doc_if_exists("Workspace", "Customization")
+execute:frappe.db.set_single_value("Document Naming Settings", "default_amend_naming", "Amend Counter")
+frappe.patches.v15_0.move_event_cancelled_to_status
+frappe.patches.v15_0.set_file_type
+frappe.core.doctype.data_import.patches.remove_stale_docfields_from_legacy_version
+frappe.patches.v15_0.validate_newsletter_recipients
+frappe.patches.v15_0.sanitize_workspace_titles
+frappe.patches.v15_0.migrate_role_profile_to_table_multi_select
+frappe.patches.v15_0.migrate_session_data
+frappe.custom.doctype.property_setter.patches.remove_invalid_fetch_from_expressions
+frappe.patches.v16_0.switch_default_sort_order
+frappe.integrations.doctype.oauth_client.patches.set_default_allowed_role_in_oauth_client
+frappe.patches.v16_0.add_app_launcher_in_navbar_settings
+frappe.desk.doctype.workspace.patches.update_app
+frappe.patches.v16_0.move_role_desk_settings_to_user
+frappe.printing.doctype.print_format.patches.sets_wkhtmltopdf_as_default_for_pdf_generator_field
+frappe.patches.v14_0.fix_user_settings_collation
+execute:frappe.call("frappe.core.doctype.system_settings.system_settings.sync_system_settings")
+frappe.patches.v15_0.migrate_to_utm
+frappe.patches.v16_0.add_module_deprecation_warning
+frappe.patches.v16_0.auto_generate_desktop_icon_and_sidebar
+frappe.patches.v16_0.add_private_workspaces_to_sidebar
+frappe.core.doctype.communication_link.patches.copy_communication_date_to_link
+frappe.core.doctype.communication.patches.drop_ref_dt_dn_index
+frappe.patches.v16_0.change_link_type_to_workspace_sidebar
+frappe.patches.v16_0.add_standard_field_in_workspace_sidebar
+execute:frappe.db.set_single_value("Desktop Settings", "icon_style", "Solid")
+execute:frappe.delete_doc_if_exists("Workspace Sidebar", "Productivity")
+frappe.patches.v16_0.unset_standard_field_for_auto_generated_icons
+execute:from frappe.email.doctype.notification.notification import install_notification_templates; install_notification_templates()
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/query_builder/docs.md
+# This documentation is added for query builder and related files.
+
+## Related Files
+
+- [builder](./builder.py)
+- [custom](./custom.py)
+- [functions](./functions.py)
+- [terms](./terms.py)
+- [query](../database/query.py)
+
+### Builder
+
+Database specefic classes are declared which are then selected during init to give either postgres or mariadb dialects.
+
+### Functions and Custom
+
+These file handle any custom function which needs to be either added or handled sperately by the different dialects which are not supported yet by pypika directly.
+
+### Terms
+
+The inherent terms or specefic classes of pypika builder are handled and declared here all the parameterization goes through this module (custom parameterization is also implemeted here).
+
+### Raw Query Generation Examples
+
+Check out some examples [here](https://frappeframework.com/docs/v14/user/en/api/query-builder)
+
+Query
+
+## Goal
+
+```sql
+select `name` from `tabUser`
+```
+
+## There are 3 major ways to reach this goal
+
+### 1. Direct SQL (Boring / Unsafe / inconsistent)
+
+```python
+frappe.db.sql("select `name` from `tabUser`")
+```
+
+### 2. SQL through direct Query Builder objects
+
+```python
+from frappe.query_builder import Field
+
+frappe.qb.from_("User").select(Field("name"))
+
+```
+
+### 3. Through the database API (Which performs the second method under the hood)
+
+```python
+frappe.db.get_values("User", fieldname="name", filters={})
+```
+
+This module is used to support the 3rd way of query generation in frappe.
+The database module is completely powered by this query module.
+This module is also where the query `Engine` resides which is the class responsible for the handling of various filter & field notations.
+
+- Interating with the existing Database API.
+  - The old database API was running on raw sql generation in order to bridge the gap between the added new support and raw sql strings this intermediate module was added.
+
+This module supports almost all the features present in db_query which powers `frappe.get_all` and `frappe.get_list`
+
+Supporting all the features with the previous filter notations and the field notations few features were added -:
+
+1. Dict Query
+
+   - To support this
+
+   ```python
+       frappe.db.get_values("ToDo", fieldname="name", filters={"description": "Something Random"})
+   ```
+
+   and many other possible caveats to the dict representation such as
+
+   ```python
+      frappe.db.get_values("User", fieldname="name",
+      filters={"name": ("like", "admin%")})
+
+      frappe.db.get_values("ToDo", fieldname="name", filters={"description": ("in", ["somso%", "someome"])})
+   ```
+
+2. Misc Query
+
+   - To support this
+
+     ```python
+     frappe.db.get_values("ToDo", fieldname="name", filters=["description", "=", "someone"])
+     ```
+
+   Along with other possible list filter use cases including implicit joins
+
+3. Criterion Query
+
+   - To support Inherent Query Builder objects
+
+   ```python
+   from frappe.query_builder import Field
+
+   frappe.db.get_values("User", fieldname="name", filters=Field("name") == "Administrator")
+
+   ```
+
+   and all the pypika filters and functions.
+
+## Things to be implemented in the `Engine`
+
+### 1. Support for Permissions
+
+As of now query builder has no concept of permissions and moving towards a singular database API this needs to be added in the `Engine`.
+
+### 2. Implementing the missing features which are present in `frappe.get_list` and `frappe.get_all` (do we even need so much magic?)
+
+Moving to a singular Database API (database.py + db_query.py) all the support present in `get_list` and `get_all` needs to be present in the new `Engine` as well however this creates alot of security cracks, so moving the a *new and more restrictive version* of the database API with backward compatibility perhaps would be the right way to go?
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/search/sqlite_search.md
+# SQLite Search Framework
+
+SQLite Search is a full-text search framework for Frappe applications that provides advanced search capabilities using SQLite's FTS5 (Full-Text Search) engine. It offers features like spelling correction, time-based recency scoring, custom ranking, permission-aware filtering, and extensible scoring pipelines.
+
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [How It Works](#how-it-works)
+- [Configuration](#configuration)
+- [Features & Customization](#features--customization)
+- [API Reference](#api-reference)
+
+## Quick Start
+
+### 1. Create a Search Class
+
+Create a search implementation by extending `SQLiteSearch`:
+
+```python
+# my_app/search.py
+from frappe.search.sqlite_search import SQLiteSearch
+
+class MyAppSearch(SQLiteSearch):
+    # Database file name
+    INDEX_NAME = "my_app_search.db"
+
+    # Define the search schema
+    INDEX_SCHEMA = {
+        "metadata_fields": ["project", "owner", "status"],
+        "tokenizer": "unicode61 remove_diacritics 2 tokenchars '-_'",
+    }
+
+    # Define which doctypes to index and their field mappings
+    INDEXABLE_DOCTYPES = {
+        "Task": {
+            "fields": ["name", {"title": "subject"}, {"content": "description"}, "modified", "project", "owner", "status"],
+        },
+        "Issue": {
+            "fields": ["name", "title", "description", {"modified": "last_updated"}, "project", "owner"],
+            "filters": {"status": ("!=", "Closed")},  # Only index non-closed issues
+        },
+    }
+
+    def get_search_filters(self):
+        """Return permission filters for current user"""
+        # Get projects accessible to current user
+        accessible_projects = frappe.get_all(
+            "Project",
+            filters={"owner": frappe.session.user},
+            pluck="name"
+        )
+
+        if not accessible_projects:
+            return {"project": []}  # No access
+
+        return {"project": accessible_projects}
+```
+
+### 2. Register the Search Class
+
+Add your search class to hooks.py:
+
+```python
+# my_app/hooks.py
+sqlite_search = ['my_app.search.MyAppSearch']
+```
+
+### 3. Create API Endpoint
+
+Create a whitelisted method to expose search functionality:
+
+```python
+# my_app/api.py
+import frappe
+from my_app.search import MyAppSearch
+
+@frappe.whitelist()
+def search(query, filters=None):
+    search = MyAppSearch()
+    result = search.search(query, filters=filters)
+
+    return result
+```
+
+### 4. Build the Index
+
+Build the search index programmatically or via console:
+
+```python
+from my_app.search import MyAppSearch
+search = MyAppSearch()
+search.build_index()
+```
+
+## How It Works
+
+### 1. Indexing Process
+
+#### Full Index Building
+
+When you call `build_index()`, the framework performs a complete index rebuild:
+
+1. **Database Preparation**: Creates a temporary SQLite database with FTS5 tables configured according to your schema
+2. **Document Collection**: Queries all specified doctypes using the configured field mappings and filters
+3. **Document Processing**: For each document:
+   - Extracts and maps fields according to `INDEXABLE_DOCTYPES` configuration
+   - Cleans HTML content using BeautifulSoup to extract plain text
+   - Applies custom document preparation logic if `prepare_document()` is overridden
+   - Validates required fields (title, content) are present
+4. **Batch Insertion**: Inserts processed documents into the FTS5 index in batches for performance
+5. **Vocabulary Building**: Constructs a spelling correction dictionary from all indexed text
+6. **Atomic Replacement**: Replaces the existing index database with the new one atomically
+
+#### Individual Document Indexing
+
+For real-time updates using `index_doc()` or `remove_doc()`:
+
+1. **Single Document Processing**: Retrieves and processes one document using the same field mapping logic
+2. **Incremental Update**: Updates the existing FTS5 index by inserting, updating, or deleting the specific document
+3. **Vocabulary Update**: Updates the spelling dictionary with new terms from the document
+
+### 2. Search Process
+
+When a user performs a search using `search()`, the framework executes these steps:
+
+1. **Permission Filtering**: Calls `get_search_filters()` to determine what documents the current user can access
+2. **Query Preprocessing**:
+   - Validates the search query is not empty
+   - Combines user-provided filters with permission filters
+3. **Spelling Correction**:
+   - Analyzes query terms against the vocabulary dictionary
+   - Uses trigram similarity to suggest corrections for misspelled words
+   - Expands the original query with corrected terms
+4. **FTS5 Query Execution**:
+   - Constructs an FTS5-compatible query string
+   - Executes the full-text search against the SQLite database
+   - Applies metadata filters (status, owner, project, etc.)
+   - Retrieves raw results with BM25 scores
+5. **Results Processing**:
+   - **Custom Scoring**: Applies the scoring pipeline to calculate final relevance scores
+     - Base BM25 score processing
+     - Title matching boosts (exact and partial matches)
+     - Recency boosting based on document age
+     - Custom scoring functions (doctype-specific, priority-based, etc.)
+   - **Ranking**: Sorts results by final scores and assigns rank positions
+   - **Content Formatting**: Generates content snippets and highlights matching terms
+
+## Configuration
+
+### INDEX_SCHEMA
+
+Defines the structure of your search index:
+
+```python
+INDEX_SCHEMA = {
+    # Text fields that will be searchable (defaults to ["title", "content"])
+    "text_fields": ["title", "content"],
+
+    # Metadata fields stored alongside text content for filtering
+    "metadata_fields": ["project", "owner", "status", "priority"],
+
+    # FTS5 tokenizer configuration
+    "tokenizer": "unicode61 remove_diacritics 2 tokenchars '-_@.'"
+}
+```
+
+### INDEXABLE_DOCTYPES
+
+Specifies which doctypes to index and how to map their fields:
+
+```python
+INDEXABLE_DOCTYPES = {
+    "Task": {
+        # Field mapping
+        "fields": [
+            "name",
+            {"title": "subject"},        # Maps subject field to title
+            {"content": "description"},  # Maps description field to content
+            {"modified": "creation"},    # Use creation instead of modified for recency boost
+            "project",
+            "owner"
+        ],
+
+        # Optional filters to limit which records are indexed
+        "filters": {
+            "status": ("!=", "Cancelled"),
+            "docstatus": ("!=", 2)
+        }
+    }
+}
+```
+
+### Field Mapping Rules
+
+- **String fields**: Direct mapping `"field_name"`
+- **Aliased fields**: Dictionary mapping `{"schema_field": "doctype_field"}`
+- **Required fields**: `title` and `content` fields must be present or explicitly mapped (e.g., `{"title": "subject"}`)
+- **Auto-added fields**: `doctype` and `name` are automatically included
+- **Modified field**: Added automatically if used in any doctype configuration. Used for recency boosting - if you want to use a different timestamp field (like `creation` or `last_updated`), map it to `modified` using `{"modified": "creation"}`
+
+## Features & Customization
+
+### Permission Filtering
+
+Implement `get_search_filters()` to control access:
+
+```python
+def get_search_filters(self):
+    """Return filters based on user permissions"""
+    user = frappe.session.user
+
+    if user == "Administrator":
+        return {}  # No restrictions
+
+    # Example: User can only see their own and public documents
+    return {
+        "owner": user,
+        "status": ["Active", "Published"]
+    }
+```
+
+### Custom Scoring
+
+Create custom scoring functions to influence search relevance:
+
+```python
+class MyAppSearch(SQLiteSearch):
+    ...
+
+    @SQLiteSearch.scoring_function
+    def _get_priority_boost(self, row, query, query_words):
+        """Boost high-priority items"""
+        priority = row.get("priority", "Medium")
+
+        if priority == "High":
+            return 1.5
+        if priority == "Medium":
+            return 1.1
+        return 1.0
+```
+
+### Recency Boosting
+
+The framework automatically provides time-based recency boosting using the `modified` field:
+
+```python
+# The modified field is used for calculating document age
+# Recent documents get higher scores:
+# - Last 24 hours: 1.8x boost
+# - Last 7 days: 1.5x boost
+# - Last 30 days: 1.2x boost
+# - Last 90 days: 1.1x boost
+# - Older documents: gradually decreasing boost
+
+# If your doctype uses a different timestamp field, map it to modified:
+INDEXABLE_DOCTYPES = {
+    "GP Discussion": {
+        "fields": ["name", "title", "content", {"modified": "last_post_at"}, "project"],
+    },
+    "Article": {
+        "fields": ["name", "title", "content", {"modified": "published_date"}, "category"],
+    }
+}
+```
+
+### Document Preparation
+
+Override `prepare_document()` for custom document processing:
+
+```python
+def prepare_document(self, doc):
+    """Custom document preparation"""
+    document = super().prepare_document(doc)
+    if not document:
+        return None
+
+    # Add computed fields
+    if doc.doctype == "Task":
+        # Combine multiple fields into content
+        content_parts = [
+            doc.description or "",
+            doc.notes or "",
+            "\n".join([comment.content for comment in doc.get("comments", [])])
+        ]
+        document["content"] = "\n".join(filter(None, content_parts))
+
+        # set fields that might be stored in another table
+        document["category"] = get_category_for_task(doc)
+
+    return document
+```
+
+### Spelling Correction
+
+The framework includes built-in spelling correction using trigram similarity:
+
+```python
+# Spelling correction happens automatically
+search_result = search.search("projetc managment")  # Will find "project management"
+
+# Access correction information
+print(search_result["summary"]["corrected_words"])
+# Output: {"projetc": "project", "managment": "management"}
+```
+
+### Content Processing
+
+HTML content is automatically cleaned and processed using BeautifulSoup:
+
+```python
+# Complex HTML content like this:
+html_content = """
+
+    API Documentation
+    Learn how to integrate with our REST API.
+    
+    
+        Authentication: Use Bearer tokens
+        Rate limiting: 1000 requests/hour
+    
+    See our code examples for details.
+    MethodPOST
+    analytics.track('page_view');
+    .hidden { display: none; }
+
+"""
+
+# Is automatically converted to clean, searchable plain text:
+"""
+API Documentation
+
+Learn how to integrate with our REST API.
+
+Authentication: Use Bearer tokens
+Rate limiting: 1000 requests/hour
+
+See our code examples for details.
+
+Method POST
+"""
+
+# The cleaning process:
+# 1. Removes all HTML tags (, , , , etc.)
+# 2. Strips out scripts, styles, and non-content elements
+# 3. Extracts link text while removing href URLs
+# 4. Normalizes whitespace and line breaks
+```
+
+### Title-Only Search
+
+```python
+results = search.search("project update", title_only=True)
+```
+
+### Advanced Filtering
+
+```python
+accessible_projects = ['PROJ001', 'PROJ002', ...]
+
+filters = {
+    "project": accessible_projects,     # Multiple values (IN clause)
+    "owner": current_user,              # Single value (= clause)
+}
+
+results = search.search("bug fix", filters=filters)
+```
+
+### Automatic Index Handling
+
+The framework handles index building and maintenance automatically when you register your search class:
+
+```python
+# hooks.py
+sqlite_search = ['my_app.search.MyAppSearch']
+```
+
+**What the framework does automatically:**
+
+1. **Post-Migration Index Building**: Builds the search index automatically after running `bench migrate`
+2. **Periodic Index Verification**: Checks every 15 minutes that the index exists and rebuilds if missing
+3. **Real-time Document Updates**: Automatically calls `index_doc()` and `remove_doc()` on document lifecycle events (insert, update, delete) for all doctypes defined in your `INDEXABLE_DOCTYPES`
+
+## Manual Index Handling
+
+If you prefer to have manual control over the lifecycle of indexing, then you can simply opt out of automatic index handling by not registering the search class in `sqlite_search` hook.
+
+```python
+from my_app.search import MyAppSearch
+
+def build_index_in_background():
+    """Manually trigger background index building"""
+    search = MyAppSearch()
+    if search.is_search_enabled() and not search.index_exists():
+        frappe.enqueue("my_app.search.build_index", queue="long")
+
+# hooks.py
+scheduler_events = {
+    # Custom scheduler (if you want different timing)
+    "daily": ["my_app.search.build_index_if_not_exists"],
+}
+```
+
+## API Reference
+
+#### `search(query, title_only=False, filters=None)`
+Main search method that returns formatted results.
+
+**Parameters:**
+- `query` (str): Search query text
+- `title_only` (bool): Search only in title fields
+- `filters` (dict): Additional filters to apply
+
+**Returns:**
+```python
+{
+    "results": [
+        {
+            "doctype": "Task",
+            "name": "TASK-001",
+            "title": "Fix login bug",
+            "content": "User cannot login after password reset...",
+            "score": 0.85,
+            "original_rank": 3, # original bm25 rank
+            "rank": 1, # modified rank after custom scoring pipeline
+            # ... other metadata fields
+        }
+    ],
+    "summary": {
+        "duration": 0.023,
+        "total_matches": 15,
+        "returned_matches": 15,
+        "corrected_words": {"loggin": "login"},
+        "corrected_query": "Fix login bug",
+        "title_only": False,
+        "filtered_matches": 15,
+        "applied_filters": {"status": ["Open"]}
+    }
+}
+```
+
+#### `build_index()`
+Build the complete search index from scratch.
+
+#### `index_doc(doctype, docname)`
+Index a single document.
+
+#### `remove_doc(doctype, docname)`
+Remove a single document from the index.
+
+#### `is_search_enabled()`
+Check if search is enabled (override to add disable logic).
+
+#### `index_exists()`
+Check if the search index exists.
+
+#### `get_search_filters()`
+**Must be implemented by subclasses.** Return filters for the current user.
+
+**Returns:**
+```python
+{
+    "field_name": "value",           # Single value
+    "field_name": ["val1", "val2"],  # Multiple values
+}
+```
+
+
+#### `scoring_function()`
+
+Use the `@SQLiteSearch.scoring_function` decorator to mark a function as a scoring function.
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/testing/README.md
+# Frappe Testing Module
+
+This module provides a comprehensive framework for running tests in Frappe applications. It includes functionality for test discovery, execution, result reporting, and environment setup.
+
+## Key Components
+
+- `TestConfig`: Configuration class for customizing test execution
+- `TestRunner`: Main class for running test suites with additional Frappe-specific functionality
+- `TestResult`: Custom test result class for improved output formatting and logging
+- `discover_all_tests`: Function to discover all tests in specified Frappe apps
+- `discover_doctype_tests`: Function to discover tests for specific DocTypes
+- `discover_module_tests`: Function to discover tests in specific modules
+
+## Usage
+
+This module is typically used by Frappe's CLI commands for running tests, but can also be used programmatically for custom test execution scenarios.
+
+For detailed information about each component, please refer to the well-commented code in the following files:
+
+- [`__init__.py`](./__init__.py): Module initialization and logging setup
+- [`runner.py`](./runner.py): TestRunner class and test execution logic
+- [`discovery.py`](./discovery.py): Test discovery functions
+- [`result.py`](./result.py): Custom TestResult class for result handling
+- [`environment.py`](./environment.py): Test environment setup and teardown
+
+## Example
+
+```python
+from frappe.testing import TestConfig, TestRunner, discover_all_tests
+
+config = TestConfig(failfast=True, verbose=2)
+runner = TestRunner(cfg=config)
+discover_all_tests(['my_app'], runner)
+runner.run()
+```
+
+For more detailed information about each component and its functionality, please refer to the docstrings and comments in the respective files.
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/frappe/www/_test/_test_folder/_test_toc.md
+---
+title: Test TOC
+add_breadcrumbs: 1
+show_sidebar: 0
+
+metatags:
+ description: Test Description.
+ keywords: Frappe Framework.
+---
+
+# Level 1
+
+## Level 1.1
+
+## Level 1.2
+
+## Level 1.3
+
+### Level 1.3.1
+
+# DOC: /Users/bluephoenix/frappe-bench/bench-r2/apps/frappe/hooks.md
+### List of Hooks
+
+#### Application Name and Details
+
+1. `app_name` - slugified name e.g. "frappe"
+1. `app_title` - full title name e.g. "Frappe"
+1. `app_publisher`
+1. `app_description`
+1. `app_version`
+
+#### Install
+
+1. `before_install` - method
+1. `after_install` - method
+
+
+#### Javascript / CSS Builds
+
+1. `app_include_js` - include in "app"
+1. `app_include_css` - assets/frappe/css/splash.css
+
+1. `web_include_js` - assets/js/frappe-web.min.js
+1. `web_include_css` - assets/css/frappe-web.css
+
+#### Desktop
+
+1. `get_desktop_icons` - method to get list of desktop icons
+
+#### Notifications
+
+1. `notification_config` - method to get notification configuration
+
+#### Permissions
+
+1. `permission_query_conditions:[doctype]` - method to return additional query conditions at time of report / list etc.
+1. `has_permission:[doctype]` - method to call permissions to check at individual level
+

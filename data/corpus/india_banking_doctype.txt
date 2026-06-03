@@ -1,0 +1,210 @@
+# DOCTYPE: Bank Connector
+# Module: India Banking  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  company (Link): Company → Company [required]
+  bank_account (Link): Bank Account → Bank Account [required, unique]
+  url (Data): URL [required]
+  api_key (Data): API Key [required]
+  api_secret (Password): API Secret [required]
+  bank (Data): Bank [required]
+  bulk_transaction (Check): Bulk Transaction
+  enqueue_large_payments_in_the_background (Check): Enqueue large payments in the background
+  enable_payment_delay (Check): Enable Payment Delay
+  payment_call_interval (Int): Payment Call Interval (Seconds)
+  enqueue_payments_threshold (Int): Enqueue Payments Threshold
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: Bank Payment Request
+# Module: India Banking  Type:   Submittable: True  ChildTable: False
+
+## Fields
+  payment_request_type (Select): Payment Request Type → Outward [required]
+  transaction_date (Date): Transaction Date [mandatory_if: eval:doc.mode_of_payment == 'Wire Transfer']
+  naming_series (Select): Series → ACC-BPRQ-.YYYY.- [required]
+  mode_of_payment (Link): Mode of Payment → Mode of Payment
+  party_type (Link): Party Type → DocType
+  party (Dynamic Link): Party → party_type
+  reference_doctype (Link): Reference Doctype → DocType
+  reference_name (Dynamic Link): Reference Name → reference_doctype
+  grand_total (Currency): Amount → currency
+  currency (Link): Transaction Currency → Currency
+  bank_account (Link): Bank Account → Bank Account [mandatory_if: eval:doc.mode_of_payment == 'Wire Transfer']
+  bank (Link): Bank → Bank
+  bank_account_no (Read Only): Bank Account No
+  account (Read Only): Account
+  iban (Read Only): IBAN
+  branch_code (Read Only): Branch Code
+  swift_number (Read Only): SWIFT Number
+  cost_center (Link): Cost Center → Cost Center
+  project (Link): Project → Project
+  print_format (Select): Print Format
+  email_to (Data): To
+  subject (Data): Subject
+  payment_gateway_account (Link): Payment Gateway Account → Payment Gateway Account
+  status (Select): Status → 
+Draft
+Requested
+Initiated
+Partially Paid
+Payment Ordered
+Paid
+Failed
+Cancelled
+  make_sales_invoice (Check): Make Sales Invoice
+  payment_url (Data): payment_url → URL
+  payment_gateway (Read Only): Payment Gateway
+  payment_account (Read Only): Payment Account
+  payment_channel (Select): Payment Channel → 
+Email
+Phone
+  payment_order (Link): Payment Order → Payment Order
+  payment_type (Link): Payment Type → Payment Type [mandatory_if: eval:doc.mode_of_payment == 'Wire Transfer' && doc.reference_doctype != 'Purchase Invoice' && doc.payment_request_type == 'Outward']
+  company (Link): Company → Company
+  amended_from (Link): Amended From → Bank Payment Request
+  taxes_deducted (Currency): Taxes Deducted
+  apply_tax_withholding_amount (Check): Apply Tax Withholding Amount
+  tax_withholding_category (Link): Tax Withholding Category → Tax Withholding Category
+  net_total (Currency): Net Total
+  is_adhoc (Check): Is AdHoc
+  payment_term (Link): Payment Term → Payment Term
+
+## Permissions
+  Accounts User: read, write, create, delete
+  Accounts Manager: read, write, create, delete, submit, cancel
+
+# DOCTYPE: India Banking Request Log
+# Module: India Banking  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  action (Data): Action
+  url (Small Text): URL
+  method (Data): Method
+  header (Code): Header
+  payload (Code): Payload
+  response (Code): Response
+  status_code (Data): Status Code
+  reference_doctype (Data): Reference Doctype
+  reference_docname (Data): Reference Docname
+  show_failure_message (Button): Show Failure Message → show_failure_message
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: India Banking Settings
+# Module: India Banking  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  summarise_payment_based_on (Select): Summarise Payment Based On → Party
+Voucher
+  notify_party (Check): Notify Party
+  activate_workflow_on_bank_account (Check): Activate Workflow on Bank Account
+  update_posting_date_as_payment_date (Check): Auto Update Posting Date as Payment Date
+  update_payment_status (Check): Auto Update Payment Status
+  allowed_payment_doctypes (Small Text): Allowed Payment Doctypes
+  status_check (Select): Status check at → Every 20 Minutes
+Every Hour
+Every Day at Midnight [mandatory_if: update_payment_status]
+  payment_notification (Table): payment_notification → Payment Notification [mandatory_if: notify_party]
+  retry_period (Int): Retry Period(In Days) [eg:1=1 Day(s)]
+  use_payment_order_date_as_payment_entry_date (Check): Use Payment Order Date as Payment Entry Date
+  allow_future_date_payment_order (Check): Allow future Date Payment Order
+  doctype_naming_series (Table): Doctype Naming Series → Naming Series Map
+  auto_post_payments (Check): Auto Post Payments
+  retry_interval_minutes (Int): Retry Interval (minutes)
+  batch_size (Int): Batch Size
+
+## Permissions
+  System Manager: read, write, create, delete
+  All: read
+
+# DOCTYPE: Mode of Transfer
+# Module: India Banking  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  mode (Data): Mode [required, unique]
+  minimum_limit (Currency): Minimum Limit [required]
+  maximum_limit (Currency): Maximum Limit [required]
+  is_bank_specific (Check): Is Bank Specific
+  bank (Link): Bank → Bank
+  bank_account (Link): Bank Account → Bank Account
+  start_time (Time): Start Time
+  end_time (Time): End Time
+  priority (Select): Priority → 0
+1
+2
+3
+4
+5
+6
+  disabled (Check): Disabled
+
+## Permissions
+  System Manager: read, write, create, delete
+
+# DOCTYPE: Naming Series Map
+# Module: India Banking  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  doctype_name (Link): DocType → DocType [required]
+  series (Data): Series [required]
+  company (Link): Company → Company [required]
+
+# DOCTYPE: Payment Notification
+# Module: India Banking  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  company (Link): Company → Company
+  email_format (Link): Email Format → Print Format
+  letter_head (Link): Letter Head → Letter Head
+  cc (Small Text): CC
+
+# DOCTYPE: Payment Order Summary
+# Module: India Banking  Type:   Submittable: False  ChildTable: True
+
+## Fields
+  party_type (Link): Party Type → DocType [required]
+  party (Dynamic Link): Party → party_type [required]
+  amount (Currency): Amount [required]
+  mode_of_transfer (Link): Mode of Transfer → Mode of Transfer [required]
+  payment_status (Select): Payment Status → Pending
+Initiated
+Processed
+Failed
+Rejected
+On Hold
+  message (Code): Message
+  reference_number (Data): Reference Number
+  bank_account (Link): Bank Account → Bank Account [required]
+  account (Link): Account → Account
+  tax_withholding_category (Link): Tax Withholding Category → Tax Withholding Category
+  payment_entry (Data): Payment Entry
+  reference_doctype (Link): Reference Doctype → DocType
+  cost_center (Link): Cost Center → Cost Center
+  project (Link): Project → Project
+  payment_initiated (Check): Payment Initiated
+  payment_date (Date): Payment Date
+  reference_name (Dynamic Link): Reference Name → reference_doctype
+  journal_entry_account (Data): Journal Entry Account
+  email (Data): Email → Email
+  branch_code (Data): Branch Code
+  account_name (Data): Account Name
+  bank_account_no (Data): Bank Account No
+  bank (Data): Bank
+  party_name (Data): Party Name
+  summary_references (Small Text): Summary References
+
+# DOCTYPE: Payment Type
+# Module: India Banking  Type:   Submittable: False  ChildTable: False
+
+## Fields
+  payment_type (Data): Payment Type [required]
+  account (Link): Account → Account [required]
+  company (Link): Company → Company [required]
+  is_default (Check): Is Default
+
+## Permissions
+  System Manager: read, write, create, delete
+

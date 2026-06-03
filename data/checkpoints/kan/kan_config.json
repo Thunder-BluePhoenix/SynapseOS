@@ -1,0 +1,17 @@
+{
+  "width": [
+    4,
+    8,
+    1
+  ],
+  "grid": 5,
+  "k": 3,
+  "data_path": "data/kan/metric_pairs.json",
+  "output_dir": "data/checkpoints/kan",
+  "num_epochs": 20,
+  "batch_size": 128,
+  "learning_rate": 0.001,
+  "val_split": 0.15,
+  "run_auto_symbolic": true,
+  "symbolic_threshold": 0.95
+}

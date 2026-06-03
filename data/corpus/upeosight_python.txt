@@ -1,0 +1,1728 @@
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/upeosight/upeosight/actions/cleanup.py
+from __future__ import annotations
+import frappe
+from frappe.utils import now_datetime
+
+CLEANUP_RULES = {
+    "tabError Log": {
+        "label": "System error logs",
+        "default_days": 30,
+        "where": "creation < DATE_SUB(NOW(), INTERVAL %(days)s DAY)",
+    },
+    "tabActivity Log": {
+        "label": "User activity logs",
+        "default_days": 90,
+        "where": "creation < DATE_SUB(NOW(), INTERVAL %(days)s DAY)",
+    },
+    "tabIntegration Request": {
+        "label": "Integration API logs",
+        "default_days": 14,
+        "where": "creation < DATE_SUB(NOW(), INTERVAL %(days)s DAY)",
+    },
+    "tabWebhook Request Log": {
+        "label": "Webhook logs",
+        "default_days": 14,
+        "where": "creation < DATE_SUB(NOW(), INTERVAL %(days)s DAY)",
+    },
+    "tabVersion": {
+        "label": "Document version history",
+        "default_days": 180,
+        "where": "creation < DATE_SUB(NOW(), INTERVAL %(days)s DAY)",
+    },
+}
+
+@frappe.whitelist()
+def preview(table: str, days: int | None = None):
+    frappe.only_for("UPEOSight Operator")
+    rule = _rule(table)
+    days = int(days or rule["default_days"])
+
+    count = frappe.db.sql(
+        f"SELECT COUNT(*) FROM `{table}` WHERE {rule['where']}",
+        {"days": days},
+    )[0][0]
+
+    return {
+        "table": table,
+        "days": days,
+        "records_to_delete": int(count),
+        "description": rule["label"],
+        "warning": "This cannot be undone. If unsure, take a backup first.",
+    }
+
+@frappe.whitelist()
+def execute(table: str, days: int, reason: str):
+    frappe.only_for("UPEOSight Operator")
+    rule = _rule(table)
+    days = int(days)
+
+    try:
+        frappe.db.sql(
+            f"DELETE FROM `{table}` WHERE {rule['where']}",
+            {"days": days},
+        )
+        deleted = frappe.db.affected_rows()
+        frappe.db.commit()
+
+        _audit("cleanup", table, reason, "Success", f"Deleted {deleted} rows older than {days} days.")
+        return {"deleted": int(deleted)}
+    except Exception as e:
+        frappe.db.rollback()
+        _audit("cleanup", table, reason, "Failed", str(e))
+        raise
+
+def _rule(table: str):
+    if table not in CLEANUP_RULES:
+        frappe.throw("Cleanup not allowed for this table.")
+    return CLEANUP_RULES[table]
+
+def _audit(action: str, target: str, reason: str, result: str, details: str):
+    frappe.get_doc({
+        "doctype": "UPEOSight Action Audit",
+        "timestamp": now_datetime(),
+        "site": frappe.local.site,
+        "user": frappe.session.user,
+        "action": action,
+        "target": target,
+        "reason": reason or "",
+        "result": result,
+        "details": details or "",
+    }).insert(ignore_permissions=True)
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/upeosight/upeosight/actions/control.py
+from __future__ import annotations
+import subprocess
+import frappe
+from frappe.utils import now_datetime
+
+# Choose ONE based on your setup:
+SYSTEMD = True  # set False if using supervisor
+
+ALLOWED = {
+    "restart_workers": ["sudo", "/usr/local/bin/upeosight-restart", "workers"],
+    "restart_scheduler": ["sudo", "/usr/local/bin/upeosight-restart", "scheduler"],
+}
+
+if not SYSTEMD:
+    ALLOWED = {
+        "restart_workers": ["sudo", "/usr/local/bin/upeosight-supervisor-restart", "workers"],
+        "restart_scheduler": ["sudo", "/usr/local/bin/upeosight-supervisor-restart", "scheduler"],
+    }
+
+@frappe.whitelist()
+def restart_workers(reason: str):
+    frappe.only_for("UPEOSight Operator")
+    return _run("restart_workers", "workers", reason)
+
+@frappe.whitelist()
+def restart_scheduler(reason: str):
+    frappe.only_for("UPEOSight Operator")
+    return _run("restart_scheduler", "scheduler", reason)
+
+def _run(action: str, target: str, reason: str):
+    try:
+        subprocess.check_output(ALLOWED[action], stderr=subprocess.STDOUT)
+        result = "Success"
+        details = f"{target} restarted"
+    except Exception as e:
+        result = "Failed"
+        details = str(e)
+
+    _audit(action, target, reason, result, details)
+    return result
+
+def _audit(action: str, target: str, reason: str, result: str, details: str):
+    frappe.get_doc({
+        "doctype": "UPEOSight Action Audit",
+        "timestamp": now_datetime(),
+        "site": frappe.local.site,
+        "user": frappe.session.user,
+        "action": action,
+        "target": target,
+        "reason": reason or "",
+        "result": result,
+        "details": details or "",
+    }).insert(ignore_permissions=True)
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/upeosight/upeosight/collectors/database.py
+from __future__ import annotations
+import hashlib
+import frappe
+from frappe.utils import now_datetime
+
+def _sig(text: str) -> str:
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()[:16]
+
+def collect(limit: int = 10):
+    try:
+        rows = frappe.db.sql(
+            """
+            SELECT DIGEST_TEXT,
+                   COUNT_STAR,
+                   AVG_TIMER_WAIT/1000000000,
+                   MAX_TIMER_WAIT/1000000000
+            FROM performance_schema.events_statements_summary_by_digest
+            ORDER BY AVG_TIMER_WAIT DESC
+            LIMIT %s
+            """,
+            (int(limit),),
+            as_list=True,
+        )
+    except Exception:
+        # performance_schema not enabled → safe skip
+        return
+
+    ts = now_datetime()
+    for digest_text, count_star, avg_s, max_s in rows:
+        frappe.get_doc({
+            "doctype": "UPEOSight DB Metric",
+            "timestamp": ts,
+            "site": frappe.local.site,
+            "db_name": frappe.conf.db_name,
+            "query_signature": _sig(digest_text),
+            "executions": int(count_star or 0),
+            "avg_time_ms": int((avg_s or 0) * 1000),
+            "max_time_ms": int((max_s or 0) * 1000),
+        }).insert(ignore_permissions=True)
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/upeosight/upeosight/collectors/db_storage.py
+from __future__ import annotations
+import socket
+import frappe
+from frappe.utils import now_datetime
+
+IMPORTANCE_MAP = [
+    ("tabGL Entry", "Ledger/Accounting", "Accounting ledger; large size can slow financial reports."),
+    ("tabStock Ledger Entry", "Stock/Inventory", "Inventory movements; large size slows stock reports/valuation."),
+    ("tabError Log", "Logs/Audit", "Error logs; safe to clear old entries to reduce DB bloat."),
+    ("tabActivity Log", "Logs/Audit", "User activity logs; can grow fast in busy systems."),
+    ("tabVersion", "Logs/Audit", "Document version history; can grow large over time."),
+    ("tabIntegration Request", "Integration/Sync", "Integration logs; failures/retries can bloat DB."),
+    ("tabWebhook Request Log", "Integration/Sync", "Webhook logs; common bloat source with integrations."),
+    ("tabFile", "Attachments/Files", "File metadata; hints attachment activity and storage pressure."),
+]
+
+CLEANUP_ALLOWED = {
+    "tabError Log": "Safe to clear old error logs (does not affect business transactions).",
+    "tabActivity Log": "Safe to clear old activity logs (audit/history).",
+    "tabIntegration Request": "Safe to clear old integration logs (keep recent for troubleshooting).",
+    "tabWebhook Request Log": "Safe to clear old webhook logs (keep recent for troubleshooting).",
+    "tabVersion": "Safe to reduce old version history if needed (keep enough for audit).",
+}
+
+def _classify(table_name: str):
+    for t, cat, note in IMPORTANCE_MAP:
+        if table_name == t:
+            return cat, note
+    if table_name.startswith("tab"):
+        return "System/Core", "Core ERPNext/Frappe table; monitor growth trend and indexing."
+    return "Custom/Unknown", "Custom table; review purpose and retention needs."
+
+def collect(top_n: int = 25):
+    ts = now_datetime()
+    site = frappe.local.site
+    host = socket.gethostname()
+    db_name = frappe.conf.db_name
+
+    db_row = frappe.db.sql(
+        """
+        SELECT
+          IFNULL(SUM(data_length + index_length), 0) / 1024 / 1024 AS total_mb,
+          IFNULL(SUM(data_length), 0) / 1024 / 1024 AS data_mb,
+          IFNULL(SUM(index_length), 0) / 1024 / 1024 AS index_mb,
+          COUNT(*) AS tables_count
+        FROM information_schema.tables
+        WHERE table_schema = %s
+        """,
+        (db_name,),
+        as_dict=True,
+    )[0]
+
+    frappe.get_doc({
+        "doctype": "UPEOSight DB Storage Snapshot",
+        "timestamp": ts,
+        "site": site,
+        "hostname": host,
+        "db_name": db_name,
+        "total_mb": float(db_row.total_mb),
+        "data_mb": float(db_row.data_mb),
+        "index_mb": float(db_row.index_mb),
+        "tables_count": int(db_row.tables_count),
+    }).insert(ignore_permissions=True)
+
+    tables = frappe.db.sql(
+        """
+        SELECT table_name, engine, table_rows,
+               (data_length / 1024 / 1024) AS data_mb,
+               (index_length / 1024 / 1024) AS index_mb,
+               ((data_length + index_length) / 1024 / 1024) AS total_mb
+        FROM information_schema.tables
+        WHERE table_schema = %s
+        ORDER BY (data_length + index_length) DESC
+        LIMIT %s
+        """,
+        (db_name, int(top_n)),
+        as_dict=True,
+    )
+
+    for r in tables:
+        importance, note = _classify(r.table_name)
+        cleanup_allowed = 1 if r.table_name in CLEANUP_ALLOWED else 0
+        cleanup_hint = CLEANUP_ALLOWED.get(r.table_name, "")
+
+        frappe.get_doc({
+            "doctype": "UPEOSight DB Table Storage",
+            "timestamp": ts,
+            "site": site,
+            "hostname": host,
+            "db_name": db_name,
+            "table_name": r.table_name,
+            "engine": r.engine,
+            "rows_est": int(r.table_rows or 0),
+            "data_mb": float(r.data_mb or 0),
+            "index_mb": float(r.index_mb or 0),
+            "total_mb": float(r.total_mb or 0),
+            "importance": importance,
+            "importance_note": note,
+            "cleanup_allowed": cleanup_allowed,
+            "cleanup_hint": cleanup_hint,
+        }).insert(ignore_permissions=True)
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/upeosight/upeosight/collectors/queue.py
+from __future__ import annotations
+import frappe
+from rq import Queue
+from frappe.utils import now_datetime
+from frappe.utils.background_jobs import get_redis_conn
+
+def collect():
+    redis = get_redis_conn()
+
+    for qname in ["short", "default", "long"]:
+        q = Queue(qname, connection=redis)
+        frappe.get_doc({
+            "doctype": "UPEOSight Queue Metric",
+            "timestamp": now_datetime(),
+            "site": frappe.local.site,
+            "queue_name": qname,
+            "job_count": int(q.count),
+            "failed_count": int(q.failed_job_registry.count),
+            "active_workers": int(len(q.workers)),
+        }).insert(ignore_permissions=True)
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/upeosight/upeosight/collectors/system.py
+from __future__ import annotations
+import socket
+import psutil
+import frappe
+from frappe.utils import now_datetime
+
+def collect():
+    vm = psutil.virtual_memory()
+    disk = psutil.disk_usage("/")
+    load1, load5, load15 = psutil.getloadavg()
+
+    frappe.get_doc({
+        "doctype": "UPEOSight System Metric",
+        "timestamp": now_datetime(),
+        "site": frappe.local.site,
+        "hostname": socket.gethostname(),
+        "cpu_percent": float(psutil.cpu_percent(interval=0.5)),
+        "ram_percent": float(vm.percent),
+        "ram_used_mb": int(vm.used / 1024 / 1024),
+        "disk_percent": float(disk.percent),
+        "load_1": float(load1),
+        "load_5": float(load5),
+        "load_15": float(load15),
+    }).insert(ignore_permissions=True)
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/upeosight/upeosight/dashboards/metrics.py
+from __future__ import annotations
+import frappe
+
+@frappe.whitelist()
+def latest():
+    system = frappe.db.get_all(
+        "UPEOSight System Metric",
+        fields=["timestamp","hostname","cpu_percent","ram_percent","disk_percent","load_1","load_5","load_15"],
+        order_by="timestamp desc",
+        limit=1,
+    )
+    db_snap = frappe.db.get_all(
+        "UPEOSight DB Storage Snapshot",
+        fields=["timestamp","db_name","total_mb","data_mb","index_mb","tables_count","hostname"],
+        order_by="timestamp desc",
+        limit=1,
+    )
+    queues = frappe.db.get_all(
+        "UPEOSight Queue Metric",
+        fields=["timestamp","queue_name","job_count","failed_count","active_workers"],
+        order_by="timestamp desc",
+        limit=10,
+    )
+    big_tables = frappe.db.get_all(
+        "UPEOSight DB Table Storage",
+        fields=["timestamp","table_name","total_mb","rows_est","importance","importance_note","cleanup_allowed","cleanup_hint"],
+        order_by="total_mb desc",
+        limit=10,
+    )
+
+    return {
+        "system": system[0] if system else None,
+        "db_snapshot": db_snap[0] if db_snap else None,
+        "queues": queues,
+        "big_tables": big_tables,
+    }
+
+@frappe.whitelist()
+def audit(limit: int = 20):
+    return frappe.db.get_all(
+        "UPEOSight Action Audit",
+        fields=["creation", "user", "action", "target", "result", "reason"],
+        order_by="creation desc",
+        limit=int(limit),
+    )
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/upeosight/upeosight/hooks.py
+app_name = "upeosight"
+app_title = "UPEOSight"
+app_publisher = "Karani Geoffrey"
+app_description = "UPEOSight is Upeosoft’s observability and reliability toolkit for ERPNext"
+app_email = "karani@upeosoft.com"
+app_license = "mit"
+
+# Apps
+# ------------------
+
+# required_apps = []
+
+# Each item in the list will be shown as an app in the apps page
+# add_to_apps_screen = [
+# 	{
+# 		"name": "upeosight",
+# 		"logo": "/assets/upeosight/logo.png",
+# 		"title": "UPEOSight",
+# 		"route": "/upeosight",
+# 		"has_permission": "upeosight.api.permission.has_app_permission"
+# 	}
+# ]
+
+# Includes in <head>
+# ------------------
+
+# include js, css files in header of desk.html
+# app_include_css = "/assets/upeosight/css/upeosight.css"
+# app_include_js = "/assets/upeosight/js/upeosight.js"
+
+# include js, css files in header of web template
+# web_include_css = "/assets/upeosight/css/upeosight.css"
+# web_include_js = "/assets/upeosight/js/upeosight.js"
+
+# include custom scss in every website theme (without file extension ".scss")
+# website_theme_scss = "upeosight/public/scss/website"
+
+# include js, css files in header of web form
+# webform_include_js = {"doctype": "public/js/doctype.js"}
+# webform_include_css = {"doctype": "public/css/doctype.css"}
+
+# include js in page
+# page_js = {"page" : "public/js/file.js"}
+
+# include js in doctype views
+# doctype_js = {"doctype" : "public/js/doctype.js"}
+# doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
+# doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
+# doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
+
+# Svg Icons
+# ------------------
+# include app icons in desk
+# app_include_icons = "upeosight/public/icons.svg"
+
+# Home Pages
+# ----------
+
+# application home page (will override Website Settings)
+# home_page = "login"
+
+# website user home page (by Role)
+# role_home_page = {
+# 	"Role": "home_page"
+# }
+
+# Generators
+# ----------
+
+# automatically create page for each record of this doctype
+# website_generators = ["Web Page"]
+
+# Jinja
+# ----------
+
+# add methods and filters to jinja environment
+# jinja = {
+# 	"methods": "upeosight.utils.jinja_methods",
+# 	"filters": "upeosight.utils.jinja_filters"
+# }
+
+# Installation
+# ------------
+
+# before_install = "upeosight.install.before_install"
+# after_install = "upeosight.install.after_install"
+
+# Uninstallation
+# ------------
+
+# before_uninstall = "upeosight.uninstall.before_uninstall"
+# after_uninstall = "upeosight.uninstall.after_uninstall"
+
+# Integration Setup
+# ------------------
+# To set up dependencies/integrations with other apps
+# Name of the app being installed is passed as an argument
+
+# before_app_install = "upeosight.utils.before_app_install"
+# after_app_install = "upeosight.utils.after_app_install"
+
+# Integration Cleanup
+# -------------------
+# To clean up dependencies/integrations with other apps
+# Name of the app being uninstalled is passed as an argument
+
+# before_app_uninstall = "upeosight.utils.before_app_uninstall"
+# after_app_uninstall = "upeosight.utils.after_app_uninstall"
+
+# Desk Notifications
+# ------------------
+# See frappe.core.notifications.get_notification_config
+
+# notification_config = "upeosight.notifications.get_notification_config"
+
+# Permissions
+# -----------
+# Permissions evaluated in scripted ways
+
+# permission_query_conditions = {
+# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
+# }
+#
+# has_permission = {
+# 	"Event": "frappe.desk.doctype.event.event.has_permission",
+# }
+
+# DocType Class
+# ---------------
+# Override standard doctype classes
+
+# override_doctype_class = {
+# 	"ToDo": "custom_app.overrides.CustomToDo"
+# }
+
+# Document Events
+# ---------------
+# Hook on document methods and events
+
+# doc_events = {
+# 	"*": {
+# 		"on_update": "method",
+# 		"on_cancel": "method",
+# 		"on_trash": "method"
+# 	}
+# }
+
+# Scheduled Tasks
+# ---------------
+
+
+scheduler_events = {
+    "cron": {
+        "* * * * *": [
+            "upeosight.collectors.system.collect",
+            "upeosight.collectors.queue.collect",
+        ],
+        "*/5 * * * *": [
+            "upeosight.collectors.db_storage.collect",
+            "upeosight.collectors.database.collect",
+        ],
+    }
+}
+
+
+# Testing
+# -------
+
+# before_tests = "upeosight.install.before_tests"
+
+# Overriding Methods
+# ------------------------------
+#
+# override_whitelisted_methods = {
+# 	"frappe.desk.doctype.event.event.get_events": "upeosight.event.get_events"
+# }
+#
+# each overriding function accepts a `data` argument;
+# generated from the base implementation of the doctype dashboard,
+# along with any modifications made in other Frappe apps
+# override_doctype_dashboards = {
+# 	"Task": "upeosight.task.get_dashboard_data"
+# }
+
+# exempt linked doctypes from being automatically cancelled
+#
+# auto_cancel_exempted_doctypes = ["Auto Repeat"]
+
+# Ignore links to specified DocTypes when deleting documents
+# -----------------------------------------------------------
+
+# ignore_links_on_delete = ["Communication", "ToDo"]
+
+# Request Events
+# ----------------
+# before_request = ["upeosight.utils.before_request"]
+# after_request = ["upeosight.utils.after_request"]
+
+# Job Events
+# ----------
+# before_job = ["upeosight.utils.before_job"]
+# after_job = ["upeosight.utils.after_job"]
+
+# User Data Protection
+# --------------------
+
+# user_data_fields = [
+# 	{
+# 		"doctype": "{doctype_1}",
+# 		"filter_by": "{filter_by}",
+# 		"redact_fields": ["{field_1}", "{field_2}"],
+# 		"partial": 1,
+# 	},
+# 	{
+# 		"doctype": "{doctype_2}",
+# 		"filter_by": "{filter_by}",
+# 		"partial": 1,
+# 	},
+# 	{
+# 		"doctype": "{doctype_3}",
+# 		"strict": False,
+# 	},
+# 	{
+# 		"doctype": "{doctype_4}"
+# 	}
+# ]
+
+# Authentication and authorization
+# --------------------------------
+
+# auth_hooks = [
+# 	"upeosight.auth.validate"
+# ]
+
+# Automatically update python controller files with type annotations for this app.
+# export_python_type_annotations = True
+
+# default_log_clearing_doctypes = {
+# 	"Logging DocType Name": 30  # days to retain logs
+# }
+
+# Translation
+# ------------
+# List of apps whose translatable strings should be excluded from this app's translations.
+# ignore_translatable_strings_from = []
+
+
+fixtures = [
+    "Client Script",
+    "Custom Field",
+    "Workspace",
+    "Page"
+]
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/upeosight/upeosight/upeosight/doctype/upeosight_action_audit/upeosight_action_audit.py
+# Copyright (c) 2026, Karani Geoffrey and contributors
+# For license information, please see license.txt
+
+# import frappe
+from frappe.model.document import Document
+
+
+class UPEOSightActionAudit(Document):
+	pass
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/upeosight/upeosight/upeosight/doctype/upeosight_db_metric/upeosight_db_metric.py
+# Copyright (c) 2026, Karani Geoffrey and contributors
+# For license information, please see license.txt
+
+# import frappe
+from frappe.model.document import Document
+
+
+class UPEOSightDBMetric(Document):
+	pass
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/upeosight/upeosight/upeosight/doctype/upeosight_db_storage_snapshot/upeosight_db_storage_snapshot.py
+# Copyright (c) 2026, Karani Geoffrey and contributors
+# For license information, please see license.txt
+
+# import frappe
+from frappe.model.document import Document
+
+
+class UPEOSightDBStorageSnapshot(Document):
+	pass
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/upeosight/upeosight/upeosight/doctype/upeosight_db_table_storage/upeosight_db_table_storage.py
+# Copyright (c) 2026, Karani Geoffrey and contributors
+# For license information, please see license.txt
+
+# import frappe
+from frappe.model.document import Document
+
+
+class UPEOSightDBTableStorage(Document):
+	pass
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/upeosight/upeosight/upeosight/doctype/upeosight_queue_metric/upeosight_queue_metric.py
+# Copyright (c) 2026, Karani Geoffrey and contributors
+# For license information, please see license.txt
+
+# import frappe
+from frappe.model.document import Document
+
+
+class UPEOSightQueueMetric(Document):
+	pass
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/upeosight/upeosight/upeosight/doctype/upeosight_system_metric/upeosight_system_metric.py
+# Copyright (c) 2026, Karani Geoffrey and contributors
+# For license information, please see license.txt
+
+# import frappe
+from frappe.model.document import Document
+
+
+class UPEOSightSystemMetric(Document):
+	pass
+
+# FILE: /Users/bluephoenix/frappe-bench/bench-r2/apps/upeosight/upeosight/upeosight/page/upeosight_control/upeosight_control.js
+// apps/upeosight/upeosight/page/upeosight_control/upeosight_control.js
+// Premium tooltips (custom, readable) + DB size guidance (bands + status + directions)
+
+frappe.pages["upeosight-control"].on_page_load = function (wrapper) {
+  const page = frappe.ui.make_app_page({
+    parent: wrapper,
+    title: "UPEOSight Control Center",
+    single_column: true,
+  });
+
+  const $body = $(page.body);
+
+  $(wrapper).find(".page-head").css({
+    background:
+      "linear-gradient(90deg, rgba(59,130,246,0.12), rgba(16,185,129,0.10), rgba(245,158,11,0.10))",
+    borderBottom: "1px solid rgba(15,23,42,0.08)",
+  });
+  $(wrapper).find(".page-title .title-text").css({
+    fontWeight: 950,
+    letterSpacing: "-0.02em",
+  });
+
+
+  $body.addClass("upeosight-root");
+
+  // -----------------------------
+  // Premium UI styles
+  // -----------------------------
+  if (!document.getElementById("upeosight-style")) {
+    const style = document.createElement("style");
+    style.id = "upeosight-style";
+
+
+    style.innerHTML = `
+    .upeosight-root{
+      padding-bottom: 24px;
+      /* soft “control center” background */
+      background:
+        radial-gradient(900px 420px at 12% 0%, rgba(59,130,246,0.10), transparent 55%),
+        radial-gradient(820px 420px at 88% 8%, rgba(16,185,129,0.10), transparent 55%),
+        radial-gradient(700px 380px at 60% 92%, rgba(245,158,11,0.10), transparent 55%),
+        linear-gradient(180deg, rgba(255,255,255,1), rgba(248,250,252,1));
+    }
+
+    /* ===== Theme tokens ===== */
+    :root{
+      --upeo-blue: #3b82f6;
+      --upeo-green:#10b981;
+      --upeo-amber:#f59e0b;
+      --upeo-violet:#6366f1;
+      --upeo-red:  #ef4444;
+
+      --upeo-ink: #0f172a;
+      --upeo-muted: rgba(15,23,42,0.62);
+    }
+
+    .upeo-glass{
+      background: rgba(255,255,255,0.74);
+      border: 1px solid rgba(15,23,42,0.08);
+      border-radius: 18px;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      box-shadow:
+        0 18px 48px rgba(2,6,23,0.08),
+        0 1px 0 rgba(255,255,255,0.55) inset;
+    }
+
+    .upeo-section{ position: relative; overflow: hidden; }
+    .upeo-section:before{
+      content:"";
+      position:absolute;
+      inset:0;
+      opacity: 0.70;
+      pointer-events:none;
+      background:
+        radial-gradient(circle at 20% 10%, rgba(15,23,42,0.05), transparent 60%),
+        radial-gradient(circle at 90% 20%, rgba(59,130,246,0.06), transparent 58%);
+    }
+
+    /* ===== Accents: now actually colorful ===== */
+    .upeo-accent{ height: 4px; border-radius: 999px; margin-bottom: 12px; }
+    .upeo-accent.health{
+      background: linear-gradient(90deg, rgba(16,185,129,0.95), rgba(59,130,246,0.85));
+    }
+    .upeo-accent.tables{
+      background: linear-gradient(90deg, rgba(59,130,246,0.95), rgba(99,102,241,0.85));
+    }
+    .upeo-accent.actions{
+      background: linear-gradient(90deg, rgba(245,158,11,0.95), rgba(239,68,68,0.80));
+    }
+    .upeo-accent.audit{
+      background: linear-gradient(90deg, rgba(99,102,241,0.95), rgba(16,185,129,0.80));
+    }
+
+    .upeo-fade-in{ animation: upeoFade .22s ease-out; }
+    @keyframes upeoFade{ from{opacity:.55; transform:translateY(8px)} to{opacity:1; transform:translateY(0)} }
+
+    .upeo-header{ display:flex; align-items:flex-start; justify-content:space-between; gap: 12px; margin-bottom: 12px; }
+    .upeo-title{ font-weight: 900; font-size: 16px; color: var(--upeo-ink); }
+    .upeo-subtle{ color: var(--upeo-muted); font-size:12px; line-height: 1.35; }
+
+    /* KPI more “hero” */
+    .upeo-kpi{
+      font-size: 24px;
+      font-weight: 950;
+      line-height: 1.0;
+      letter-spacing: -0.03em;
+      color: var(--upeo-ink);
+    }
+    .upeo-kpi-label{
+      font-size: 12px;
+      color: var(--upeo-muted);
+      margin-top: 6px;
+      display:flex;
+      align-items:center;
+      gap:8px;
+    }
+
+    /* Pills: subtle tint + clearer hierarchy */
+    .upeo-pill{
+      display:inline-flex; align-items:center; gap:8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-weight: 850;
+      font-size: 12px;
+      border: 1px solid rgba(15,23,42,0.08);
+      background: rgba(255,255,255,0.65);
+    }
+
+    .upeo-dot{ width:10px; height:10px; border-radius:999px; display:inline-block; }
+    .upeo-dot.green{ background: var(--upeo-green); box-shadow: 0 0 0 4px rgba(16,185,129,0.14); }
+    .upeo-dot.yellow{ background: var(--upeo-amber); box-shadow: 0 0 0 4px rgba(245,158,11,0.14); }
+    .upeo-dot.red{ background: var(--upeo-red); box-shadow: 0 0 0 4px rgba(239,68,68,0.14); }
+
+    .upeo-skeleton{
+      background: linear-gradient(90deg, rgba(15,23,42,0.04), rgba(15,23,42,0.09), rgba(15,23,42,0.04));
+      background-size: 200% 100%;
+      animation: upeoShimmer 1.15s infinite;
+      border-radius: 12px;
+    }
+    @keyframes upeoShimmer{ 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+    .upeo-card-pad{ padding: 16px; }
+    .upeo-divider{ height:1px; background: rgba(15,23,42,0.08); margin: 12px 0; }
+
+    /* Tables: cleaner header + hover */
+    .upeo-table{
+      border-color: rgba(15,23,42,0.10) !important;
+    }
+    .upeo-table thead th{
+      font-size: 12px;
+      color: rgba(15,23,42,0.65);
+      background:
+        linear-gradient(180deg, rgba(59,130,246,0.06), rgba(99,102,241,0.03));
+      border-color: rgba(15,23,42,0.10) !important;
+    }
+    .upeo-table td{
+      vertical-align: top;
+      border-color: rgba(15,23,42,0.08) !important;
+    }
+    .upeo-table tbody tr:hover{
+      background: rgba(59,130,246,0.045);
+    }
+
+    /* Buttons: premium but readable */
+    .upeo-btn{
+      border-radius: 12px !important;
+      font-weight: 850 !important;
+      border: 1px solid rgba(15,23,42,0.10) !important;
+      box-shadow: 0 10px 22px rgba(2,6,23,0.08);
+      transition: transform .12s ease, box-shadow .12s ease;
+    }
+    .upeo-btn:hover{
+      transform: translateY(-1px);
+      box-shadow: 0 14px 30px rgba(2,6,23,0.10);
+    }
+
+    /* Primary buttons: gradient */
+    .btn.btn-primary.upeo-btn{
+      background: linear-gradient(90deg, rgba(59,130,246,1), rgba(99,102,241,1)) !important;
+      color: #fff !important;
+    }
+
+    /* Warning (cleanup) button: amber gradient */
+    .btn.btn-warning.upeo-btn{
+      background: linear-gradient(90deg, rgba(245,158,11,1), rgba(239,68,68,0.95)) !important;
+      color: #111827 !important;
+    }
+
+    .upeo-badge{
+      font-size: 11px;
+      font-weight: 900;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(15,23,42,0.05);
+      border: 1px solid rgba(15,23,42,0.08);
+      color: rgba(15,23,42,0.75);
+    }
+    .upeo-muted{ color: var(--upeo-muted); }
+
+    .upeo-toast{ display:none; position: sticky; top: 0; z-index: 5; margin-bottom: 12px; }
+
+    /* ===== Tooltips: keep your premium tooltip, just polish text tone ===== */
+    .upeo-tip-btn{
+      width: 18px; height: 18px; border-radius: 999px;
+      display:inline-flex; align-items:center; justify-content:center;
+      background: rgba(59,130,246,0.10);
+      border: 1px solid rgba(59,130,246,0.14);
+      color: rgba(37,99,235,0.85);
+      font-size: 12px;
+      cursor: pointer;
+      user-select: none;
+      transition: transform .12s ease, background .12s ease;
+    }
+    .upeo-tip-btn:hover{
+      transform: translateY(-1px);
+      background: rgba(59,130,246,0.14);
+    }
+
+    .upeo-tooltip{
+      position: fixed;
+      z-index: 9999;
+      width: min(360px, calc(100vw - 24px));
+      padding: 12px 12px;
+      border-radius: 14px;
+      background: rgba(15,23,42,0.90);
+      color: rgba(255,255,255,0.94);
+      border: 1px solid rgba(255,255,255,0.10);
+      box-shadow: 0 18px 60px rgba(0,0,0,0.30);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      display: none;
+      animation: upeoTipIn .14s ease-out;
+    }
+    @keyframes upeoTipIn{ from{opacity:0; transform: translateY(6px)} to{opacity:1; transform: translateY(0)} }
+
+    .upeo-tip-title{ font-weight: 900; font-size: 13px; margin-bottom: 6px; }
+    .upeo-tip-text{ font-size: 12px; line-height: 1.35; color: rgba(255,255,255,0.88); }
+    .upeo-tip-bands{ margin-top: 8px; display:flex; flex-direction: column; gap: 6px; }
+    .upeo-tip-band{ display:flex; align-items:flex-start; gap: 8px; }
+    .upeo-tip-tag{
+      font-size: 11px; font-weight: 950;
+      padding: 2px 8px; border-radius: 999px;
+      background: rgba(59,130,246,0.22);
+      border: 1px solid rgba(59,130,246,0.28);
+      white-space: nowrap;
+      margin-top: 1px;
+    }
+    .upeo-tip-actions{
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255,255,255,0.10);
+    }
+    .upeo-tip-actions b{ color: rgba(255,255,255,0.95); }
+
+    .upeo-tip-close{
+      position:absolute; top: 10px; right: 10px;
+      width: 22px; height: 22px; border-radius: 999px;
+      display:inline-flex; align-items:center; justify-content:center;
+      background: rgba(255,255,255,0.10);
+      cursor:pointer;
+      font-size: 12px;
+      color: rgba(255,255,255,0.9);
+    }
+  `;
+
+
+
+    document.head.appendChild(style);
+  }
+
+  // Layout containers
+  const $toast = $(`<div class="upeo-toast"></div>`).appendTo($body);
+  const $health = $(`<div></div>`).appendTo($body);
+  const $row = $(`<div class="row" style="margin-top:12px;"></div>`).appendTo($body);
+  const $left = $(`<div class="col-md-8"></div>`).appendTo($row);
+  const $right = $(`<div class="col-md-4"></div>`).appendTo($row);
+  const $audit = $(`<div style="margin-top:12px;"></div>`).appendTo($body);
+
+  // One premium tooltip element reused for all tips
+  let $tip = $("#upeo-tooltip");
+  if (!$tip.length) {
+    $tip = $(`
+      <div id="upeo-tooltip" class="upeo-tooltip" role="dialog" aria-live="polite">
+        <div class="upeo-tip-close" title="Close">✕</div>
+        <div class="upeo-tip-title"></div>
+        <div class="upeo-tip-text"></div>
+        <div class="upeo-tip-bands"></div>
+        <div class="upeo-tip-actions"></div>
+      </div>
+    `).appendTo(document.body);
+
+    $tip.find(".upeo-tip-close").on("click", () => hideTip());
+    $(document).on("keydown", (e) => { if (e.key === "Escape") hideTip(); });
+    $(document).on("click", (e) => {
+      // close if click outside tooltip and outside a tip button
+      const isInside = $(e.target).closest("#upeo-tooltip").length;
+      const isBtn = $(e.target).closest("[data-upeo-tip]").length;
+      if (!isInside && !isBtn) hideTip();
+    });
+  }
+
+  function showTip(anchorEl, payload) {
+    const rect = anchorEl.getBoundingClientRect();
+    const pad = 10;
+
+    $tip.find(".upeo-tip-title").text(payload.title || "");
+    $tip.find(".upeo-tip-text").text(payload.text || "");
+
+    const $bands = $tip.find(".upeo-tip-bands").empty();
+    (payload.bands || []).forEach((b) => {
+      $bands.append(`
+        <div class="upeo-tip-band">
+          <span class="upeo-tip-tag">${b.tag}</span>
+          <div class="upeo-tip-text">${frappe.utils.escape_html(b.desc)}</div>
+        </div>
+      `);
+    });
+
+    const $actions = $tip.find(".upeo-tip-actions").empty();
+    if (payload.actions && payload.actions.length) {
+      $actions.append(`<div class="upeo-tip-title" style="margin-bottom:6px;">What to do</div>`);
+      $actions.append(`<div class="upeo-tip-text"><b>Directions:</b> ${frappe.utils.escape_html(payload.actions.join(" · "))}</div>`);
+    }
+
+    // Position (prefer below; flip above if needed)
+    $tip.show();
+    const tipRect = $tip[0].getBoundingClientRect();
+
+    let top = rect.bottom + pad;
+    if (top + tipRect.height > window.innerHeight - 10) {
+      top = rect.top - tipRect.height - pad;
+    }
+    let left = rect.left;
+    if (left + tipRect.width > window.innerWidth - 10) {
+      left = window.innerWidth - tipRect.width - 10;
+    }
+    if (left < 10) left = 10;
+
+    $tip.css({ top: `${top}px`, left: `${left}px` });
+  }
+
+  function hideTip() {
+    $tip.hide();
+  }
+
+  function wirePremiumTooltips() {
+    $("[data-upeo-tip]").off("click").on("click", function (e) {
+      e.preventDefault();
+      const payload = $(this).data("upeoTipPayload");
+      if (!payload) return;
+      // toggle
+      if ($tip.is(":visible")) {
+        hideTip();
+      } else {
+        showTip(this, payload);
+      }
+    });
+  }
+
+  // -----------------------------
+  // Helpers
+  // -----------------------------
+
+  function formatDbSize(totalMb) {
+	const n = Number(totalMb);
+	if (Number.isNaN(n)) return "-";
+	if (n < 1024) return `${n.toFixed(0)} MB`;
+	return `${(n / 1024).toFixed(1)} GB`;
+   }
+
+
+  function prettyTime(dt) {
+    if (!dt) return "-";
+    try { return frappe.datetime.prettyDate(dt); } catch (e) { return dt; }
+  }
+
+  function mb(x) {
+    if (x == null) return "-";
+    const n = Number(x);
+    if (Number.isNaN(n)) return "-";
+    return `${n.toFixed(1)} MB`;
+  }
+
+  function gbFromMb(mbVal) {
+    const n = Number(mbVal);
+    if (Number.isNaN(n)) return null;
+    return n / 1024.0;
+  }
+
+  function clampPct(x) {
+    const n = Number(x);
+    if (Number.isNaN(n)) return null;
+    return Math.max(0, Math.min(100, n));
+  }
+
+  function healthLevel(sys) {
+    if (!sys) return { level: "yellow", title: "No data yet", msg: "Metrics are still loading." };
+
+    const cpu = clampPct(sys.cpu_percent);
+    const ram = clampPct(sys.ram_percent);
+    const disk = clampPct(sys.disk_percent);
+
+    if ((cpu != null && cpu > 85) || (ram != null && ram > 90) || (disk != null && disk > 92)) {
+      return { level: "red", title: "High stress", msg: "Users may feel slowness or timeouts. Consider action." };
+    }
+    if ((cpu != null && cpu > 65) || (ram != null && ram > 80) || (disk != null && disk > 88)) {
+      return { level: "yellow", title: "Moderate stress", msg: "System is working harder than usual. Monitor trends." };
+    }
+    return { level: "green", title: "Healthy", msg: "System looks stable. No action needed." };
+  }
+
+  function advice(sys) {
+    if (!sys) return "Action: None.";
+    const cpu = clampPct(sys.cpu_percent);
+    const ram = clampPct(sys.ram_percent);
+    const disk = clampPct(sys.disk_percent);
+
+    if (disk != null && disk > 92) return "Action: Free disk space or increase disk size soon.";
+    if (ram != null && ram > 85) return "Action: Reduce heavy reports/jobs or increase server RAM.";
+    if (cpu != null && cpu > 85) return "Action: Check slow reports, stuck jobs, and database pressure.";
+    return "Action: None needed.";
+  }
+
+  // Database size guidance (rule-of-thumb, works for most ERPNext installs)
+  function dbGuidance(totalMb) {
+    const gb = gbFromMb(totalMb);
+    if (gb == null) {
+      return {
+        level: "yellow",
+        badge: "UNKNOWN",
+        msg: "No DB size data yet.",
+        directions: [],
+        gb: null
+      };
+    }
+
+    // Rule-of-thumb bands (not absolute)
+    // OK: < 5GB, WATCH: 5-20GB, ACTION: >20GB (many ERP systems start to feel it here depending on reports, indexing, hardware)
+    if (gb < 5) {
+      return {
+        level: "green",
+        badge: "OK",
+        msg: "Rule of thumb: under 5 GB is usually healthy for most small/medium setups.",
+        directions: ["Keep monitoring growth", "Clean old logs occasionally"],
+        gb
+      };
+    }
+    if (gb < 20) {
+      return {
+        level: "yellow",
+        badge: "WATCH",
+        msg: "Rule of thumb: 5-20 GB is normal for growing systems, but performance depends on usage and server size.",
+        directions: ["Review biggest tables", "Archive/clean logs & integration history", "Monitor slow reports"],
+        gb
+      };
+    }
+    return {
+      level: "red",
+      badge: "ACTION",
+      msg: "Rule of thumb: above 20 GB often needs active maintenance to keep the system fast (especially backups and reports).",
+      directions: ["Reduce database growth (clean logs/history)", "Review integrations generating excess logs", "Consider scaling DB/server resources"],
+      gb
+    };
+  }
+
+  function showToast(type, text) {
+    const color = type === "error" ? "red" : type === "warn" ? "yellow" : "green";
+    $toast.html(`
+      <div class="upeo-glass upeo-card-pad upeo-fade-in upeo-section">
+        <div class="upeo-accent ${color === "green" ? "health" : color === "yellow" ? "actions" : "audit"}"></div>
+        <div class="upeo-pill"><span class="upeo-dot ${color}"></span>${frappe.utils.escape_html(text)}</div>
+      </div>
+    `);
+    $toast.show();
+    setTimeout(() => $toast.fadeOut(300), 2400);
+  }
+
+  // -----------------------------
+  // Loading skeletons
+  // -----------------------------
+  function renderLoading() {
+    $health.html(`
+      <div class="upeo-glass upeo-card-pad upeo-section">
+        <div class="upeo-accent health"></div>
+        <div class="upeo-skeleton" style="height:18px; width: 38%;"></div>
+        <div class="upeo-skeleton" style="height:14px; width: 66%; margin-top:10px;"></div>
+        <div class="upeo-skeleton" style="height:14px; width: 42%; margin-top:8px;"></div>
+        <div class="upeo-divider"></div>
+        <div class="row">
+          ${[1, 2, 3, 4].map(() => `
+            <div class="col-sm-3">
+              <div class="upeo-skeleton" style="height:26px; width: 65%;"></div>
+              <div class="upeo-skeleton" style="height:12px; width: 40%; margin-top:8px;"></div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `);
+
+    $left.html(`
+      <div class="upeo-glass upeo-card-pad upeo-section">
+        <div class="upeo-accent tables"></div>
+        <div class="upeo-skeleton" style="height:16px; width: 35%;"></div>
+        <div class="upeo-skeleton" style="height:220px; width: 100%; margin-top:12px;"></div>
+      </div>
+    `);
+
+    $right.html(`
+      <div class="upeo-glass upeo-card-pad upeo-section">
+        <div class="upeo-accent actions"></div>
+        <div class="upeo-skeleton" style="height:16px; width: 55%;"></div>
+        <div class="upeo-skeleton" style="height:34px; width: 100%; margin-top:12px;"></div>
+        <div class="upeo-skeleton" style="height:34px; width: 100%; margin-top:12px;"></div>
+      </div>
+    `);
+
+    $audit.html(`
+      <div class="upeo-glass upeo-card-pad upeo-section">
+        <div class="upeo-accent audit"></div>
+        <div class="upeo-skeleton" style="height:16px; width: 40%;"></div>
+        <div class="upeo-skeleton" style="height:180px; width: 100%; margin-top:12px;"></div>
+      </div>
+    `);
+  }
+
+  // -----------------------------
+  // Dialogs
+  // -----------------------------
+  function reasonDialog(title, subtitle, onSubmit) {
+    const d = new frappe.ui.Dialog({
+      title,
+      fields: [
+        { fieldname: "subtitle", fieldtype: "HTML", options: `<div class="upeo-subtle">${frappe.utils.escape_html(subtitle || "")}</div>` },
+        { fieldname: "reason", fieldtype: "Small Text", label: "Reason", reqd: 1 },
+      ],
+      primary_action_label: "Confirm",
+      primary_action(values) {
+        d.hide();
+        onSubmit(values.reason);
+      },
+    });
+    d.show();
+  }
+
+  function cleanupDialog(table) {
+    const d = new frappe.ui.Dialog({
+      title: `Clean up old data: ${table}`,
+      fields: [
+        {
+          fieldname: "help",
+          fieldtype: "HTML",
+          options: `
+            <div class="upeo-subtle">
+              This removes old log/history records to reduce database size. It does <b>not</b> affect business transactions.
+            </div>
+          `,
+        },
+        { fieldname: "days", fieldtype: "Int", label: "Delete records older than (days)", reqd: 1, default: 30 },
+        { fieldname: "reason", fieldtype: "Small Text", label: "Reason", reqd: 1 },
+        { fieldname: "preview_html", fieldtype: "HTML" },
+      ],
+      primary_action_label: "Preview impact",
+      primary_action(values) {
+        frappe.call({
+          method: "upeosight.actions.cleanup.preview",
+          args: { table, days: values.days },
+          callback(r) {
+            const info = r.message || {};
+            d.fields_dict.preview_html.$wrapper.html(`
+              <div class="upeo-glass upeo-card-pad upeo-fade-in upeo-section" style="margin-top:10px;">
+                <div class="upeo-accent actions"></div>
+                <div style="font-weight:850;">Preview</div>
+                <div class="upeo-subtle" style="margin-top:6px;">
+                  This will delete approximately <b>${info.records_to_delete ?? 0}</b> records older than <b>${info.days ?? values.days}</b> days.
+                </div>
+                <div class="upeo-subtle" style="margin-top:6px;">${frappe.utils.escape_html(info.warning || "")}</div>
+                <div style="margin-top:12px;">
+                  <button class="btn btn-danger btn-sm upeo-btn" id="upeo-exec-cleanup">Execute cleanup</button>
+                </div>
+              </div>
+            `);
+
+            $("#upeo-exec-cleanup").off("click").on("click", () => {
+              frappe.confirm("This cannot be undone. Proceed?", () => {
+                frappe.call({
+                  method: "upeosight.actions.cleanup.execute",
+                  args: { table, days: values.days, reason: values.reason },
+                  callback(resp) {
+                    d.hide();
+                    showToast("ok", `Cleanup done: deleted ${resp.message?.deleted ?? 0} rows.`);
+                    refresh(true);
+                  },
+                  error() {
+                    showToast("error", "Cleanup failed. See server logs.");
+                  }
+                });
+              });
+            });
+          },
+          error() {
+            showToast("error", "Preview failed. Check permissions or server logs.");
+          }
+        });
+      },
+    });
+
+    d.show();
+  }
+
+  // -----------------------------
+  // Render
+  // -----------------------------
+  function render(data) {
+    const sys = data.system;
+    const snap = data.db_snapshot;
+    const queues = data.queues || [];
+    const big = data.big_tables || [];
+
+    const h = healthLevel(sys);
+    const qSummary = queues.slice(0, 3).map(q => `${q.queue_name}: ${q.job_count} waiting`).join(" · ") || "No queue data yet";
+
+    // Premium tooltip payloads (readable + actionable)
+    const tipCPU = {
+      title: "CPU (How busy the server is)",
+      text: "CPU is the server’s processing power. High CPU means the server is working very hard.",
+      bands: [
+        { tag: "Normal", desc: "20-65% most of the time." },
+        { tag: "Watch", desc: "65-85% during busy hours may feel slower." },
+        { tag: "Action", desc: "85%+ for 10-15 minutes: users may see delays/timeouts." },
+      ],
+      actions: ["check slow reports", "check stuck background jobs", "consider adding CPU"],
+    };
+
+    const tipRAM = {
+      title: "RAM (Server memory)",
+      text: "RAM is the server’s working memory (like a desk). More RAM helps it handle more users and tasks smoothly.",
+      bands: [
+        { tag: "Normal", desc: "30-75% is usually fine." },
+        { tag: "Watch", desc: "75-85%: system may feel slower at peak times." },
+        { tag: "Action", desc: "85%+ for 10-15 minutes: performance can drop sharply." },
+      ],
+      actions: ["reduce heavy reports", "reduce background pressure", "consider adding RAM"],
+    };
+
+    const tipDisk = {
+      title: "Disk (Storage used)",
+      text: "Disk is where the database and files live. When disk gets too full, systems can fail or slow down.",
+      bands: [
+        { tag: "Normal", desc: "Below 80%." },
+        { tag: "Watch", desc: "80-90%: plan cleanup soon." },
+        { tag: "Action", desc: "Above 90%: risk of failures and slowdowns." },
+      ],
+      actions: ["clean old logs/files", "increase disk size", "review large attachments"],
+    };
+
+    const tipLoad = {
+		title: "Load (Work waiting in line)",
+		text:
+			"Load shows how much work the server is trying to handle at the same time. " +
+			"To know if it’s healthy, compare Load to the number of CPU cores on the server.",
+
+		bands: [
+			{
+			tag: "Step 1",
+			desc:
+				"Find your CPU cores. Example: if your server has 4 CPU cores, use 4 as your reference."
+			},
+			{
+			tag: "Normal",
+			desc:
+				"Load is BELOW the number of CPU cores. " +
+				"Example: Load 0.8-3.0 on a 4-core server → system feels fast."
+			},
+			{
+			tag: "Watch",
+			desc:
+				"Load is AROUND the number of CPU cores. " +
+				"Example: Load ~4.0 on a 4-core server → system is busy but OK."
+			},
+			{
+			tag: "Action",
+			desc:
+				"Load is HIGHER than CPU cores for 10-15 minutes. " +
+				"Example: Load 6+ on a 4-core server → users will feel slowness."
+			}
+		],
+
+		actions: [
+			"check queue backlog",
+			"identify slow reports or heavy jobs",
+			"restart background workers if stuck",
+			"add more CPU if this happens often"
+		]
+	};
+
+
+    // Database size guidance (show status, allowable bands, directions)
+    const db = dbGuidance(snap ? snap.total_mb : null);
+	const dbSizeText = (snap && snap.total_mb != null) ? formatDbSize(snap.total_mb) : "-";
+    const dbDot = db.level === "green" ? "green" : db.level === "yellow" ? "yellow" : "red";
+
+    $health.html(`
+      <div class="upeo-glass upeo-card-pad upeo-fade-in upeo-section">
+        <div class="upeo-accent health"></div>
+
+        <div class="upeo-header">
+          <div>
+            <div class="upeo-pill">
+              <span class="upeo-dot ${h.level}"></span>
+              <span>${h.title}</span>
+              <span class="upeo-badge">${h.level.toUpperCase()}</span>
+            </div>
+            <div class="upeo-subtle" style="margin-top:8px;">${h.msg}</div>
+            <div class="upeo-subtle" style="margin-top:6px;">Background tasks: ${frappe.utils.escape_html(qSummary)}</div>
+            <div class="upeo-subtle" style="margin-top:6px;"><b>${frappe.utils.escape_html(advice(sys))}</b></div>
+          </div>
+
+          <div style="text-align:right;">
+            <div class="upeo-subtle">Last update</div>
+            <div style="font-weight:850;">${sys ? prettyTime(sys.timestamp) : "-"}</div>
+          </div>
+        </div>
+
+        <div class="upeo-divider"></div>
+
+        <div class="row">
+          <div class="col-sm-3">
+            <div class="upeo-kpi">${sys ? `${Number(sys.cpu_percent).toFixed(0)}%` : "-"}</div>
+            <div class="upeo-kpi-label">
+              <span>CPU</span>
+              <span class="upeo-tip-btn" data-upeo-tip="cpu">i</span>
+            </div>
+          </div>
+
+          <div class="col-sm-3">
+            <div class="upeo-kpi">${sys ? `${Number(sys.ram_percent).toFixed(0)}%` : "-"}</div>
+            <div class="upeo-kpi-label">
+              <span>RAM</span>
+              <span class="upeo-tip-btn" data-upeo-tip="ram">i</span>
+            </div>
+          </div>
+
+          <div class="col-sm-3">
+            <div class="upeo-kpi">${sys ? `${Number(sys.disk_percent).toFixed(0)}%` : "-"}</div>
+            <div class="upeo-kpi-label">
+              <span>Disk</span>
+              <span class="upeo-tip-btn" data-upeo-tip="disk">i</span>
+            </div>
+          </div>
+
+          <div class="col-sm-3">
+            <div class="upeo-kpi">${sys ? Number(sys.load_1).toFixed(2) : "-"}</div>
+            <div class="upeo-kpi-label">
+              <span>Load (1m)</span>
+              <span class="upeo-tip-btn" data-upeo-tip="load">i</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="upeo-divider"></div>
+
+        <div class="upeo-header" style="margin-bottom:0;">
+          <div>
+            <div style="font-weight:850; display:flex; align-items:center; gap:10px;">
+              <span>Database size</span>
+              <span class="upeo-pill" style="padding:5px 10px;">
+                <span class="upeo-dot ${dbDot}"></span>
+                <span>${db.badge}</span>
+              </span>
+            </div>
+
+            <div class="upeo-subtle" style="margin-top:6px;">
+              Current: <b>${dbSizeText}</b>
+              ${snap ? `· (${mb(snap.total_mb)} total)` : ""}
+            </div>
+
+            <div class="upeo-subtle" style="margin-top:6px;">
+              <b>Under 5 GB</b> is usually OK · <b>5-20 GB</b> is common for growing systems · <b>20 GB+</b> needs active maintenance.
+            </div>
+
+            <div class="upeo-subtle" style="margin-top:6px;">
+              ${frappe.utils.escape_html(db.msg)}
+            </div>
+
+            ${
+              db.level !== "green"
+                ? `<div class="upeo-subtle" style="margin-top:8px;">
+                     <b>Directions:</b> ${frappe.utils.escape_html(db.directions.join(" · "))}
+                   </div>`
+                : `<div class="upeo-subtle" style="margin-top:8px;">
+                     <b>Directions:</b> ${frappe.utils.escape_html(db.directions.join(" · "))}
+                   </div>`
+            }
+          </div>
+
+          <div style="text-align:right;">
+            <span class="upeo-badge">${snap ? (snap.tables_count ?? "-") : "-"} tables</span>
+          </div>
+        </div>
+      </div>
+    `);
+
+    // Attach tooltip payloads to each tip button
+    const map = { cpu: tipCPU, ram: tipRAM, disk: tipDisk, load: tipLoad };
+    $("[data-upeo-tip]").each(function () {
+      const key = $(this).attr("data-upeo-tip");
+      $(this).data("upeoTipPayload", map[key]);
+    });
+
+    $left.html(`
+      <div class="upeo-glass upeo-card-pad upeo-fade-in upeo-section">
+        <div class="upeo-accent tables"></div>
+
+        <div class="upeo-header">
+          <div>
+            <div class="upeo-title">Biggest tables</div>
+            <div class="upeo-subtle">Top 10 by size · includes plain-English meaning</div>
+          </div>
+          <div class="upeo-badge">Auto-updating</div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-bordered upeo-table">
+            <thead>
+              <tr>
+                <th>Table</th>
+                <th>Total</th>
+                <th>Rows</th>
+                <th>Importance</th>
+                <th>Why it matters</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${big.map(r => `
+                <tr>
+                  <td><b>${frappe.utils.escape_html(r.table_name)}</b></td>
+                  <td>${mb(r.total_mb)}</td>
+                  <td>${r.rows_est || 0}</td>
+                  <td><span class="upeo-badge">${frappe.utils.escape_html(r.importance || "-")}</span></td>
+                  <td style="max-width:420px;">${frappe.utils.escape_html(r.importance_note || "-")}</td>
+                  <td>
+                    ${r.cleanup_allowed
+                      ? `<button class="btn btn-warning btn-sm upeo-btn" data-clean="${frappe.utils.escape_html(r.table_name)}">Clean up</button>
+                         <div class="upeo-subtle" style="margin-top:6px;">${frappe.utils.escape_html(r.cleanup_hint || "")}</div>`
+                      : `<span class="upeo-muted">—</span>`}
+                  </td>
+                </tr>
+              `).join("")}
+              ${big.length ? "" : `<tr><td colspan="6" class="upeo-muted">No table stats yet.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `);
+
+    $right.html(`
+      <div class="upeo-glass upeo-card-pad upeo-fade-in upeo-section">
+        <div class="upeo-accent actions"></div>
+
+        <div class="upeo-title">Operator actions</div>
+        <div class="upeo-subtle" style="margin-top:6px;">
+          Permission-based and audited. Use only when needed.
+        </div>
+
+        <div class="upeo-divider"></div>
+
+        <button class="btn btn-primary btn-sm upeo-btn" id="upeo-restart-workers" style="width:100%;">Restart background workers</button>
+        <div class="upeo-subtle" style="margin-top:6px;">Use if queues are stuck or tasks are not processing.</div>
+
+        <div style="height:10px;"></div>
+
+        <button class="btn btn-primary btn-sm upeo-btn" id="upeo-restart-scheduler" style="width:100%;">Restart scheduler (automation)</button>
+        <div class="upeo-subtle" style="margin-top:6px;">Use if scheduled jobs are not running.</div>
+
+        <div class="upeo-divider"></div>
+
+        <div class="upeo-subtle">
+          Tip: If issues persist after restarts, check database growth and slow reports.
+        </div>
+      </div>
+    `);
+
+    bindActions();
+    wirePremiumTooltips();
+  }
+
+  function renderAudit(rows) {
+    $audit.html(`
+      <div class="upeo-glass upeo-card-pad upeo-fade-in upeo-section">
+        <div class="upeo-accent audit"></div>
+
+        <div class="upeo-header">
+          <div>
+            <div class="upeo-title">Recent actions (audit)</div>
+            <div class="upeo-subtle">Who did what, and when</div>
+          </div>
+          <div class="upeo-badge">Last 15</div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-bordered upeo-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>User</th>
+                <th>Action</th>
+                <th>Target</th>
+                <th>Result</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(rows || []).map(r => `
+                <tr>
+                  <td>${prettyTime(r.creation || r.timestamp)}</td>
+                  <td>${frappe.utils.escape_html(r.user)}</td>
+                  <td><span class="upeo-badge">${frappe.utils.escape_html(r.action)}</span></td>
+                  <td>${frappe.utils.escape_html(r.target || "-")}</td>
+                  <td>${frappe.utils.escape_html(r.result || "-")}</td>
+                  <td style="max-width:420px;">${frappe.utils.escape_html(r.reason || "")}</td>
+                </tr>
+              `).join("")}
+              ${rows && rows.length ? "" : `<tr><td colspan="6" class="upeo-muted">No actions yet.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `);
+  }
+
+  // -----------------------------
+  // Action bindings
+  // -----------------------------
+  function bindActions() {
+    $("#upeo-restart-workers").off("click").on("click", () => {
+      reasonDialog(
+        "Restart background workers",
+        "Use this if queues are not draining and background tasks appear stuck.",
+        (reason) => {
+          frappe.call({
+            method: "upeosight.actions.control.restart_workers",
+            args: { reason },
+            callback() {
+              showToast("ok", "Workers restart executed (audited).");
+              refresh(true);
+            },
+            error() {
+              showToast("error", "Restart failed. Check server logs or permissions.");
+            }
+          });
+        }
+      );
+    });
+
+    $("#upeo-restart-scheduler").off("click").on("click", () => {
+      reasonDialog(
+        "Restart scheduler (automation)",
+        "Use this if scheduled jobs are not running as expected.",
+        (reason) => {
+          frappe.call({
+            method: "upeosight.actions.control.restart_scheduler",
+            args: { reason },
+            callback() {
+              showToast("ok", "Scheduler restart executed (audited).");
+              refresh(true);
+            },
+            error() {
+              showToast("error", "Restart failed. Check server logs or permissions.");
+            }
+          });
+        }
+      );
+    });
+
+    $("[data-clean]").off("click").on("click", function () {
+      cleanupDialog($(this).data("clean"));
+    });
+  }
+
+  // -----------------------------
+  // Auto-refresh
+  // -----------------------------
+  let upeosightTimer = null;
+
+  function refresh(silent = false) {
+    if (!silent) renderLoading();
+
+    frappe.call({
+      method: "upeosight.dashboards.metrics.latest",
+      callback(r) {
+        render(r.message || {});
+        frappe.call({
+          method: "upeosight.dashboards.metrics.audit",
+          args: { limit: 15 },
+          callback(a) { renderAudit(a.message || []); }
+        });
+      },
+      error() {
+        showToast("error", "Failed to load metrics. Check server logs.");
+      }
+    });
+  }
+
+  function startAutoRefresh() {
+    if (upeosightTimer) clearInterval(upeosightTimer);
+    upeosightTimer = setInterval(() => refresh(true), 15000);
+  }
+
+  $(wrapper).on("remove", () => {
+    if (upeosightTimer) clearInterval(upeosightTimer);
+    hideTip();
+  });
+
+  // Initial load
+  renderLoading();
+  refresh(false);
+  startAutoRefresh();
+};
+
