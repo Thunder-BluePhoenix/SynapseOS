@@ -1,6 +1,6 @@
 # SynapseOS — Implementation Tracker
 
-> Last updated: 2026-06-03 (Phase 5: cross-domain KG + load benchmark + demo done — 156/156 tests passing)
+> Last updated: 2026-06-03 (Phase 2/3: KAN symbolic + Mamba data prep + SFT generator done — 190/190 tests passing)
 
 ---
 
@@ -9,8 +9,8 @@
 | Phase | Timeline | Status | Progress |
 |---|---|---|---|
 | [Phase 1 — Foundation](Phase1_Foundation.md) | Weeks 1–4 | In Progress | 85% |
-| [Phase 2 — Neural Components](Phase2_Neural_Components.md) | Weeks 5–8 | In Progress | 60% |
-| [Phase 3 — Integration](Phase3_Integration.md) | Weeks 9–12 | In Progress | 80% |
+| [Phase 2 — Neural Components](Phase2_Neural_Components.md) | Weeks 5–8 | In Progress | 75% |
+| [Phase 3 — Integration](Phase3_Integration.md) | Weeks 9–12 | In Progress | 90% |
 | [Phase 4 — Advanced Capabilities](Phase4_Advanced_Capabilities.md) | Weeks 13–20 | In Progress | 65% |
 | [Phase 5 — SynapseOS](Phase5_SynapseOS.md) | Week 21+ | In Progress | 100% CPU |
 
@@ -41,7 +41,7 @@
 |---|---|---|
 | Mamba full LoRA fine-tuning on domain corpus | In Progress | Script ready (`synapseos/phase2/mamba_trainer.py`) — blocked on GPU |
 | JEPA world state model training | **Done (CPU)** | `val_loss=0.036` on synthetic data — run on GPU for full scale |
-| KAN reasoning layer training | **Done (CPU)** | `val_mse=0.55` — needs `pykan` install for symbolic formula extraction |
+| KAN reasoning layer training | **Done (CPU)** | `val_mse=0.55` — symbolic extraction done via `kan_symbolic.py` (R²=0.998, no pykan needed) |
 | Liquid NN training on time-series | **Done (CPU)** | `val_mse=0.008` — needs `ncps` install for real ODE adaptation |
 | Synthetic data generator | **Done** | `synapseos/phase2/synth_data_generator.py` — 5k samples per dataset |
 
@@ -57,7 +57,7 @@
 | Train Neural→Symbolic bridge classifier | **Done** | `qt_acc=99.6%` — `data/checkpoints/bridges/n2s_best.pt` |
 | Generate 10k pairs for Symbolic→Neural projection | **Done** | Same generator |
 | Train Symbolic→Neural projection | **Done** | `val_mse=0.041` — `data/checkpoints/bridges/s2n_best.pt` |
-| Generate 5k pairs for Output Synthesizer SFT | Not Started | Requires Mistral/Llama base model |
+| Generate 5k pairs for Output Synthesizer SFT | **Done** | `synapseos/phase3/output_synth_data.py` — 2000+ pairs/s, 8 categories, quality-filtered |
 | Fine-tune Output Synthesizer (Mistral 1B or Llama 3B) | Not Started | Blocked on GPU + `trl` install |
 | Wire all layers into end-to-end pipeline | **Done** | `synapseos/phase3/pipeline.py` — all layers connected |
 | Write 20+ integration tests (Mode 1 + Mode 4) | **Done** | `tests/test_pipeline.py` — **20/20 passing** |
@@ -66,7 +66,8 @@
 | Generate 5k pairs for Output Synthesizer SFT | Not Started | Requires Mistral/Llama base model |
 | Fine-tune Output Synthesizer (Mistral 1B or Llama 3B) | Not Started | Blocked on GPU + `trl` install |
 
-**Phase 3 blockers:** Only the output synthesizer SFT remains — needs GPU + `pip install trl transformers`
+**Phase 3 blockers:** Output synthesizer SFT data generated (`output_synth_data.py`); fine-tuning still needs GPU + `pip install trl transformers`
+**New:** `scripts/prepare_mamba_data.py` — corpus analysis + tokenizer + window packing, ready for GPU session
 
 ---
 

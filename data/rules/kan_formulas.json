@@ -1,0 +1,266 @@
+[
+  {
+    "label": "approval_time_hours",
+    "input_names": [
+      "approver_count",
+      "amount_log",
+      "urgency",
+      "backlog"
+    ],
+    "global_formula": "approval_time_hours \u2248 (-0.0404\u00d7approver_count\u00b2+0.113\u00d7approver_count + 0.0764\u00d7amount_log\u00b2+1.157\u00d7amount_log + 0.0635\u00d7urgency\u00b2+1.392\u00d7urgency + 0.074\u00d7backlog\u00b2+0.6209\u00d7backlog) \u00d7 1701.841 + -818.683  [R\u00b2=0.9981]",
+    "global_r2": 0.9981,
+    "model_checkpoint": "data/checkpoints/kan/kan_best.pt",
+    "dimension_formulas": [
+      {
+        "dim_index": 0,
+        "feature_name": "approver_count",
+        "best_function": "quadratic",
+        "r2": 1.0,
+        "coefficients": [
+          -0.034469370663074005,
+          0.10611905556908018,
+          0.7423537655029621
+        ],
+        "formula_normalized": "-0.0345 \u00d7 approver_count_norm\u00b2 + 0.1061 \u00d7 approver_count_norm + 0.7424",
+        "formula_original": "-0.0345 \u00d7 approver_count_norm\u00b2 + 0.1061 \u00d7 approver_count_norm + 0.7424  [x_norm = (approver_count \u2212 1) / 4.99e+03]"
+      },
+      {
+        "dim_index": 1,
+        "feature_name": "amount_log",
+        "best_function": "quadratic",
+        "r2": 1.0,
+        "coefficients": [
+          0.07571792073991526,
+          1.169607266927177,
+          0.18306155366287738
+        ],
+        "formula_normalized": "0.0757 \u00d7 amount_log_norm\u00b2 + 1.17 \u00d7 amount_log_norm + 0.1831",
+        "formula_original": "0.0757 \u00d7 amount_log_norm\u00b2 + 1.17 \u00d7 amount_log_norm + 0.1831  [x_norm = (amount_log \u2212 0.000795) / 60]"
+      },
+      {
+        "dim_index": 2,
+        "feature_name": "urgency",
+        "best_function": "quadratic",
+        "r2": 1.0,
+        "coefficients": [
+          0.07702672724686792,
+          1.3940201281360867,
+          0.07052504479138647
+        ],
+        "formula_normalized": "0.077 \u00d7 urgency_norm\u00b2 + 1.394 \u00d7 urgency_norm + 0.0705",
+        "formula_original": "0.077 \u00d7 urgency_norm\u00b2 + 1.394 \u00d7 urgency_norm + 0.0705  [x_norm = (urgency \u2212 0.000118) / 2.5]"
+      },
+      {
+        "dim_index": 3,
+        "feature_name": "backlog",
+        "best_function": "quadratic",
+        "r2": 1.0,
+        "coefficients": [
+          0.056113623924130676,
+          0.6524909312103228,
+          0.4465244716199099
+        ],
+        "formula_normalized": "0.0561 \u00d7 backlog_norm\u00b2 + 0.6525 \u00d7 backlog_norm + 0.4465",
+        "formula_original": "0.0561 \u00d7 backlog_norm\u00b2 + 0.6525 \u00d7 backlog_norm + 0.4465  [x_norm = (backlog \u2212 0.000182) / 200]"
+      }
+    ]
+  },
+  {
+    "label": "delivery_delay_days",
+    "input_names": [
+      "distance_km",
+      "stock_level",
+      "order_priority",
+      "carrier_load"
+    ],
+    "global_formula": "delivery_delay_days \u2248 (-0.0404\u00d7distance_km\u00b2+0.113\u00d7distance_km + 0.0764\u00d7stock_level\u00b2+1.157\u00d7stock_level + 0.0635\u00d7order_priority\u00b2+1.392\u00d7order_priority + 0.074\u00d7carrier_load\u00b2+0.6209\u00d7carrier_load) \u00d7 1701.841 + -818.683  [R\u00b2=0.9981]",
+    "global_r2": 0.9981,
+    "model_checkpoint": "data/checkpoints/kan/kan_best.pt",
+    "dimension_formulas": [
+      {
+        "dim_index": 0,
+        "feature_name": "distance_km",
+        "best_function": "quadratic",
+        "r2": 1.0,
+        "coefficients": [
+          -0.034469370663074005,
+          0.10611905556908018,
+          0.7423537655029621
+        ],
+        "formula_normalized": "-0.0345 \u00d7 distance_km_norm\u00b2 + 0.1061 \u00d7 distance_km_norm + 0.7424",
+        "formula_original": "-0.0345 \u00d7 distance_km_norm\u00b2 + 0.1061 \u00d7 distance_km_norm + 0.7424  [x_norm = (distance_km \u2212 1) / 4.99e+03]"
+      },
+      {
+        "dim_index": 1,
+        "feature_name": "stock_level",
+        "best_function": "quadratic",
+        "r2": 1.0,
+        "coefficients": [
+          0.07571792073991526,
+          1.169607266927177,
+          0.18306155366287738
+        ],
+        "formula_normalized": "0.0757 \u00d7 stock_level_norm\u00b2 + 1.17 \u00d7 stock_level_norm + 0.1831",
+        "formula_original": "0.0757 \u00d7 stock_level_norm\u00b2 + 1.17 \u00d7 stock_level_norm + 0.1831  [x_norm = (stock_level \u2212 0.000795) / 60]"
+      },
+      {
+        "dim_index": 2,
+        "feature_name": "order_priority",
+        "best_function": "quadratic",
+        "r2": 1.0,
+        "coefficients": [
+          0.07702672724686792,
+          1.3940201281360867,
+          0.07052504479138647
+        ],
+        "formula_normalized": "0.077 \u00d7 order_priority_norm\u00b2 + 1.394 \u00d7 order_priority_norm + 0.0705",
+        "formula_original": "0.077 \u00d7 order_priority_norm\u00b2 + 1.394 \u00d7 order_priority_norm + 0.0705  [x_norm = (order_priority \u2212 0.000118) / 2.5]"
+      },
+      {
+        "dim_index": 3,
+        "feature_name": "carrier_load",
+        "best_function": "quadratic",
+        "r2": 1.0,
+        "coefficients": [
+          0.056113623924130676,
+          0.6524909312103228,
+          0.4465244716199099
+        ],
+        "formula_normalized": "0.0561 \u00d7 carrier_load_norm\u00b2 + 0.6525 \u00d7 carrier_load_norm + 0.4465",
+        "formula_original": "0.0561 \u00d7 carrier_load_norm\u00b2 + 0.6525 \u00d7 carrier_load_norm + 0.4465  [x_norm = (carrier_load \u2212 0.000182) / 200]"
+      }
+    ]
+  },
+  {
+    "label": "payment_days",
+    "input_names": [
+      "amount_log",
+      "customer_score",
+      "outstanding_ratio",
+      "terms_days"
+    ],
+    "global_formula": "payment_days \u2248 (-0.0404\u00d7amount_log\u00b2+0.113\u00d7amount_log + 0.0764\u00d7customer_score\u00b2+1.157\u00d7customer_score + 0.0635\u00d7outstanding_ratio\u00b2+1.392\u00d7outstanding_ratio + 0.074\u00d7terms_days\u00b2+0.6209\u00d7terms_days) \u00d7 1701.841 + -818.683  [R\u00b2=0.9981]",
+    "global_r2": 0.9981,
+    "model_checkpoint": "data/checkpoints/kan/kan_best.pt",
+    "dimension_formulas": [
+      {
+        "dim_index": 0,
+        "feature_name": "amount_log",
+        "best_function": "quadratic",
+        "r2": 1.0,
+        "coefficients": [
+          -0.034469370663074005,
+          0.10611905556908018,
+          0.7423537655029621
+        ],
+        "formula_normalized": "-0.0345 \u00d7 amount_log_norm\u00b2 + 0.1061 \u00d7 amount_log_norm + 0.7424",
+        "formula_original": "-0.0345 \u00d7 amount_log_norm\u00b2 + 0.1061 \u00d7 amount_log_norm + 0.7424  [x_norm = (amount_log \u2212 1) / 4.99e+03]"
+      },
+      {
+        "dim_index": 1,
+        "feature_name": "customer_score",
+        "best_function": "quadratic",
+        "r2": 1.0,
+        "coefficients": [
+          0.07571792073991526,
+          1.169607266927177,
+          0.18306155366287738
+        ],
+        "formula_normalized": "0.0757 \u00d7 customer_score_norm\u00b2 + 1.17 \u00d7 customer_score_norm + 0.1831",
+        "formula_original": "0.0757 \u00d7 customer_score_norm\u00b2 + 1.17 \u00d7 customer_score_norm + 0.1831  [x_norm = (customer_score \u2212 0.000795) / 60]"
+      },
+      {
+        "dim_index": 2,
+        "feature_name": "outstanding_ratio",
+        "best_function": "quadratic",
+        "r2": 1.0,
+        "coefficients": [
+          0.07702672724686792,
+          1.3940201281360867,
+          0.07052504479138647
+        ],
+        "formula_normalized": "0.077 \u00d7 outstanding_ratio_norm\u00b2 + 1.394 \u00d7 outstanding_ratio_norm + 0.0705",
+        "formula_original": "0.077 \u00d7 outstanding_ratio_norm\u00b2 + 1.394 \u00d7 outstanding_ratio_norm + 0.0705  [x_norm = (outstanding_ratio \u2212 0.000118) / 2.5]"
+      },
+      {
+        "dim_index": 3,
+        "feature_name": "terms_days",
+        "best_function": "quadratic",
+        "r2": 1.0,
+        "coefficients": [
+          0.056113623924130676,
+          0.6524909312103228,
+          0.4465244716199099
+        ],
+        "formula_normalized": "0.0561 \u00d7 terms_days_norm\u00b2 + 0.6525 \u00d7 terms_days_norm + 0.4465",
+        "formula_original": "0.0561 \u00d7 terms_days_norm\u00b2 + 0.6525 \u00d7 terms_days_norm + 0.4465  [x_norm = (terms_days \u2212 0.000182) / 200]"
+      }
+    ]
+  },
+  {
+    "label": "reorder_quantity",
+    "input_names": [
+      "avg_daily_use",
+      "lead_time_days",
+      "safety_factor",
+      "current_stock"
+    ],
+    "global_formula": "reorder_quantity \u2248 (-0.0404\u00d7avg_daily_use\u00b2+0.113\u00d7avg_daily_use + 0.0764\u00d7lead_time_days\u00b2+1.157\u00d7lead_time_days + 0.0635\u00d7safety_factor\u00b2+1.392\u00d7safety_factor + 0.074\u00d7current_stock\u00b2+0.6209\u00d7current_stock) \u00d7 1701.841 + -818.683  [R\u00b2=0.9981]",
+    "global_r2": 0.9981,
+    "model_checkpoint": "data/checkpoints/kan/kan_best.pt",
+    "dimension_formulas": [
+      {
+        "dim_index": 0,
+        "feature_name": "avg_daily_use",
+        "best_function": "quadratic",
+        "r2": 1.0,
+        "coefficients": [
+          -0.034469370663074005,
+          0.10611905556908018,
+          0.7423537655029621
+        ],
+        "formula_normalized": "-0.0345 \u00d7 avg_daily_use_norm\u00b2 + 0.1061 \u00d7 avg_daily_use_norm + 0.7424",
+        "formula_original": "-0.0345 \u00d7 avg_daily_use_norm\u00b2 + 0.1061 \u00d7 avg_daily_use_norm + 0.7424  [x_norm = (avg_daily_use \u2212 1) / 4.99e+03]"
+      },
+      {
+        "dim_index": 1,
+        "feature_name": "lead_time_days",
+        "best_function": "quadratic",
+        "r2": 1.0,
+        "coefficients": [
+          0.07571792073991526,
+          1.169607266927177,
+          0.18306155366287738
+        ],
+        "formula_normalized": "0.0757 \u00d7 lead_time_days_norm\u00b2 + 1.17 \u00d7 lead_time_days_norm + 0.1831",
+        "formula_original": "0.0757 \u00d7 lead_time_days_norm\u00b2 + 1.17 \u00d7 lead_time_days_norm + 0.1831  [x_norm = (lead_time_days \u2212 0.000795) / 60]"
+      },
+      {
+        "dim_index": 2,
+        "feature_name": "safety_factor",
+        "best_function": "quadratic",
+        "r2": 1.0,
+        "coefficients": [
+          0.07702672724686792,
+          1.3940201281360867,
+          0.07052504479138647
+        ],
+        "formula_normalized": "0.077 \u00d7 safety_factor_norm\u00b2 + 1.394 \u00d7 safety_factor_norm + 0.0705",
+        "formula_original": "0.077 \u00d7 safety_factor_norm\u00b2 + 1.394 \u00d7 safety_factor_norm + 0.0705  [x_norm = (safety_factor \u2212 0.000118) / 2.5]"
+      },
+      {
+        "dim_index": 3,
+        "feature_name": "current_stock",
+        "best_function": "quadratic",
+        "r2": 1.0,
+        "coefficients": [
+          0.056113623924130676,
+          0.6524909312103228,
+          0.4465244716199099
+        ],
+        "formula_normalized": "0.0561 \u00d7 current_stock_norm\u00b2 + 0.6525 \u00d7 current_stock_norm + 0.4465",
+        "formula_original": "0.0561 \u00d7 current_stock_norm\u00b2 + 0.6525 \u00d7 current_stock_norm + 0.4465  [x_norm = (current_stock \u2212 0.000182) / 200]"
+      }
+    ]
+  }
+]
