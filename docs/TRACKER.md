@@ -1,6 +1,6 @@
 # SynapseOS — Implementation Tracker
 
-> Last updated: 2026-06-03 (Phase 5: NOVA + drift monitor + distributed stubs done — 105/105 tests passing)
+> Last updated: 2026-06-03 (Phase 5: ATLAS + voice stubs + status doc done — 138/138 tests passing)
 
 ---
 
@@ -12,9 +12,9 @@
 | [Phase 2 — Neural Components](Phase2_Neural_Components.md) | Weeks 5–8 | In Progress | 60% |
 | [Phase 3 — Integration](Phase3_Integration.md) | Weeks 9–12 | In Progress | 80% |
 | [Phase 4 — Advanced Capabilities](Phase4_Advanced_Capabilities.md) | Weeks 13–20 | In Progress | 65% |
-| [Phase 5 — SynapseOS](Phase5_SynapseOS.md) | Week 21+ | In Progress | 80% |
+| [Phase 5 — SynapseOS](Phase5_SynapseOS.md) | Week 21+ | In Progress | 95% |
 
-**Active Phase:** Phase 5 foundations running — GPU still needed for Mamba, CLIP, Whisper, RL
+**Active Phase:** Phase 5 at 95% CPU-complete — GPU needed to unlock Mamba, Liquid NN, Whisper, RL
 
 ---
 
@@ -117,10 +117,13 @@
 | NOVA sub-agent (optimization) | **Done** | `synapseos/phase5/agents/nova.py` — rule density, KG bottlenecks, caching, redundancy, benchmark |
 | Liquid layer drift monitor | **Done** | `synapseos/phase5/drift_monitor.py` — baseline capture, drift metric, rollback, consolidation, scheduler |
 | Distributed multi-node architecture | **Done (stubs)** | `synapseos/phase5/distributed.py` — MessageBus, LayerNode, DistributedPipeline, PipelineTopology |
-| ATLAS sub-agent (infrastructure) | Not Started | |
+| ATLAS sub-agent (infrastructure) | **Done** | `synapseos/phase5/agents/atlas.py` — health, fault tolerance, scaling, resource estimates, docker-compose gen |
+| Voice interface (stubs) | **Done** | `synapseos/phase5/voice.py` — `VoicePipeline`, `WhisperTranscriber`, `TTSSynthesizer` (real models GPU-blocked) |
+| Phase 5 status / gap analysis | **Done** | `docs/Phase5_Status.md` — 3/6 criteria full, 3/6 GPU-blocked |
 
-**Tests:** `tests/test_phase5.py` — **105/105 passing**
-**Phase 5 remaining:** ATLAS sub-agent + voice interface (GPU) + full RL alignment (GPU)
+**Tests:** `tests/test_phase5.py` — **138/138 passing**
+**Phase 5 remaining (all GPU-blocked):** Mamba fine-tuning, Liquid NN live adaptation, real Whisper + TTS, RL alignment
+**CPU work remaining:** 50 QPS load benchmark for `DistributedPipeline`
 
 ---
 

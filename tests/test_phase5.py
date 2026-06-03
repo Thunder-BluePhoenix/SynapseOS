@@ -34,11 +34,16 @@ from synapseos.phase5.agents.base import SubAgent, AgentResult, AgentCapability
 from synapseos.phase5.agents.ariel import ARIELAgent
 from synapseos.phase5.agents.nyx import NYXAgent
 from synapseos.phase5.agents.nova import NOVAAgent
+from synapseos.phase5.agents.atlas import ATLASAgent
 from synapseos.phase5.drift_monitor import DriftMonitor, AdaptationLog, WeightSnapshot, DriftMetric
 from synapseos.phase5.distributed import (
     MessageBus, LayerNode, LayerRequest, LayerResponse,
     LayerType, NodeConfig, PipelineTopology, DistributedPipeline,
     TextEncoderNode, NeurosymbolicNode, OutputRendererNode,
+)
+from synapseos.phase5.voice import (
+    WhisperTranscriber, TTSSynthesizer, VoicePipeline,
+    TranscriptionResult, SynthesisResult, VoiceActivityDetector,
 )
 
 
@@ -1279,6 +1284,359 @@ def test_layer_request_serde():
 
 
 # ---------------------------------------------------------------------------
+# ATLAS sub-agent tests
+# ---------------------------------------------------------------------------
+
+_atlas = None
+def get_atlas():
+    global _atlas
+    if _atlas is None:
+        _atlas = ATLASAgent(
+            kg_path="data/graph/knowledge_graph.json",
+            rules_path="data/rules/rules.json",
+        )
+    return _atlas
+
+
+@test("ATLAS: can_handle scores infrastructure queries high")
+def test_atlas_can_handle_high():
+    agent = get_atlas()
+    score = agent.can_handle("identify single points of failure in the pipeline topology")
+    assert score >= 0.58, f"Expected ≥0.58, got {score}"
+
+
+@test("ATLAS: can_handle scores business logic queries low")
+def test_atlas_can_handle_low():
+    agent = get_atlas()
+    score = agent.can_handle("plan the submission steps for a Sales Invoice")
+    assert score < 0.65, f"Expected <0.65, got {score}"
+
+
+@test("ATLAS: health_report returns node entries")
+def test_atlas_health_report():
+    agent = get_atlas()
+    report = agent.health_report()
+    assert isinstance(report, list)
+    assert len(report) >= 1
+    for e in report:
+        assert hasattr(e, "node_id")
+        assert hasattr(e, "healthy")
+        assert isinstance(e.healthy, bool)
+
+
+@test("ATLAS: fault_risks identifies SPOFs")
+def test_atlas_fault_risks():
+    agent = get_atlas()
+    risks = agent.fault_risks()
+    assert isinstance(risks, list)
+    assert len(risks) >= 1
+    for r in risks:
+        assert r.risk in ("CRITICAL", "HIGH", "MEDIUM")
+        assert r.mitigation, "Expected non-empty mitigation"
+
+
+@test("ATLAS: scaling_recommendations returns list sorted by priority")
+def test_atlas_scaling():
+    agent = get_atlas()
+    recs = agent.scaling_recommendations(target_qps=50)
+    assert isinstance(recs, list)
+    assert len(recs) >= 1
+    for r in recs:
+        assert r.priority in ("HIGH", "MEDIUM", "LOW")
+        assert r.recommended_replicas >= 1
+
+
+@test("ATLAS: scaling_recommendations adjusts replicas for high QPS")
+def test_atlas_scaling_high_qps():
+    agent = get_atlas()
+    recs_low  = agent.scaling_recommendations(target_qps=5)
+    recs_high = agent.scaling_recommendations(target_qps=500)
+    total_low  = sum(r.recommended_replicas for r in recs_low)
+    total_high = sum(r.recommended_replicas for r in recs_high)
+    assert total_high >= total_low, "Higher QPS should recommend more replicas"
+
+
+@test("ATLAS: resource_estimates returns list with CPU + memory info")
+def test_atlas_resource_estimates():
+    agent = get_atlas()
+    estimates = agent.resource_estimates()
+    assert isinstance(estimates, list)
+    assert len(estimates) >= 1
+    for e in estimates:
+        assert e.cpu_cores >= 1
+        assert e.memory_mb >= 64
+        assert isinstance(e.gpu_required, bool)
+
+
+@test("ATLAS: generate_compose_yaml produces valid YAML string")
+def test_atlas_compose_yaml():
+    agent = get_atlas()
+    yaml_out = agent.generate_compose_yaml()
+    assert "version:" in yaml_out
+    assert "services:" in yaml_out
+    assert "synapseos/" in yaml_out
+
+
+@test("ATLAS: generate_deployment_configs returns one config per stage")
+def test_atlas_deployment_configs():
+    agent = get_atlas()
+    configs = agent.generate_deployment_configs()
+    assert len(configs) == len(agent._topology.stages)
+    for c in configs:
+        assert c.image.startswith("synapseos/")
+        assert c.replicas >= 1
+        assert "KG_PATH" in c.env_vars
+
+
+@test("ATLAS: handle() returns AgentResult with output")
+def test_atlas_handle_basic():
+    agent = get_atlas()
+    result = agent.handle("run a full infrastructure audit")
+    assert result.agent_name == "ATLAS"
+    assert result.output, "Expected non-empty output"
+    assert result.traceable
+    assert result.latency_ms > 0
+
+
+@test("ATLAS: handle() routes health query")
+def test_atlas_handle_health():
+    agent = get_atlas()
+    result = agent.handle("what is the current health status of all nodes?")
+    assert result.agent_name == "ATLAS"
+    assert "healthy" in result.structured
+
+
+@test("ATLAS: handle() routes fault tolerance query")
+def test_atlas_handle_fault():
+    agent = get_atlas()
+    result = agent.handle("identify single points of failure and fault risks")
+    assert result.agent_name == "ATLAS"
+    assert "risks" in result.structured
+
+
+@test("ATLAS: handle() routes scaling query")
+def test_atlas_handle_scaling():
+    agent = get_atlas()
+    result = agent.handle("how should we scale for 100 concurrent requests?")
+    assert result.agent_name == "ATLAS"
+    assert "recommendations" in result.structured
+
+
+@test("ATLAS: handle() routes deployment config query")
+def test_atlas_handle_deploy():
+    agent = get_atlas()
+    result = agent.handle("generate a docker compose deployment configuration")
+    assert result.agent_name == "ATLAS"
+    assert "services" in result.structured
+    assert "compose_yaml" in result.structured
+
+
+@test("ATLAS: handle() routes resource estimation query")
+def test_atlas_handle_resources():
+    agent = get_atlas()
+    result = agent.handle("estimate cpu and memory resource requirements")
+    assert result.agent_name == "ATLAS"
+    assert "estimates" in result.structured
+    assert "total_cpu_cores" in result.structured
+
+
+@test("ATLAS: confidence is in [0, 1]")
+def test_atlas_confidence_range():
+    agent = get_atlas()
+    result = agent.handle("topology and scaling analysis")
+    assert 0.0 <= result.confidence <= 1.0, f"Confidence out of range: {result.confidence}"
+
+
+@test("controller: ATLAS loaded in agent router")
+def test_controller_atlas_loaded():
+    c = get_controller()
+    agents = c.stats()["agents_loaded"]
+    assert "ATLAS" in agents, f"ATLAS missing from {agents}"
+
+
+@test("controller: infrastructure query routes to ATLAS")
+def test_controller_atlas_routing():
+    c = get_controller()
+    result = c.think("identify single points of failure in the infrastructure topology")
+    agent_names = [a.agent_name for a in result.agent_results]
+    assert "ATLAS" in agent_names, f"Expected ATLAS in agent_results: {agent_names}"
+
+
+# ---------------------------------------------------------------------------
+# Voice interface tests
+# ---------------------------------------------------------------------------
+
+@test("voice: WhisperTranscriber initialises in stub mode")
+def test_whisper_init_stub():
+    t = WhisperTranscriber(model_size="tiny")
+    # In CI/no-GPU environment, will be stub
+    assert t is not None
+    assert isinstance(t.is_real, bool)
+
+
+@test("voice: WhisperTranscriber.transcribe_text() returns TranscriptionResult")
+def test_whisper_transcribe_text():
+    t = WhisperTranscriber()
+    result = t.transcribe_text("What fields are required for a Sales Invoice?")
+    assert isinstance(result, TranscriptionResult)
+    assert result.text == "What fields are required for a Sales Invoice?"
+    assert result.confidence == 1.0
+    assert result.model_used == "text_passthrough"
+    assert result.latency_ms == 0.0
+
+
+@test("voice: WhisperTranscriber.transcribe() handles missing file gracefully")
+def test_whisper_transcribe_missing():
+    t = WhisperTranscriber()
+    result = t.transcribe("/tmp/nonexistent_audio_file.wav")
+    assert isinstance(result, TranscriptionResult)
+    assert result.model_used == "stub"
+    # Stub returns placeholder text, not an exception
+    assert result.text, "Expected non-empty stub transcription"
+
+
+@test("voice: WhisperTranscriber.transcribe() reads .txt sidecar if present")
+def test_whisper_sidecar():
+    import tempfile
+    t = WhisperTranscriber()
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        audio_path = f.name
+    txt_path = audio_path.replace(".wav", ".txt")
+    Path(txt_path).write_text("Sales Invoice required fields include customer and date.")
+    try:
+        result = t.transcribe(audio_path)
+        assert "Sales Invoice" in result.text, f"Expected sidecar text, got: {result.text}"
+        assert result.confidence == 1.0
+    finally:
+        Path(txt_path).unlink(missing_ok=True)
+
+
+@test("voice: TTSSynthesizer initialises in stub mode")
+def test_tts_init_stub():
+    tts = TTSSynthesizer(output_dir="/tmp/test_tts_output")
+    assert tts is not None
+    assert isinstance(tts.is_real, bool)
+
+
+@test("voice: TTSSynthesizer.synthesize() produces a result")
+def test_tts_synthesize():
+    tts = TTSSynthesizer(output_dir="/tmp/test_tts_output")
+    result = tts.synthesize("The customer field is required.", filename="test_synth.wav")
+    assert isinstance(result, SynthesisResult)
+    assert result.text == "The customer field is required."
+    assert result.chars == len("The customer field is required.")
+    assert result.audio_path, "Expected non-empty audio path"
+    assert result.latency_ms >= 0
+    assert result.duration_seconds > 0
+
+
+@test("voice: TTSSynthesizer stub writes .txt sidecar")
+def test_tts_stub_writes_file():
+    tts = TTSSynthesizer(output_dir="/tmp/test_tts_output")
+    if not tts.is_real:
+        result = tts.synthesize("Hello world.", filename="test_stub_out.wav")
+        # Stub writes .txt
+        assert Path(result.audio_path).exists(), f"Stub should write file at {result.audio_path}"
+
+
+@test("voice: VoiceActivityDetector initialises")
+def test_vad_init():
+    vad = VoiceActivityDetector()
+    assert vad is not None
+    assert isinstance(vad.is_real, bool)
+
+
+@test("voice: VoiceActivityDetector stub always returns True")
+def test_vad_stub():
+    vad = VoiceActivityDetector()
+    if not vad.is_real:
+        assert vad.is_speech(b"\x00" * 320) == True
+
+
+@test("voice: VoicePipeline initialises without controller (lazy)")
+def test_voice_pipeline_init():
+    vp = VoicePipeline(
+        kg_path="data/graph/knowledge_graph.json",
+        rules_path="data/rules/rules.json",
+    )
+    assert vp is not None
+    assert vp._controller is None, "Controller should be lazy-loaded"
+
+
+@test("voice: VoicePipeline.process_text() returns VoiceRoundTrip")
+def test_voice_pipeline_process_text():
+    vp = VoicePipeline(
+        kg_path="data/graph/knowledge_graph.json",
+        rules_path="data/rules/rules.json",
+    )
+    result = vp.process_text("What fields are required for a Sales Invoice?")
+    assert result is not None
+    assert isinstance(result.total_latency_ms, float)
+    assert result.total_latency_ms > 0
+    assert result.transcription.text == "What fields are required for a Sales Invoice?"
+    assert result.cognition_output, "Expected non-empty cognition output"
+    assert result.synthesis.audio_path, "Expected synthesis output path"
+    vp.shutdown()
+
+
+@test("voice: VoiceRoundTrip.summary() returns non-empty string")
+def test_voice_roundtrip_summary():
+    vp = VoicePipeline(
+        kg_path="data/graph/knowledge_graph.json",
+        rules_path="data/rules/rules.json",
+    )
+    result = vp.process_text("list fields for Purchase Order")
+    summary = result.summary()
+    assert summary, "Expected non-empty summary"
+    assert "Transcription" in summary
+    assert "Synthesis" in summary
+    assert "TOTAL" in summary
+    vp.shutdown()
+
+
+@test("voice: VoicePipeline.session_stats() tracks sessions")
+def test_voice_pipeline_session_stats():
+    vp = VoicePipeline(
+        kg_path="data/graph/knowledge_graph.json",
+        rules_path="data/rules/rules.json",
+    )
+    vp.process_text("Sales Invoice validation")
+    vp.process_text("Purchase Order rules")
+    stats = vp.session_stats()
+    assert stats["sessions"] == 2
+    assert "mean_latency_ms" in stats
+    assert "within_target" in stats
+    vp.shutdown()
+
+
+@test("voice: VoicePipeline._trim_for_speech removes code blocks and annotations")
+def test_voice_trim_for_speech():
+    text = "Here is the answer.\n```python\ncode here\n```\n[Memory context: blah blah]"
+    trimmed = VoicePipeline._trim_for_speech(text)
+    assert "```" not in trimmed
+    assert "Memory context" not in trimmed
+    assert "Here is the answer" in trimmed
+
+
+@test("voice: VoiceRoundTrip.to_dict() is JSON-serialisable")
+def test_voice_roundtrip_to_dict():
+    import json
+    vp = VoicePipeline(
+        kg_path="data/graph/knowledge_graph.json",
+        rules_path="data/rules/rules.json",
+    )
+    result = vp.process_text("What is a Sales Invoice?")
+    d = result.to_dict()
+    serialised = json.dumps(d)
+    assert serialised, "Expected non-empty JSON"
+    parsed = json.loads(serialised)
+    assert "transcription" in parsed
+    assert "synthesis" in parsed
+    assert "total_ms" in parsed
+    vp.shutdown()
+
+
+# ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
 
@@ -1373,6 +1731,41 @@ if __name__ == "__main__":
         test_nova_confidence_range,
         test_controller_nova_loaded,
         test_controller_nova_routing,
+        # ATLAS
+        test_atlas_can_handle_high,
+        test_atlas_can_handle_low,
+        test_atlas_health_report,
+        test_atlas_fault_risks,
+        test_atlas_scaling,
+        test_atlas_scaling_high_qps,
+        test_atlas_resource_estimates,
+        test_atlas_compose_yaml,
+        test_atlas_deployment_configs,
+        test_atlas_handle_basic,
+        test_atlas_handle_health,
+        test_atlas_handle_fault,
+        test_atlas_handle_scaling,
+        test_atlas_handle_deploy,
+        test_atlas_handle_resources,
+        test_atlas_confidence_range,
+        test_controller_atlas_loaded,
+        test_controller_atlas_routing,
+        # Voice
+        test_whisper_init_stub,
+        test_whisper_transcribe_text,
+        test_whisper_transcribe_missing,
+        test_whisper_sidecar,
+        test_tts_init_stub,
+        test_tts_synthesize,
+        test_tts_stub_writes_file,
+        test_vad_init,
+        test_vad_stub,
+        test_voice_pipeline_init,
+        test_voice_pipeline_process_text,
+        test_voice_roundtrip_summary,
+        test_voice_pipeline_session_stats,
+        test_voice_trim_for_speech,
+        test_voice_roundtrip_to_dict,
         # Drift Monitor
         test_drift_init,
         test_drift_capture,
