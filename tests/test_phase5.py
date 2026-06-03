@@ -45,6 +45,13 @@ from synapseos.phase5.voice import (
     WhisperTranscriber, TTSSynthesizer, VoicePipeline,
     TranscriptionResult, SynthesisResult, VoiceActivityDetector,
 )
+from synapseos.phase5.cross_domain_kg import (
+    CrossDomainKGExpander,
+    SOFTWARE_ENGINEERING, BIOLOGY, PHYSICS, ECONOMICS, ALL_DOMAINS,
+)
+from scripts.benchmark_pipeline import (
+    run_level, _compute_percentile, LevelStats, BenchmarkReport,
+)
 
 
 results = []
@@ -1637,6 +1644,222 @@ def test_voice_roundtrip_to_dict():
 
 
 # ---------------------------------------------------------------------------
+# Cross-domain KG tests
+# ---------------------------------------------------------------------------
+
+@test("cross_domain_kg: domain lists are non-empty and consistent")
+def test_cdkg_domains_non_empty():
+    for domain in ALL_DOMAINS:
+        assert len(domain) >= 10, f"Expected ≥10 concepts, got {len(domain)}"
+        for c in domain:
+            assert c.id, "Expected non-empty concept id"
+            assert c.module, "Expected non-empty module"
+
+
+@test("cross_domain_kg: all concept IDs are unique across domains")
+def test_cdkg_unique_ids():
+    all_ids = [c.id for domain in ALL_DOMAINS for c in domain]
+    assert len(all_ids) == len(set(all_ids)), "Duplicate concept IDs found"
+
+
+@test("cross_domain_kg: CrossDomainKGExpander loads base graph")
+def test_cdkg_expander_loads():
+    expander = CrossDomainKGExpander("data/graph/knowledge_graph.json")
+    assert expander.base_path.exists()
+    assert len(expander._base_data.get("nodes", [])) > 0
+
+
+@test("cross_domain_kg: CrossDomainKGExpander.stats() returns domain info")
+def test_cdkg_stats():
+    expander = CrossDomainKGExpander("data/graph/knowledge_graph.json")
+    stats = expander.stats()
+    assert "domains" in stats
+    assert len(stats["domains"]) == 4
+    assert stats["total_new_concepts"] > 0
+    assert stats["structural_bridges"] > 0
+
+
+@test("cross_domain_kg: expand() adds concepts to base graph")
+def test_cdkg_expand():
+    expander = CrossDomainKGExpander("data/graph/knowledge_graph.json")
+    base_count = len(expander._base_data.get("nodes", []))
+    expanded   = expander.expand()
+    assert len(expanded["nodes"]) > base_count, "Expected new nodes"
+    assert len(expanded["links"]) > len(
+        expander._base_data.get("links", expander._base_data.get("edges", []))
+    ), "Expected new links"
+
+
+@test("cross_domain_kg: expand() adds nodes from all 4 domains")
+def test_cdkg_expand_all_domains():
+    expander  = CrossDomainKGExpander("data/graph/knowledge_graph.json")
+    expanded  = expander.expand()
+    node_ids  = {n["id"] for n in expanded["nodes"]}
+    # Sample one concept from each domain
+    assert "Transaction"      in node_ids,  "Missing SE concept"
+    assert "Cell"             in node_ids,  "Missing Biology concept"
+    assert "Equilibrium"      in node_ids,  "Missing Physics concept"
+    assert "Market"           in node_ids,  "Missing Economics concept"
+
+
+@test("cross_domain_kg: expand() marks cross-domain nodes with flag")
+def test_cdkg_cross_domain_flag():
+    expander  = CrossDomainKGExpander("data/graph/knowledge_graph.json")
+    expanded  = expander.expand()
+    cross_nodes = [n for n in expanded["nodes"] if n.get("cross_domain")]
+    assert len(cross_nodes) > 0, "Expected some nodes flagged as cross_domain"
+
+
+@test("cross_domain_kg: expand() generates structural bridge edges")
+def test_cdkg_bridge_edges():
+    expander  = CrossDomainKGExpander("data/graph/knowledge_graph.json")
+    expanded  = expander.expand()
+    bridges   = [e for e in expanded["links"] if e.get("bridge")]
+    assert len(bridges) > 0, "Expected structural bridge edges"
+    # Bridges should be bidirectional
+    assert len(bridges) % 2 == 0, "Bridges should come in bidirectional pairs"
+
+
+@test("cross_domain_kg: expand() does not duplicate existing ERP nodes")
+def test_cdkg_no_duplicates():
+    expander  = CrossDomainKGExpander("data/graph/knowledge_graph.json")
+    expanded  = expander.expand()
+    node_ids  = [n["id"] for n in expanded["nodes"]]
+    assert len(node_ids) == len(set(node_ids)), "Duplicate node IDs in expanded graph"
+
+
+@test("cross_domain_kg: save() produces a valid JSON file")
+def test_cdkg_save():
+    import json
+    expander = CrossDomainKGExpander("data/graph/knowledge_graph.json")
+    result   = expander.save("/tmp/test_expanded_kg.json")
+    assert result["total_nodes"] > result["base_nodes"]
+    assert result["added_nodes"] == sum(len(d) for d in ALL_DOMAINS)
+    saved = json.loads(Path("/tmp/test_expanded_kg.json").read_text())
+    assert "nodes" in saved
+    assert "links" in saved
+    assert len(saved["nodes"]) == result["total_nodes"]
+
+
+@test("cross_domain_kg: CreativityEngine works with expanded graph")
+def test_cdkg_creativity_engine_compat():
+    expander = CrossDomainKGExpander("data/graph/knowledge_graph.json")
+    expander.save("/tmp/test_expanded_kg_ce.json")
+    from synapseos.phase4.creativity_engine import CreativityEngine
+    base_engine = CreativityEngine(graph_path="data/graph/knowledge_graph.json")
+    base_count  = len(base_engine.concepts)
+    exp_engine  = CreativityEngine(graph_path="/tmp/test_expanded_kg_ce.json")
+    assert len(exp_engine.concepts) > base_count, \
+        f"Expected more concepts with expanded KG ({len(exp_engine.concepts)} > {base_count})"
+    # Verify cross-domain concepts loaded
+    assert "Transaction" in exp_engine.concepts or "Market" in exp_engine.concepts, \
+        "Expected at least one cross-domain concept in engine"
+
+
+@test("cross_domain_kg: find_analogies finds cross-domain matches with expanded KG")
+def test_cdkg_cross_domain_analogies():
+    expander = CrossDomainKGExpander("data/graph/knowledge_graph.json")
+    expander.save("/tmp/test_expanded_kg_ana.json")
+    from synapseos.phase4.creativity_engine import CreativityEngine
+    engine = CreativityEngine(graph_path="/tmp/test_expanded_kg_ana.json")
+    # Find analogies for a cross-domain concept
+    if "Transaction" in engine.concepts:
+        analogies = engine.find_analogies("Transaction", top_k=5)
+        domains = {a.target_domain for a in analogies}
+        # Should find analogies outside "software_engineering" domain
+        assert len(analogies) >= 1, "Expected at least one analogy for Transaction"
+
+
+# ---------------------------------------------------------------------------
+# Benchmark utility tests
+# ---------------------------------------------------------------------------
+
+@test("benchmark: _compute_percentile returns correct values")
+def test_benchmark_percentile():
+    vals = list(range(1, 101))   # [1..100]
+    assert _compute_percentile(vals, 50) == 50, "p50 should be 50"
+    assert _compute_percentile(vals, 99) == 99, "p99 should be 99"
+    assert _compute_percentile([], 50)   == 0,  "Empty list should return 0"
+
+
+@test("benchmark: run_level measures latency and returns LevelStats")
+def test_benchmark_run_level():
+    call_count = [0]
+
+    def fast_fn(query: str) -> None:
+        call_count[0] += 1
+        time.sleep(0.001)   # 1ms
+
+    stats = run_level(fast_fn, concurrency=3, queries=["q1", "q2", "q3"], n_requests=9)
+    assert isinstance(stats, LevelStats)
+    assert stats.n_requests == 9
+    assert stats.n_success == 9
+    assert stats.n_error == 0
+    assert stats.error_rate == 0.0
+    assert stats.p50_ms >= 0
+    assert stats.throughput_rps > 0
+    assert call_count[0] == 9
+
+
+@test("benchmark: run_level captures errors and reports error_rate")
+def test_benchmark_run_level_errors():
+    def failing_fn(query: str) -> None:
+        raise RuntimeError("simulated failure")
+
+    stats = run_level(failing_fn, concurrency=2, queries=["q1", "q2"], n_requests=4)
+    assert stats.n_error == 4
+    assert stats.n_success == 0
+    assert stats.error_rate == 1.0
+    assert not stats.passes_criterion
+
+
+@test("benchmark: passes_criterion is True when p99 < 2000ms and err < 5%")
+def test_benchmark_criterion_pass():
+    stats = LevelStats(
+        concurrency=10, n_requests=10, n_success=10, n_error=0,
+        error_rate=0.0, throughput_rps=50, p50_ms=100, p90_ms=200,
+        p99_ms=500, mean_ms=150, max_ms=600, wall_time_s=1.0,
+        passes_criterion=True,
+    )
+    assert stats.passes_criterion
+
+
+@test("benchmark: passes_criterion is False when p99 exceeds threshold")
+def test_benchmark_criterion_fail_p99():
+    stats = LevelStats(
+        concurrency=50, n_requests=50, n_success=48, n_error=2,
+        error_rate=0.04, throughput_rps=20, p50_ms=800, p90_ms=1800,
+        p99_ms=2500,   # exceeds 2000ms
+        mean_ms=1000, max_ms=3000, wall_time_s=5.0,
+        passes_criterion=False,
+    )
+    assert not stats.passes_criterion
+
+
+@test("benchmark: BenchmarkReport.to_dict() is JSON-serialisable")
+def test_benchmark_report_serde():
+    import json
+    stat = LevelStats(
+        concurrency=5, n_requests=5, n_success=5, n_error=0,
+        error_rate=0.0, throughput_rps=100.0, p50_ms=10.0, p90_ms=20.0,
+        p99_ms=30.0, mean_ms=12.0, max_ms=35.0, wall_time_s=0.1,
+        passes_criterion=True,
+    )
+    report = BenchmarkReport(
+        target="TestTarget",
+        timestamp="2026-06-03T00:00:00",
+        levels=[stat],
+        overall_pass=True,
+    )
+    d   = report.to_dict()
+    raw = json.dumps(d)
+    parsed = json.loads(raw)
+    assert parsed["target"] == "TestTarget"
+    assert parsed["overall_pass"] is True
+    assert len(parsed["levels"]) == 1
+
+
+# ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
 
@@ -1789,6 +2012,26 @@ if __name__ == "__main__":
         test_distributed_pipeline_latency,
         test_distributed_pipeline_node_stats,
         test_layer_request_serde,
+        # Cross-domain KG
+        test_cdkg_domains_non_empty,
+        test_cdkg_unique_ids,
+        test_cdkg_expander_loads,
+        test_cdkg_stats,
+        test_cdkg_expand,
+        test_cdkg_expand_all_domains,
+        test_cdkg_cross_domain_flag,
+        test_cdkg_bridge_edges,
+        test_cdkg_no_duplicates,
+        test_cdkg_save,
+        test_cdkg_creativity_engine_compat,
+        test_cdkg_cross_domain_analogies,
+        # Benchmark utilities
+        test_benchmark_percentile,
+        test_benchmark_run_level,
+        test_benchmark_run_level_errors,
+        test_benchmark_criterion_pass,
+        test_benchmark_criterion_fail_p99,
+        test_benchmark_report_serde,
     ]
 
     for t in tests:

@@ -1,6 +1,6 @@
 # SynapseOS — Implementation Tracker
 
-> Last updated: 2026-06-03 (Phase 5: ATLAS + voice stubs + status doc done — 138/138 tests passing)
+> Last updated: 2026-06-03 (Phase 5: cross-domain KG + load benchmark + demo done — 156/156 tests passing)
 
 ---
 
@@ -12,9 +12,9 @@
 | [Phase 2 — Neural Components](Phase2_Neural_Components.md) | Weeks 5–8 | In Progress | 60% |
 | [Phase 3 — Integration](Phase3_Integration.md) | Weeks 9–12 | In Progress | 80% |
 | [Phase 4 — Advanced Capabilities](Phase4_Advanced_Capabilities.md) | Weeks 13–20 | In Progress | 65% |
-| [Phase 5 — SynapseOS](Phase5_SynapseOS.md) | Week 21+ | In Progress | 95% |
+| [Phase 5 — SynapseOS](Phase5_SynapseOS.md) | Week 21+ | In Progress | 100% CPU |
 
-**Active Phase:** Phase 5 at 95% CPU-complete — GPU needed to unlock Mamba, Liquid NN, Whisper, RL
+**Active Phase:** Phase 5 CPU-COMPLETE — all CPU-runnable work done; GPU needed for Mamba, Liquid NN, Whisper, RL
 
 ---
 
@@ -122,8 +122,12 @@
 | Phase 5 status / gap analysis | **Done** | `docs/Phase5_Status.md` — 3/6 criteria full, 3/6 GPU-blocked |
 
 **Tests:** `tests/test_phase5.py` — **138/138 passing**
-**Phase 5 remaining (all GPU-blocked):** Mamba fine-tuning, Liquid NN live adaptation, real Whisper + TTS, RL alignment
-**CPU work remaining:** 50 QPS load benchmark for `DistributedPipeline`
+| Cross-domain KG expansion | **Done** | `synapseos/phase5/cross_domain_kg.py` — 80 concepts (CS/biology/physics/economics) + 20 structural bridges |
+| Load benchmark | **Done** | `scripts/benchmark_pipeline.py` — concurrent load test, p50/p99/throughput, saves to `data/benchmarks/` |
+| Integrated demo | **Done** | `scripts/demo_synapseos.py` — all 7 sections: modes/agents/creativity/voice/drift/pipeline/memory |
+
+**Tests:** `tests/test_phase5.py` — **156/156 passing**
+**Phase 5 CPU-complete. Remaining = GPU only:** Mamba fine-tuning, Liquid NN live adaptation, real Whisper + TTS, RL alignment
 
 ---
 
