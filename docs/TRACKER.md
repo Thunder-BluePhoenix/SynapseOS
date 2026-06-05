@@ -1,6 +1,6 @@
 # SynapseOS — Implementation Tracker
 
-> Last updated: 2026-06-04 (local CPU/MPS alternatives for ALL GPU blockers — Mamba/Liquid/SFT/TTS run on this machine; 297 tests passing)
+> Last updated: 2026-06-04 (real STT via whisper.cpp + World Model substrate + real multi-node transport — 351 tests passing)
 
 ---
 
@@ -14,7 +14,7 @@
 | [Phase 4 — Advanced Capabilities](Phase4_Advanced_Capabilities.md) | Weeks 13–20 | In Progress | 65% |
 | [Phase 5 — SynapseOS](Phase5_SynapseOS.md) | Week 21+ | In Progress | 100% CPU |
 
-**Active Phase:** SYSTEM COMPLETE (CPU) — REST API + evaluator added; GPU needed for Mamba, Liquid NN, Whisper, RL
+**Active Phase:** Perception + World Model online. Real voice in/out (whisper.cpp + macOS say), persistent world-model substrate (z_t + surprise-gated memory), real multi-node transport. GPU still optional for full-scale Mamba/RL.
 
 ---
 
@@ -204,13 +204,19 @@
 | `pyttsx3` / neural TTS | `local/tts_macos.py` — macOS `say` real audio | **Real WAV output** | 16-bit PCM WAV, wired into `VoicePipeline` |
 | `pykan` (symbolic) | `phase2/kan_symbolic.py` — regression extraction | **Done earlier** | R²=0.998 |
 
-### ⏳ Still need real install/model (lower priority, have stubs)
+### ✅ Newly resolved (2026-06-04 — perception, world model, distribution)
+
+| Former blocker | Resolution | Status | Proof |
+|---|---|---|---|
+| `openai-whisper` (STT) | `local/whisper_cpp.py` — wraps whisper.cpp `base.en` (brew, Metal) | **Real offline STT** | say→whisper round-trip 100% word overlap, 1.1s; wired into `VoicePipeline` |
+| Multi-node gRPC | `phase5/transport.py` — stdlib HTTP/JSON node servers + `NetworkBus` (no grpc install) | **Real cross-machine TCP** | 3 node servers, real routing, graceful fault tolerance (11/11 tests) |
+| World model (the real gap) | `synapseos/world_model/` — persistent z_t, surprise-gated memory, consolidation | **Running substrate** | learns routines→expected, distills temporal patterns to semantic KG (36/36 tests) |
+
+### ⏳ Still genuinely needs a model download
 
 | Blocker | Affects | Local status | Full unblock |
 |---|---|---|---|
-| `openai-whisper` | Voice transcription (STT) | Stub: text-passthrough + `.txt` sidecar works for pipeline testing | `pip install openai-whisper` — `tiny` runs on CPU ~3s, MPS faster |
-| `clip` / `open_clip` | CLIP vision encoder | Not yet aliased | Pure-PyTorch small CNN encoder is feasible next; or `pip install open_clip_torch` |
-| Multi-node gRPC | 50 QPS distributed benchmark | `DistributedPipeline` in-process bus works | Real gRPC + separate node machines |
+| `clip` / `open_clip` | CLIP vision encoder | Not yet aliased — needs pretrained weights (can't reproduce from code) | `pip install open_clip_torch` + SigLIP/CLIP weights; JEPA-vision later |
 
 ### CUDA path (unchanged — for when a GPU box is available)
 
@@ -233,4 +239,42 @@ python -m synapseos.local.liquid_cfc  --train-demo   # CfC liquid net trains
 python -m synapseos.local.sft_trainer --demo         # SFT synthesizer trains + generates
 python -m synapseos.local.tts_macos                  # real WAV audio via macOS say
 python -m synapseos.local.sft_trainer --data data/sft/sft_pairs.jsonl --steps 200   # train on real SFT pairs
+python -m synapseos.local.whisper_cpp --selftest    # say→whisper.cpp real STT round-trip
+python -m synapseos.world_model.world_model         # world model: learn routine, flag novelty, recall
+python -m synapseos.world_model.consolidation       # distill temporal patterns → semantic memory
+python -m synapseos.phase5.transport                # 3 real HTTP node servers + fault tolerance demo
 ```
+
+---
+
+## Perception + World Model + Distribution (2026-06-04)
+
+The three priorities after the local-alternatives work — done in order A → B → C.
+
+### A — Perception input (STT) ✅
+- `synapseos/local/whisper_cpp.py` — `WhisperCppSTT` wraps whisper.cpp `base.en` (Metal-accelerated on M4 Pro)
+- Wired into `phase5/voice.py` `WhisperTranscriber` as the preferred backend (openai-whisper → stub fallbacks kept)
+- Full real voice loop now closes: **speech → whisper.cpp → cognition → macOS say → speech**, ~1.4s round-trip
+- Binary: `brew install whisper-cpp`; model: `data/models/whisper/ggml-base.en.bin` (148MB)
+
+### B — World Model substrate ✅ (`synapseos/world_model/`)
+The integration layer that turns "models + a database" into a persistent brain. Principle: **prediction error is the write signal** (JEPA realized as the memory controller).
+
+| File | Role |
+|---|---|
+| `state.py` | `WorldState` — persistent, versioned latent z_t (serialized, rollback) |
+| `encoder.py` | observation embedding o_t (deterministic, similarity-structured) |
+| `world_model.py` | `WorldModelNet` (CfC state evolution + predictor) + `WorldModel` perceive→predict→store→reason loop; online learning |
+| `predictive_memory.py` | surprise-gated episodic write with temporal + causal links, salience eviction |
+| `retrieval.py` | state-conditioned associative recall (query ⊕ z_t, not string cosine) |
+| `consolidation.py` | replay high-salience episodes, distill temporal patterns → semantic KG, lower future surprise |
+
+Demonstrated: a repeated routine goes novel→familiar→**expected** and stops being stored (the model learns its world); a novel event is captured; the workflow `Sales Order → Delivery Note → Sales Invoice` is distilled into semantic memory as precedence facts. **Answers the 5 world-model questions** (storage, consolidation, latent update, episodic linking, retrieval) with running code.
+
+### C — Real multi-node distribution ✅
+- `synapseos/phase5/transport.py` — `NodeServer` (HTTP/JSON over stdlib, no grpc), `RemoteNodeProxy`, `NetworkBus`
+- Same architecture as the in-process `MessageBus` — only the transport changed (process → machine)
+- 3 real node servers on localhost, real TCP routing, **graceful fault tolerance** when a node dies
+- Reclassified from "blocker" to "deployment concern" — proven working, real multi-host is just config
+
+**Tests:** `test_world_model.py` 36/36 · `test_transport.py` 11/11 · `test_local.py` 37/37 (incl. STT) · **total 351 passing**

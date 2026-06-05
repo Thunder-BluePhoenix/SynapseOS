@@ -125,16 +125,28 @@ class WhisperTranscriber:
         self.model_size = model_size
         self.device     = device
         self._model     = None
+        self._cpp       = None    # whisper.cpp backend (preferred, real offline STT)
         self._try_load()
 
     def _try_load(self) -> None:
+        # Preferred backend: whisper.cpp (real, offline, Metal-accelerated on Apple Silicon)
+        try:
+            from synapseos.local.whisper_cpp import WhisperCppSTT, whisper_cpp_available
+            if whisper_cpp_available():
+                self._cpp = WhisperCppSTT()
+                WhisperTranscriber.WHISPER_AVAILABLE = True
+                return
+        except Exception as e:
+            print(f"[Whisper] whisper.cpp probe failed ({e})")
+
+        # Fallback backend: openai-whisper (Python)
         try:
             import whisper  # type: ignore
             self._model = whisper.load_model(self.model_size, device=self.device)
             WhisperTranscriber.WHISPER_AVAILABLE = True
-            print(f"[Whisper] Loaded {self.model_size} on {self.device}")
+            print(f"[Whisper] Loaded openai-whisper {self.model_size} on {self.device}")
         except ImportError:
-            print(f"[Whisper] openai-whisper not installed — running in stub mode")
+            print(f"[Whisper] no whisper.cpp / openai-whisper — running in stub mode")
         except Exception as e:
             print(f"[Whisper] Load failed ({e}) — running in stub mode")
 
@@ -142,10 +154,23 @@ class WhisperTranscriber:
         """Transcribe an audio file to text."""
         t0 = time.time()
 
+        if self._cpp is not None:
+            return self._transcribe_cpp(audio_path, t0)
         if self._model is not None:
             return self._transcribe_real(audio_path, t0)
-        else:
-            return self._transcribe_stub(audio_path, t0)
+        return self._transcribe_stub(audio_path, t0)
+
+    def _transcribe_cpp(self, audio_path: str, t0: float) -> TranscriptionResult:
+        r = self._cpp.transcribe(audio_path)
+        return TranscriptionResult(
+            text=r.text,
+            confidence=r.confidence,
+            duration_seconds=r.duration_seconds,
+            language=r.language,
+            segments=[],
+            model_used=r.model_used,
+            latency_ms=(time.time() - t0) * 1000,
+        )
 
     def _transcribe_real(self, audio_path: str, t0: float) -> TranscriptionResult:
         result = self._model.transcribe(audio_path)
@@ -200,7 +225,7 @@ class WhisperTranscriber:
 
     @property
     def is_real(self) -> bool:
-        return self._model is not None
+        return self._cpp is not None or self._model is not None
 
 
 # ---------------------------------------------------------------------------

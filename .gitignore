@@ -1,0 +1,115 @@
+# ============================================================
+# SynapseOS .gitignore
+# ============================================================
+
+# ----- Python -----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+.installed.cfg
+
+# ----- Virtual environments -----
+.venv/
+venv/
+env/
+ENV/
+.env
+env.bak/
+venv.bak/
+
+# ----- Testing / coverage / type caches -----
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.hypothesis/
+
+# ----- IDE / editor -----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.claude/
+
+# ----- OS -----
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+
+# ============================================================
+# Model weights — download/build separately (see docs/TRACKER.md)
+# ============================================================
+data/models/
+*.bin
+*.gguf
+*.onnx
+*.safetensors
+*.pt.bak
+
+# ============================================================
+# Generated audio (macOS `say` TTS + whisper.cpp intermediates)
+# ============================================================
+data/voice/output/
+*.wav
+*.aiff
+*.aif
+*.mp3
+*.flac
+
+# ============================================================
+# Runtime state — regenerated as the system runs
+# ============================================================
+data/memory/
+data/world_model/
+data/idle/
+data/drift/
+data/benchmarks/
+data/eval/
+data/external_repos/
+
+# ============================================================
+# Large regenerable training data
+#   corpus  → scripts/build_corpus.py, scripts/augment_corpus.py
+#   jepa    → synapseos/phase2/synth_data_generator.py
+#   liquid  → synapseos/phase2/synth_data_generator.py
+#   bridges → synapseos/phase3/synth_bridge_generator.py
+#   sft     → synapseos/phase3/output_synth_data.py
+#   mamba   → scripts/prepare_mamba_data.py
+# ============================================================
+data/corpus/
+data/jepa/
+data/liquid/
+data/bridges/
+data/sft/
+data/mamba_train/
+
+# ============================================================
+# KEPT IN GIT (essential, small, hard to regenerate):
+#   data/graph/knowledge_graph*.json   — Phase 1 KG (core artifact)
+#   data/rules/rules.json              — Phase 1 extracted rules
+#   data/checkpoints/**/*.pt           — trained model checkpoints
+#   data/kan/metric_pairs.json         — KAN training pairs (small)
+# These are NOT ignored on purpose.
+# ============================================================
+
+# Scratch / temp
+*.tmp
+*.bak
+*.log
+/tmp/
+scratch/

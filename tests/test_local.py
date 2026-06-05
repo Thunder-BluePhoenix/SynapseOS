@@ -328,6 +328,89 @@ def test_sft_load_pairs():
 
 
 # ---------------------------------------------------------------------------
+# whisper.cpp STT
+# ---------------------------------------------------------------------------
+
+from synapseos.local.whisper_cpp import (
+    WhisperCppSTT, whisper_cpp_available, find_binary, find_model, STTResult,
+)
+
+
+@test("stt: whisper_cpp_available returns a bool")
+def test_stt_available_bool():
+    assert isinstance(whisper_cpp_available(), bool)
+
+
+@test("stt: WhisperCppSTT initialises")
+def test_stt_init():
+    stt = WhisperCppSTT()
+    assert stt is not None
+    assert isinstance(stt.is_real, bool)
+
+
+@test("stt: transcribe_text passthrough returns STTResult")
+def test_stt_passthrough():
+    stt = WhisperCppSTT()
+    r = stt.transcribe_text("What is a Sales Invoice")
+    assert isinstance(r, STTResult)
+    assert r.text == "What is a Sales Invoice"
+    assert r.model_used == "text_passthrough"
+
+
+@test("stt: missing audio falls back to stub gracefully")
+def test_stt_missing_file():
+    stt = WhisperCppSTT()
+    r = stt.transcribe("/tmp/does_not_exist_xyz.wav")
+    assert isinstance(r, STTResult)
+    assert r.text  # non-empty placeholder or sidecar
+
+
+@test("stt: reads .txt sidecar when audio yields nothing")
+def test_stt_sidecar():
+    import tempfile
+    stt = WhisperCppSTT()
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        audio = f.name
+    Path(audio).with_suffix(".txt").write_text("Sales Invoice required fields")
+    try:
+        r = stt.transcribe(audio)
+        assert "Sales Invoice" in r.text
+    finally:
+        Path(audio).with_suffix(".txt").unlink(missing_ok=True)
+        Path(audio).unlink(missing_ok=True)
+
+
+@test("stt: real round-trip say->whisper.cpp matches (if available)")
+def test_stt_roundtrip():
+    if not whisper_cpp_available() or not say_available():
+        return  # skip — environment lacks binary/model or say
+    from synapseos.local.tts_macos import MacTTS
+    import re as _re
+    phrase = "What fields are required for a sales invoice"
+    tts = MacTTS(output_dir="/tmp/stt_rt_test")
+    audio = tts.synthesize(phrase, filename="rt.aiff")
+    stt = WhisperCppSTT()
+    r = stt.transcribe(audio.audio_path)
+    assert r.is_real, "Expected real whisper.cpp transcription"
+    want = set(_re.findall(r"\w+", phrase.lower()))
+    got  = set(_re.findall(r"\w+", r.text.lower()))
+    overlap = len(want & got) / len(want)
+    assert overlap >= 0.6, f"Low word overlap: {overlap:.0%} — '{r.text}'"
+
+
+@test("stt: VoicePipeline uses whisper.cpp when available")
+def test_stt_voice_pipeline_backend():
+    from synapseos.phase5.voice import VoicePipeline
+    vp = VoicePipeline(
+        kg_path="data/graph/knowledge_graph.json",
+        rules_path="data/rules/rules.json",
+    )
+    if whisper_cpp_available():
+        assert vp.transcriber.is_real, "VoicePipeline should use real whisper.cpp STT"
+    vp.shutdown()
+
+
+# ---------------------------------------------------------------------------
 # macOS TTS
 # ---------------------------------------------------------------------------
 
@@ -406,6 +489,10 @@ if __name__ == "__main__":
         test_sft_format, test_sft_encode_masks_prompt, test_sft_decoder_forward,
         test_sft_trainer_init, test_sft_trains, test_sft_generates,
         test_sft_save_load, test_sft_load_pairs,
+        # STT (whisper.cpp)
+        test_stt_available_bool, test_stt_init, test_stt_passthrough,
+        test_stt_missing_file, test_stt_sidecar, test_stt_roundtrip,
+        test_stt_voice_pipeline_backend,
         # TTS
         test_tts_available, test_tts_init, test_tts_synthesize,
         test_tts_real_audio, test_tts_to_dict, test_voice_pipeline_real_tts,
