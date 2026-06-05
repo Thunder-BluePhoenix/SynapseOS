@@ -375,6 +375,7 @@ def get_controller():
             mode_timeout=20.0,
             max_parallel_modes=2,
             enable_idle_loop=False,
+            world_model_dir="/tmp/test_cc_world_model",
         )
     return _controller
 
@@ -812,6 +813,128 @@ def test_controller_agent_results_in_dict():
     assert "agent_results" in d
     assert isinstance(d["agent_results"], list)
     json.dumps(d)   # must be JSON-serialisable
+
+
+# ---------------------------------------------------------------------------
+# World model integration tests
+# ---------------------------------------------------------------------------
+
+def _wm_controller(tmp: str):
+    import os
+    return CognitiveController(
+        memory_episodic_path=os.path.join(tmp, "ep.json"),
+        memory_semantic_path=os.path.join(tmp, "sem.json"),
+        kg_path="data/graph/knowledge_graph.json",
+        enable_idle_loop=False,
+        world_model_dir=os.path.join(tmp, "wm"),
+    )
+
+
+@test("world model: controller loads a world model by default")
+def test_wm_loaded():
+    c = get_controller()
+    assert c.world_model is not None, "World model should be enabled by default"
+
+
+@test("world model: can be disabled")
+def test_wm_disabled():
+    import tempfile, os
+    tmp = tempfile.mkdtemp()
+    c = CognitiveController(
+        memory_episodic_path=os.path.join(tmp, "ep.json"),
+        memory_semantic_path=os.path.join(tmp, "sem.json"),
+        kg_path="data/graph/knowledge_graph.json",
+        enable_idle_loop=False,
+        enable_world_model=False,
+    )
+    assert c.world_model is None
+    r = c.think("test", force_modes=["mode1"])  # still works
+    assert r.primary_output
+
+
+@test("world model: think() populates surprise and novelty")
+def test_wm_think_fields():
+    import tempfile
+    c = _wm_controller(tempfile.mkdtemp())
+    r = c.think("What fields are required for a Sales Invoice?", force_modes=["mode1"])
+    assert 0.0 <= r.surprise <= 2.0
+    assert r.novelty in ("novel", "familiar", "expected")
+    c.shutdown()
+
+
+@test("world model: repeated query becomes less surprising across calls")
+def test_wm_learns_across_queries():
+    import tempfile
+    c = _wm_controller(tempfile.mkdtemp())
+    q = "What validate rules apply to a Purchase Order?"
+    first = c.think(q, force_modes=["mode1"]).surprise
+    last = first
+    for _ in range(4):
+        last = c.think(q, force_modes=["mode1"]).surprise
+    assert last < first, f"Surprise should drop across repeated queries: {first:.3f} → {last:.3f}"
+    c.shutdown()
+
+
+@test("world model: recalled_episodes returned and serialisable")
+def test_wm_recall():
+    import tempfile, json
+    c = _wm_controller(tempfile.mkdtemp())
+    c.think("Security alert on Payroll Entry", force_modes=["mode1"])
+    c.think("Sales Order created by user", force_modes=["mode1"])
+    r = c.think("unauthorized security access", force_modes=["mode1"])
+    assert isinstance(r.recalled_episodes, list)
+    json.dumps(r.to_dict())  # recalled episodes must serialise
+    c.shutdown()
+
+
+@test("world model: state.step advances with perceptions (query + outcome)")
+def test_wm_step_advances():
+    import tempfile
+    c = _wm_controller(tempfile.mkdtemp())
+    c.think("test query one", force_modes=["mode1"])
+    step1 = c.world_model.state.step
+    c.think("test query two", force_modes=["mode1"])
+    step2 = c.world_model.state.step
+    assert step2 > step1
+    c.shutdown()
+
+
+@test("world model: stats() includes world_model block")
+def test_wm_stats():
+    import tempfile
+    c = _wm_controller(tempfile.mkdtemp())
+    c.think("hello world model", force_modes=["mode1"])
+    s = c.stats()
+    assert "world_model" in s
+    assert s["world_model"]["episodes"] >= 0
+    assert "surprise_ema" in s["world_model"]
+    c.shutdown()
+
+
+@test("world model: consolidate_world_model runs and reports")
+def test_wm_consolidate():
+    import tempfile
+    c = _wm_controller(tempfile.mkdtemp())
+    for _ in range(3):
+        c.think("Sales Order created", force_modes=["mode1"])
+        c.think("Delivery Note generated", force_modes=["mode1"])
+    report = c.consolidate_world_model()
+    assert report.get("consolidated") is True
+    c.shutdown()
+
+
+@test("world model: persists across controller restarts")
+def test_wm_persistence():
+    import tempfile, os
+    tmp = tempfile.mkdtemp()
+    c1 = _wm_controller(tmp)
+    c1.think("a memorable surprising event", force_modes=["mode1"])
+    step_before = c1.world_model.state.step
+    c1.shutdown()   # saves world model
+
+    c2 = _wm_controller(tmp)
+    assert c2.world_model.state.step == step_before, "World state should persist across restarts"
+    c2.shutdown()
 
 
 # ---------------------------------------------------------------------------
@@ -1938,6 +2061,16 @@ if __name__ == "__main__":
         test_controller_agent_nyx_routing,
         test_controller_routed_to_agent_field,
         test_controller_agent_results_in_dict,
+        # World model integration
+        test_wm_loaded,
+        test_wm_disabled,
+        test_wm_think_fields,
+        test_wm_learns_across_queries,
+        test_wm_recall,
+        test_wm_step_advances,
+        test_wm_stats,
+        test_wm_consolidate,
+        test_wm_persistence,
         # NOVA
         test_nova_can_handle_high,
         test_nova_can_handle_low,

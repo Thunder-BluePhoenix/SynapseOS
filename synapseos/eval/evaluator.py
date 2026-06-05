@@ -132,6 +132,7 @@ class SynapseOSEvaluator:
                 mode_timeout=20.0,
                 max_parallel_modes=2,
                 enable_idle_loop=False,
+                enable_world_model=False,   # eval measures the core pipeline deterministically
             )
         return self._controller
 

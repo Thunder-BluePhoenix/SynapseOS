@@ -84,6 +84,10 @@ class CognitionResult:
     confidence: float
     agent_results: list = field(default_factory=list)   # AgentResult objects
     routed_to_agent: str = ""                           # name of winning agent, if any
+    # World-model conditioning (from the persistent z_t substrate)
+    surprise: float = 0.0                               # how novel this query was vs the world model
+    novelty: str = ""                                   # novel | familiar | expected | ""
+    recalled_episodes: list = field(default_factory=list)  # state-conditioned past experiences
 
     def to_dict(self) -> dict:
         return {
@@ -94,6 +98,9 @@ class CognitionResult:
             "confidence":       round(self.confidence, 3),
             "latency_ms":       round(self.total_latency_ms, 1),
             "routed_to_agent":  self.routed_to_agent,
+            "surprise":         round(self.surprise, 3),
+            "novelty":          self.novelty,
+            "recalled_episodes": self.recalled_episodes,
             "mode_results": [
                 {
                     "mode":       r.mode.value,
@@ -582,6 +589,8 @@ class CognitiveController:
         max_parallel_modes: int = 2,
         enable_idle_loop: bool = False,
         enable_agents: bool = True,
+        enable_world_model: bool = True,
+        world_model_dir: str = "data/world_model",
     ):
         self.router       = ModeRouter()
         self.executor     = ParallelExecutor(mode_timeout=mode_timeout)
@@ -595,8 +604,27 @@ class CognitiveController:
         self.max_parallel_modes = max_parallel_modes
         self._idle_loop = None
 
+        # Persistent world model: perceives every query, conditions reasoning on z_t.
+        # Optional + graceful — a failure here never breaks inference.
+        self.world_model = None
+        if enable_world_model:
+            self._init_world_model(world_model_dir)
+
         if enable_idle_loop:
             self._start_idle_loop(kg_path)
+
+    def _init_world_model(self, wm_dir: str) -> None:
+        try:
+            from synapseos.world_model.world_model import WorldModel
+            import os
+            self.world_model = WorldModel(
+                state_path=os.path.join(wm_dir, "state.json"),
+                episodes_path=os.path.join(wm_dir, "episodes.json"),
+                snapshot_dir=os.path.join(wm_dir, "snapshots"),
+            )
+        except Exception as e:
+            print(f"[CognitiveController] World model init failed ({e}) — disabled")
+            self.world_model = None
 
     def _start_idle_loop(self, kg_path: str) -> None:
         try:
@@ -627,6 +655,18 @@ class CognitiveController:
         # 1. Retrieve memory context
         ctx = self.memory.get_context(query)
         self.memory.set_working("current_query", query)
+
+        # 1b. World model: perceive the query (advances persistent z_t, measures
+        #     surprise/novelty) and recall state-conditioned past experiences.
+        wm_surprise, wm_novelty, recalled = 0.0, "", []
+        if self.world_model is not None:
+            try:
+                percept = self.world_model.perceive(query, tags=["query"])
+                wm_surprise, wm_novelty = percept.surprise, percept.novelty
+                recalled = [r.to_dict() for r in self.world_model.reason(query, top_k=3)]
+                self.memory.set_working("world_state_step", self.world_model.state.step)
+            except Exception:
+                pass
 
         # 2. Route to thinking modes
         if force_modes:
@@ -674,6 +714,17 @@ class CognitiveController:
                 confidence      = best_agent.confidence
                 routed_to_agent = best_agent.agent_name
 
+        # 4b. Condition the output on world-model experience: surface a relevant
+        #     recalled episode the system has actually lived through before.
+        if recalled:
+            top = recalled[0]
+            if top.get("score", 0) > 0.55 and top.get("text"):
+                primary_output += (
+                    f"\n\n[World model: related past experience "
+                    f"(relevance {top['score']:.2f}, surprise {top.get('surprise', 0):.2f}) — "
+                    f"\"{top['text'][:90]}\"]"
+                )
+
         total_ms = (time.time() - t0) * 1000
 
         result = CognitionResult(
@@ -687,6 +738,9 @@ class CognitiveController:
             confidence=confidence,
             agent_results=agent_results,
             routed_to_agent=routed_to_agent,
+            surprise=wm_surprise,
+            novelty=wm_novelty,
+            recalled_episodes=recalled,
         )
 
         # 5. Record in episodic memory
@@ -700,17 +754,54 @@ class CognitiveController:
             tags=[output_type] + [m.value for m in modes],
         )
 
+        # 5b. World model perceives the OUTCOME — the system remembers what it did,
+        #     so future reasoning is conditioned on its own actions, not just inputs.
+        if self.world_model is not None:
+            try:
+                outcome = f"responded via {mode_tag}: {primary_output[:160]}"
+                self.world_model.perceive(outcome, tags=["response", output_type])
+            except Exception:
+                pass
+
         return result
+
+    def consolidate_world_model(self) -> dict:
+        """
+        Run a consolidation pass on the world model (replay salient episodes,
+        distill temporal patterns into semantic memory). Call during idle time.
+        """
+        if self.world_model is None:
+            return {"consolidated": False}
+        try:
+            from synapseos.world_model.consolidation import Consolidator
+            c = Consolidator(self.world_model, semantic_memory=self.memory.semantic)
+            report = c.consolidate()
+            return {"consolidated": True, **report.to_dict()}
+        except Exception as e:
+            return {"consolidated": False, "error": str(e)}
 
     def shutdown(self) -> None:
         if self._idle_loop:
             self._idle_loop.stop()
         self.memory.save()
+        if self.world_model is not None:
+            try:
+                self.world_model.save()
+            except Exception:
+                pass
 
     def stats(self) -> dict:
         s = self.memory.stats()
         s["idle_loop_active"] = self._idle_loop is not None
         s["agents_loaded"] = self.agent_router.agent_names if self.agent_router else []
+        if self.world_model is not None:
+            s["world_model"] = {
+                "step":         self.world_model.state.step,
+                "surprise_ema": round(self.world_model.state.surprise_ema, 3),
+                "episodes":     len(self.world_model.memory),
+            }
+        else:
+            s["world_model"] = None
         return s
 
 
@@ -738,6 +829,8 @@ def main():
 
     print(f"Modes activated  : {[m.value for m in result.modes_activated]}")
     print(f"Routed to agent  : {result.routed_to_agent or '(none — modes primary)'}")
+    print(f"World model      : surprise={result.surprise:.2f} ({result.novelty or 'n/a'}) | "
+          f"recalled {len(result.recalled_episodes)} past experiences")
     print(f"Output type      : {result.output_type}")
     print(f"Confidence       : {result.confidence:.3f}")
     print(f"Total latency    : {result.total_latency_ms:.1f}ms")

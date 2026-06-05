@@ -1,6 +1,6 @@
 # SynapseOS — Implementation Tracker
 
-> Last updated: 2026-06-04 (real STT via whisper.cpp + World Model substrate + real multi-node transport — 351 tests passing)
+> Last updated: 2026-06-04 (World Model wired into CognitiveController + real CLIP/SigLIP vision + image perception — 374 tests passing)
 
 ---
 
@@ -212,11 +212,13 @@
 | Multi-node gRPC | `phase5/transport.py` — stdlib HTTP/JSON node servers + `NetworkBus` (no grpc install) | **Real cross-machine TCP** | 3 node servers, real routing, graceful fault tolerance (11/11 tests) |
 | World model (the real gap) | `synapseos/world_model/` — persistent z_t, surprise-gated memory, consolidation | **Running substrate** | learns routines→expected, distills temporal patterns to semantic KG (36/36 tests) |
 
-### ⏳ Still genuinely needs a model download
+### ✅ Vision resolved (practical route) — 2026-06-04
 
-| Blocker | Affects | Local status | Full unblock |
+| Former blocker | Resolution | Status | Proof |
 |---|---|---|---|
-| `clip` / `open_clip` | CLIP vision encoder | Not yet aliased — needs pretrained weights (can't reproduce from code) | `pip install open_clip_torch` + SigLIP/CLIP weights; JEPA-vision later |
+| `clip` / `open_clip` | `local/vision.py` — `VisionEncoder` (SigLIP ViT-B-16 → CLIP ViT-B-32 → stub) | **Real semantics on MPS** | zero-shot grounding: "a red square" top-ranks its own image; wired into `WorldModel.perceive_image()` |
+
+Installed `open_clip_torch` + `transformers`; SigLIP `webli` weights cached. **JEPA-vision (training an image world model from scratch) is the RESEARCH route — tracked for later, not done yet.**
 
 ### CUDA path (unchanged — for when a GPU box is available)
 
@@ -278,3 +280,29 @@ Demonstrated: a repeated routine goes novel→familiar→**expected** and stops 
 - Reclassified from "blocker" to "deployment concern" — proven working, real multi-host is just config
 
 **Tests:** `test_world_model.py` 36/36 · `test_transport.py` 11/11 · `test_local.py` 37/37 (incl. STT) · **total 351 passing**
+
+---
+
+## World Model wired into the live system + Vision (2026-06-04)
+
+### World Model now drives CognitiveController.think()
+The world model is no longer standalone — it conditions live reasoning:
+- `CognitiveController(enable_world_model=True)` (default) loads a persistent `WorldModel` at `data/world_model/`
+- Every `think(query)`: **perceives the query** (advances z_t, measures surprise/novelty), **recalls state-conditioned past experiences**, conditions the output with the most relevant lived experience, then **perceives its own response** (the system remembers what it did)
+- `CognitionResult` gains `surprise`, `novelty`, `recalled_episodes`
+- `consolidate_world_model()` runs replay/distillation into semantic memory (call during idle)
+- Demonstrated: the same query repeated goes **novel → familiar → expected** across calls — the live system learns familiarity; state persists across restarts
+- Eval controller sets `enable_world_model=False` to keep the baseline deterministic
+
+### Vision — practical route (real CLIP/SigLIP)
+- `synapseos/local/vision.py` — `VisionEncoder`: SigLIP `ViT-B-16-SigLIP` (webli) → CLIP `ViT-B-32` → deterministic stub
+- Real zero-shot grounding on MPS: an image's matching text label ranks highest ("cat ≈ image(cat)")
+- `WorldModel.perceive_image(image, caption=...)` — images run the **same predictive loop** as text/speech; one persistent z_t integrates all modalities
+- Installed `open_clip_torch` + `transformers`; weights cached
+- **JEPA-vision (image world model trained from scratch) = research route, deferred to later** per plan
+
+**Tests:** `test_vision.py` 14/14 · world-model integration 9 tests in `test_phase5.py` · **total 374 passing**
+
+### Still open
+- JEPA-vision research route (train image→latent world model from scratch on MPS) — tracked, not started
+- Cross-modal retrieval refinement: text-query vs image-obs live in different spaces, linked through shared z_t + captions; a unified CLIP text+image space would tighten it

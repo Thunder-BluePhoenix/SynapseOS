@@ -138,6 +138,7 @@ class WorldModel:
         from collections import Counter
         self._transition_counts: Counter = Counter()
         self._last_concept: str = ""
+        self._vision = None   # lazy CLIP/SigLIP encoder for perceive_image()
 
     # ------------------------------------------------------------------
     # Persistence of the neural net
@@ -159,8 +160,34 @@ class WorldModel:
     # ------------------------------------------------------------------
 
     def perceive(self, text: str, dt: float = 1.0, tags: list[str] | None = None) -> PerceptionResult:
-        """Run one full perception step. This is where experience accumulates."""
+        """Perceive a text observation. This is where experience accumulates."""
         o_t = self.encoder.encode(text).to(self.device)
+        return self._perceive_obs(o_t, label=text, concept_text=text, dt=dt, tags=tags)
+
+    def perceive_image(self, image, dt: float = 1.0, tags: list[str] | None = None,
+                       caption: str | None = None) -> PerceptionResult:
+        """
+        Perceive an image observation — runs the SAME predictive loop as text.
+        Uses the real CLIP/SigLIP vision encoder (synapseos.local.vision) so the
+        image obs carries semantics; falls back to a deterministic stub if absent.
+
+        `caption` (optional) labels the episode and seeds the sequential concept;
+        without it images are tagged generically.
+        """
+        if self._vision is None:
+            from synapseos.local.vision import VisionEncoder
+            self._vision = VisionEncoder(obs_dim=self.obs_dim)
+        emb = self._vision.encode_image(image)
+        o_t = emb.obs_tensor().to(self.device)
+        label = caption or f"[image:{emb.model_used}:{emb.dim}d]"
+        return self._perceive_obs(
+            o_t, label=label, concept_text=(caption or "image"),
+            dt=dt, tags=(tags or []) + ["image", emb.model_used],
+        )
+
+    def _perceive_obs(self, o_t: torch.Tensor, label: str, concept_text: str,
+                      dt: float = 1.0, tags: list[str] | None = None) -> PerceptionResult:
+        """Modality-agnostic core: surprise → evolve → predict → online-learn → store."""
         z_prev = self.state.z_tensor(self.device)
         prediction_prev = torch.tensor(self.state.prediction, dtype=torch.float32, device=self.device)
 
@@ -183,17 +210,16 @@ class WorldModel:
             loss = 1.0 - F.cosine_similarity(pred.unsqueeze(0), o_t.unsqueeze(0)).mean()
             self.opt.zero_grad(); loss.backward(); self.opt.step()
             pred_err = float(loss.item())
-            # refresh state/prediction with updated weights
             with torch.no_grad():
                 z_t = self.net.evolve(o_t.unsqueeze(0), z_prev.unsqueeze(0), dt).squeeze(0)
                 prediction_next = self.net.predict(z_t.unsqueeze(0)).squeeze(0)
 
         # 4. Surprise-gated episodic write
-        episode = self.memory.write(text, o_t, z_t, surprise, self.state.step, tags)
+        episode = self.memory.write(label, o_t, z_t, surprise, self.state.step, tags)
         stored  = episode is not None
 
         # 5. Track sequential structure (every perception, stored or not)
-        concept = self._concept(text)
+        concept = self._concept(concept_text)
         if self._last_concept and concept != self._last_concept:
             self._transition_counts[(self._last_concept, concept)] += 1
         self._last_concept = concept
@@ -209,7 +235,7 @@ class WorldModel:
                    "expected")
 
         return PerceptionResult(
-            text=text,
+            text=label,
             surprise=round(surprise, 4),
             stored=stored,
             episode_id=episode.id if episode else "",
