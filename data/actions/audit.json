@@ -21,6 +21,17 @@
       "error": "",
       "duration_ms": 10.759115219116211,
       "timestamp": 1781218877.2014039
+    },
+    {
+      "tool": "shell.run",
+      "args": {
+        "command": "echo cognitive-hands"
+      },
+      "ok": true,
+      "output": "cognitive-hands\n",
+      "error": "",
+      "duration_ms": 3.824949264526367,
+      "timestamp": 1781218992.579332
     }
   ]
 }

@@ -1,0 +1,25 @@
+{
+  "weights": {
+    "symmetry": 0.5,
+    "economy": 0.5,
+    "surprise": 0.5,
+    "coherence": 0.5,
+    "depth": 0.5
+  },
+  "exposures": 1,
+  "reactions": [
+    {
+      "subject": "Euler",
+      "kind": "proof",
+      "scores": {
+        "symmetry": 0.5,
+        "economy": 0.444,
+        "surprise": 0.0,
+        "coherence": 0.125,
+        "depth": 0.286
+      },
+      "elegance": 0.271,
+      "timestamp": 1781218993.781781
+    }
+  ]
+}

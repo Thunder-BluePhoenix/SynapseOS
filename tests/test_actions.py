@@ -220,13 +220,18 @@ def test_scheduler_thread():
 # KARMA agent
 # ---------------------------------------------------------------------------
 
-def _karma():
+def _karma(trust=TRUSTED, outbox_auto=False):
     from synapseos.phase5.agents.karma import KARMAAgent
+    from synapseos.identity import Outbox
     d = tempfile.mkdtemp(prefix="actions_test_")
-    policy = PermissionPolicy(workspace=os.path.join(d, "ws"), read_roots=[d])
+    policy = PermissionPolicy(trust_level=trust, workspace=os.path.join(d, "ws"),
+                              read_roots=[d])
     ex = ActionExecutor(policy=policy, audit_path=os.path.join(d, "audit.json"))
+    outbox = Outbox(ex, store_path=os.path.join(d, "outbox.json"),
+                    auto_approve=outbox_auto)
     return KARMAAgent(executor=ex,
-                      scheduler=TaskScheduler(ex, store_path=os.path.join(d, "s.json")))
+                      scheduler=TaskScheduler(ex, store_path=os.path.join(d, "s.json")),
+                      outbox=outbox)
 
 
 @test("KARMA routes action queries, not creative ones")
@@ -277,6 +282,31 @@ def test_karma_audit():
     assert "shell.run" in result.output
 
 
+@test("KARMA runs python code")
+def test_karma_code():
+    result = _karma().handle("run python print('hands-can-code')")
+    assert "hands-can-code" in result.output
+
+
+@test("KARMA drafts email to the approval outbox (not sent)")
+def test_karma_email_draft():
+    agent = _karma()
+    result = agent.handle("send email to customer@shop.com about Order saying "
+                          "your order has shipped")
+    assert result.structured["kind"] == "draft"
+    assert result.structured["status"] == "pending"      # held for approval
+    assert len(agent._outbox.pending()) == 1
+
+
+@test("KARMA outbox auto-approve sends when enabled (no creds → fails cleanly)")
+def test_karma_outbox_autoapprove():
+    agent = _karma(outbox_auto=True)
+    result = agent.handle("send email to x@y.com saying hello")
+    # auto-approve attempted send; without creds it lands failed, not pending
+    item = agent._outbox.history()[-1]
+    assert item.status in ("failed", "sent")
+
+
 @test("controller routes action query to KARMA end to end")
 def test_controller_karma():
     from synapseos.phase5.cognitive_controller import CognitiveController
@@ -300,10 +330,13 @@ def test_controller_karma():
 if __name__ == "__main__":
     tests = [
         test_write_sandbox, test_read_roots, test_shell_allowlist,
+        test_trust_tiers, test_full_shell,
         test_audit, test_dry_run, test_list_search,
+        test_code_python, test_registry, test_email_no_creds,
         test_scheduler, test_scheduler_thread,
         test_karma_routing, test_karma_command, test_karma_refusal,
         test_karma_write, test_karma_schedule, test_karma_audit,
+        test_karma_code, test_karma_email_draft, test_karma_outbox_autoapprove,
         test_controller_karma,
     ]
 

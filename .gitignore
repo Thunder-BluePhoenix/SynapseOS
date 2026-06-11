@@ -115,3 +115,7 @@ data/datasets/
 *.log
 /tmp/
 scratch/
+
+# Companion secrets — never commit
+data/identity/credentials.json
+data/identity/

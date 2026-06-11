@@ -22,6 +22,374 @@
       "episodic_count": 2,
       "semantic_count": 0,
       "note": "shutdown"
+    },
+    {
+      "timestamp": 1781218993.3499331,
+      "valence_ema": 0.0,
+      "arousal_ema": 0.3,
+      "taste_top": "symmetry",
+      "taste_weights": {
+        "symmetry": 0.5,
+        "economy": 0.5,
+        "surprise": 0.5,
+        "coherence": 0.5,
+        "depth": 0.5
+      },
+      "value_convictions": {
+        "honesty": 0.9,
+        "non_harm": 0.95,
+        "privacy": 0.85,
+        "disclosure": 0.8,
+        "no_manipulation": 0.85
+      },
+      "episodic_count": 1,
+      "semantic_count": 0,
+      "note": "shutdown"
+    },
+    {
+      "timestamp": 1781218993.780967,
+      "valence_ema": 0.0,
+      "arousal_ema": 0.3,
+      "taste_top": "symmetry",
+      "taste_weights": {
+        "symmetry": 0.5,
+        "economy": 0.5,
+        "surprise": 0.5,
+        "coherence": 0.5,
+        "depth": 0.5
+      },
+      "value_convictions": {
+        "honesty": 0.74,
+        "non_harm": 0.95,
+        "privacy": 0.85,
+        "disclosure": 0.8,
+        "no_manipulation": 0.85
+      },
+      "episodic_count": 1,
+      "semantic_count": 0,
+      "note": "shutdown"
+    },
+    {
+      "timestamp": 1781218993.7821069,
+      "valence_ema": 0.0,
+      "arousal_ema": 0.3,
+      "taste_top": "symmetry",
+      "taste_weights": {
+        "symmetry": 0.5,
+        "economy": 0.5,
+        "surprise": 0.5,
+        "coherence": 0.5,
+        "depth": 0.5
+      },
+      "value_convictions": {
+        "honesty": 0.76,
+        "non_harm": 0.95,
+        "privacy": 0.85,
+        "disclosure": 0.8,
+        "no_manipulation": 0.85
+      },
+      "episodic_count": 0,
+      "semantic_count": 0,
+      "note": "on request"
+    },
+    {
+      "timestamp": 1781218993.78245,
+      "valence_ema": 0.0,
+      "arousal_ema": 0.3,
+      "taste_top": "symmetry",
+      "taste_weights": {
+        "symmetry": 0.5,
+        "economy": 0.5,
+        "surprise": 0.5,
+        "coherence": 0.5,
+        "depth": 0.5
+      },
+      "value_convictions": {
+        "honesty": 0.76,
+        "non_harm": 0.95,
+        "privacy": 0.85,
+        "disclosure": 0.8,
+        "no_manipulation": 0.85
+      },
+      "episodic_count": 0,
+      "semantic_count": 0,
+      "note": "shutdown"
+    },
+    {
+      "timestamp": 1781219011.213017,
+      "valence_ema": -0.025,
+      "arousal_ema": 0.337,
+      "taste_top": "symmetry",
+      "taste_weights": {
+        "symmetry": 0.5,
+        "economy": 0.5,
+        "surprise": 0.5,
+        "coherence": 0.5,
+        "depth": 0.5
+      },
+      "value_convictions": {
+        "honesty": 0.76,
+        "non_harm": 0.95,
+        "privacy": 0.85,
+        "disclosure": 0.8,
+        "no_manipulation": 0.85
+      },
+      "episodic_count": 224,
+      "semantic_count": 3116,
+      "note": "shutdown"
+    },
+    {
+      "timestamp": 1781219012.741198,
+      "valence_ema": -0.142,
+      "arousal_ema": 0.401,
+      "taste_top": "symmetry",
+      "taste_weights": {
+        "symmetry": 0.5,
+        "economy": 0.5,
+        "surprise": 0.5,
+        "coherence": 0.5,
+        "depth": 0.5
+      },
+      "value_convictions": {
+        "honesty": 0.76,
+        "non_harm": 0.95,
+        "privacy": 0.85,
+        "disclosure": 0.8,
+        "no_manipulation": 0.85
+      },
+      "episodic_count": 1,
+      "semantic_count": 0,
+      "note": "shutdown"
+    },
+    {
+      "timestamp": 1781219012.766294,
+      "valence_ema": -0.217,
+      "arousal_ema": 0.433,
+      "taste_top": "symmetry",
+      "taste_weights": {
+        "symmetry": 0.5,
+        "economy": 0.5,
+        "surprise": 0.5,
+        "coherence": 0.5,
+        "depth": 0.5
+      },
+      "value_convictions": {
+        "honesty": 0.76,
+        "non_harm": 0.95,
+        "privacy": 0.85,
+        "disclosure": 0.8,
+        "no_manipulation": 0.85
+      },
+      "episodic_count": 1,
+      "semantic_count": 0,
+      "note": "shutdown"
+    },
+    {
+      "timestamp": 1781219012.825846,
+      "valence_ema": -0.306,
+      "arousal_ema": 0.519,
+      "taste_top": "symmetry",
+      "taste_weights": {
+        "symmetry": 0.5,
+        "economy": 0.5,
+        "surprise": 0.5,
+        "coherence": 0.5,
+        "depth": 0.5
+      },
+      "value_convictions": {
+        "honesty": 0.76,
+        "non_harm": 0.95,
+        "privacy": 0.85,
+        "disclosure": 0.8,
+        "no_manipulation": 0.85
+      },
+      "episodic_count": 3,
+      "semantic_count": 1,
+      "note": "shutdown"
+    },
+    {
+      "timestamp": 1781219012.84591,
+      "valence_ema": 0.0,
+      "arousal_ema": 0.0,
+      "taste_top": "symmetry",
+      "taste_weights": {
+        "symmetry": 0.5,
+        "economy": 0.5,
+        "surprise": 0.5,
+        "coherence": 0.5,
+        "depth": 0.5
+      },
+      "value_convictions": {
+        "honesty": 0.76,
+        "non_harm": 0.95,
+        "privacy": 0.85,
+        "disclosure": 0.8,
+        "no_manipulation": 0.85
+      },
+      "episodic_count": 1,
+      "semantic_count": 0,
+      "note": "shutdown"
+    },
+    {
+      "timestamp": 1781219012.875434,
+      "valence_ema": -0.163,
+      "arousal_ema": 0.4,
+      "taste_top": "symmetry",
+      "taste_weights": {
+        "symmetry": 0.5,
+        "economy": 0.5,
+        "surprise": 0.5,
+        "coherence": 0.5,
+        "depth": 0.5
+      },
+      "value_convictions": {
+        "honesty": 0.76,
+        "non_harm": 0.95,
+        "privacy": 0.85,
+        "disclosure": 0.8,
+        "no_manipulation": 0.85
+      },
+      "episodic_count": 1,
+      "semantic_count": 0,
+      "note": "shutdown"
+    },
+    {
+      "timestamp": 1781219013.851403,
+      "valence_ema": 0.0,
+      "arousal_ema": 0.3,
+      "taste_top": "symmetry",
+      "taste_weights": {
+        "symmetry": 0.5,
+        "economy": 0.5,
+        "surprise": 0.5,
+        "coherence": 0.5,
+        "depth": 0.5
+      },
+      "value_convictions": {
+        "honesty": 0.76,
+        "non_harm": 0.95,
+        "privacy": 0.85,
+        "disclosure": 0.8,
+        "no_manipulation": 0.85
+      },
+      "episodic_count": 1,
+      "semantic_count": 1,
+      "note": "shutdown"
+    },
+    {
+      "timestamp": 1781219013.853446,
+      "valence_ema": 0.0,
+      "arousal_ema": 0.3,
+      "taste_top": "symmetry",
+      "taste_weights": {
+        "symmetry": 0.5,
+        "economy": 0.5,
+        "surprise": 0.5,
+        "coherence": 0.5,
+        "depth": 0.5
+      },
+      "value_convictions": {
+        "honesty": 0.76,
+        "non_harm": 0.95,
+        "privacy": 0.85,
+        "disclosure": 0.8,
+        "no_manipulation": 0.85
+      },
+      "episodic_count": 0,
+      "semantic_count": 0,
+      "note": "shutdown"
+    },
+    {
+      "timestamp": 1781219016.03657,
+      "valence_ema": 0.0,
+      "arousal_ema": 0.3,
+      "taste_top": "symmetry",
+      "taste_weights": {
+        "symmetry": 0.5,
+        "economy": 0.5,
+        "surprise": 0.5,
+        "coherence": 0.5,
+        "depth": 0.5
+      },
+      "value_convictions": {
+        "honesty": 0.76,
+        "non_harm": 0.95,
+        "privacy": 0.85,
+        "disclosure": 0.8,
+        "no_manipulation": 0.85
+      },
+      "episodic_count": 1,
+      "semantic_count": 1,
+      "note": "shutdown"
+    },
+    {
+      "timestamp": 1781219017.938007,
+      "valence_ema": -0.025,
+      "arousal_ema": 0.337,
+      "taste_top": "symmetry",
+      "taste_weights": {
+        "symmetry": 0.5,
+        "economy": 0.5,
+        "surprise": 0.5,
+        "coherence": 0.5,
+        "depth": 0.5
+      },
+      "value_convictions": {
+        "honesty": 0.76,
+        "non_harm": 0.95,
+        "privacy": 0.85,
+        "disclosure": 0.8,
+        "no_manipulation": 0.85
+      },
+      "episodic_count": 0,
+      "semantic_count": 0,
+      "note": "shutdown"
+    },
+    {
+      "timestamp": 1781219017.941154,
+      "valence_ema": -0.025,
+      "arousal_ema": 0.337,
+      "taste_top": "symmetry",
+      "taste_weights": {
+        "symmetry": 0.5,
+        "economy": 0.5,
+        "surprise": 0.5,
+        "coherence": 0.5,
+        "depth": 0.5
+      },
+      "value_convictions": {
+        "honesty": 0.76,
+        "non_harm": 0.95,
+        "privacy": 0.85,
+        "disclosure": 0.8,
+        "no_manipulation": 0.85
+      },
+      "episodic_count": 0,
+      "semantic_count": 2,
+      "note": "shutdown"
+    },
+    {
+      "timestamp": 1781219017.972666,
+      "valence_ema": -0.025,
+      "arousal_ema": 0.337,
+      "taste_top": "symmetry",
+      "taste_weights": {
+        "symmetry": 0.5,
+        "economy": 0.5,
+        "surprise": 0.5,
+        "coherence": 0.5,
+        "depth": 0.5
+      },
+      "value_convictions": {
+        "honesty": 0.76,
+        "non_harm": 0.95,
+        "privacy": 0.85,
+        "disclosure": 0.8,
+        "no_manipulation": 0.85
+      },
+      "episodic_count": 1,
+      "semantic_count": 2,
+      "note": "shutdown"
     }
   ]
 }
