@@ -88,6 +88,8 @@ class CognitionResult:
     surprise: float = 0.0                               # how novel this query was vs the world model
     novelty: str = ""                                   # novel | familiar | expected | ""
     recalled_episodes: list = field(default_factory=list)  # state-conditioned past experiences
+    # Affect (non-LLM emotion detection + tracked state)
+    affect: dict = field(default_factory=dict)          # detected emotion in this query + running state
 
     def to_dict(self) -> dict:
         return {
@@ -420,13 +422,18 @@ class ResultSynthesizer:
 
     # Facts from these sources were learned (web, consolidation, user) rather
     # than imported from the curated KG — the KG already feeds the modes.
-    _LEARNED_SOURCES = ("web:", "world_model_consolidation", "user_stated", "inferred")
+    _LEARNED_SOURCES = ("web:", "world_model_consolidation", "user_stated", "inferred",
+                        "affect_observation")
 
     _PREDICATE_TEXT = {
         "is_a": "is a", "part_of": "is part of", "located_in": "is located in",
         "created_by": "was created by", "used_for": "is used for",
         "causes": "causes", "has_property": "has", "born_in": "was born in",
         "died_in": "died in",
+        "frustrated_by": "is frustrated by", "angered_by": "is angered by",
+        "anxious_about": "is anxious about", "saddened_by": "is saddened by",
+        "enjoys": "enjoys", "excited_by": "is excited by",
+        "grateful_for": "is grateful for", "uncertain_about": "is uncertain about",
     }
 
     def _learned_facts(self, context: MemoryContext) -> list[dict]:
@@ -556,6 +563,19 @@ class AgentRouter:
             self._agents.append(ATLASAgent(self._kg_path, self._rules_path))
         except Exception as e:
             print(f"[AgentRouter] ATLAS load failed: {e}")
+        try:
+            from synapseos.phase5.agents.advisors import ALL_ADVISORS
+            for advisor_cls in ALL_ADVISORS:
+                self._agents.append(advisor_cls())
+        except Exception as e:
+            print(f"[AgentRouter] Advisors load failed: {e}")
+
+    def wire_advisors(self, **resources) -> None:
+        """Inject shared resources (memory, tracker, world model, web loop)."""
+        from synapseos.phase5.agents.advisors import AdvisorAgent
+        for agent in self._agents:
+            if isinstance(agent, AdvisorAgent):
+                agent.wire(**resources)
 
     def score(self, query: str) -> list[tuple[float, Any]]:
         """Return (confidence, agent) pairs for agents above threshold, highest first."""
@@ -632,6 +652,8 @@ class CognitiveController:
         web_data_dir: str = "data/web",
         web_allowed_domains: list[str] | None = None,
         web_fetcher=None,
+        enable_affect: bool = True,
+        affect_state_path: str = "data/affect/state.json",
     ):
         self.router       = ModeRouter()
         self.executor     = ParallelExecutor(mode_timeout=mode_timeout)
@@ -660,6 +682,31 @@ class CognitiveController:
         if enable_web_learning:
             self._init_web_learning(web_data_dir, kg_path, web_allowed_domains,
                                     web_fetcher)
+
+        # Affect: non-LLM emotion detection + persistent emotional state +
+        # response modulation (Level 3: respond appropriately).
+        self.emotion_tracker = None
+        self.response_modulator = None
+        if enable_affect:
+            try:
+                from synapseos.affect import EmotionTracker, ResponseModulator
+                self.emotion_tracker = EmotionTracker(
+                    semantic_memory=self.memory.semantic,
+                    state_path=affect_state_path,
+                )
+                self.response_modulator = ResponseModulator()
+            except Exception as e:
+                print(f"[CognitiveController] Affect init failed ({e}) — disabled")
+
+        # Advisor personas share the companion's memory, emotional state,
+        # world model and learning loop.
+        if self.agent_router is not None:
+            self.agent_router.wire_advisors(
+                semantic_memory=self.memory.semantic,
+                emotion_tracker=self.emotion_tracker,
+                world_model=self.world_model,
+                web_loop=self.web_loop,
+            )
 
     def _init_web_learning(self, web_dir: str, kg_path: str,
                            allowed_domains: list[str] | None, fetcher) -> None:
@@ -753,12 +800,32 @@ class CognitiveController:
         ctx = self.memory.get_context(query)
         self.memory.set_working("current_query", query)
 
+        # 1a. Affect: detect emotion in the query, fold into the running state.
+        #     The emotional tag rides along with the world-model episode so
+        #     recall is mood-aware ("last time he sounded like this...").
+        affect_info: dict = {}
+        affect_obj = None
+        query_tags = ["query"]
+        if self.emotion_tracker is not None:
+            try:
+                affect = self.emotion_tracker.observe(query)
+                affect_obj = affect
+                affect_info = {
+                    "detected": affect.to_dict(),
+                    "state": self.emotion_tracker.state.describe(),
+                }
+                self.memory.set_working("user_affect", affect.as_text())
+                if not affect.is_neutral:
+                    query_tags.append(f"emotion:{affect.dominant_emotion}")
+            except Exception:
+                pass
+
         # 1b. World model: perceive the query (advances persistent z_t, measures
         #     surprise/novelty) and recall state-conditioned past experiences.
         wm_surprise, wm_novelty, recalled = 0.0, "", []
         if self.world_model is not None:
             try:
-                percept = self.world_model.perceive(query, tags=["query"])
+                percept = self.world_model.perceive(query, tags=query_tags)
                 wm_surprise, wm_novelty = percept.surprise, percept.novelty
                 recalled = [r.to_dict() for r in self.world_model.reason(query, top_k=3)]
                 self.memory.set_working("world_state_step", self.world_model.state.step)
@@ -822,6 +889,18 @@ class CognitiveController:
                     f"\"{top['text'][:90]}\"]"
                 )
 
+        # 4c. Level 3 — respond appropriately: shape the output to the user's
+        #     current message affect AND tracked emotional state.
+        if self.response_modulator is not None and self.emotion_tracker is not None:
+            try:
+                mod = self.response_modulator.modulate(
+                    primary_output, affect_obj, self.emotion_tracker.state, query)
+                primary_output = mod.output
+                if mod.adjustments:
+                    affect_info["adjustments"] = mod.adjustments
+            except Exception:
+                pass
+
         total_ms = (time.time() - t0) * 1000
 
         result = CognitionResult(
@@ -838,6 +917,7 @@ class CognitiveController:
             surprise=wm_surprise,
             novelty=wm_novelty,
             recalled_episodes=recalled,
+            affect=affect_info,
         )
 
         # 5. Record in episodic memory
@@ -885,6 +965,11 @@ class CognitiveController:
                 self.web_loop.stop()
             except Exception:
                 pass
+        if self.emotion_tracker is not None:
+            try:
+                self.emotion_tracker.save()
+            except Exception:
+                pass
         self.memory.save()
         if self.world_model is not None:
             try:
@@ -905,6 +990,7 @@ class CognitiveController:
         else:
             s["world_model"] = None
         s["web_learning"] = self.web_loop.stats() if self.web_loop is not None else None
+        s["affect"] = self.emotion_tracker.stats() if self.emotion_tracker is not None else None
         return s
 
 

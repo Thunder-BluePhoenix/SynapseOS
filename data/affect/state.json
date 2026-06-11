@@ -1,0 +1,11 @@
+{
+  "state": {
+    "valence_ema": 0.0,
+    "arousal_ema": 0.3,
+    "dominant_emotion": "neutral",
+    "observations": 0,
+    "last_shift": "",
+    "updated_at": 1781211731.48278
+  },
+  "trigger_counts": {}
+}

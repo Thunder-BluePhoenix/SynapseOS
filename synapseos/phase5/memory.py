@@ -297,7 +297,8 @@ class SemanticMemory:
 
     # Sources representing knowledge the system acquired (web learning,
     # consolidation, user statements) rather than the bulk KG import.
-    LEARNED_SOURCES = ("web:", "world_model_consolidation", "user_stated", "inferred")
+    LEARNED_SOURCES = ("web:", "world_model_consolidation", "user_stated", "inferred",
+                       "affect_observation")
 
     def retrieve_learned(self, query: str, top_k: int = 3) -> list[SemanticFact]:
         """

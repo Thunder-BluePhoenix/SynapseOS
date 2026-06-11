@@ -18,8 +18,11 @@ Three layers, all deterministic and auditable (no neural language model):
 from synapseos.affect.text_affect import AffectResult, TextAffectDetector
 from synapseos.affect.prosody import ProsodyResult, analyze_wav
 from synapseos.affect.tracker import EmotionalState, EmotionTracker
+from synapseos.affect.responder import ModulationResult, ResponseModulator
 
 __all__ = [
+    "ModulationResult",
+    "ResponseModulator",
     "AffectResult",
     "TextAffectDetector",
     "ProsodyResult",
