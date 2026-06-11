@@ -27,6 +27,7 @@ from synapseos.web.belief import BeliefReviser
 from synapseos.web.curiosity import CuriosityEngine, LearningGoal
 from synapseos.web.extractor import FactExtractor, TextExtractor
 from synapseos.web.fetcher import BaseFetcher
+from synapseos.web.media import MediaIngester, classify_media
 
 
 @dataclass
@@ -59,6 +60,7 @@ class WebLearningLoop:
         world_model=None,
         text_extractor: TextExtractor | None = None,
         fact_extractor: FactExtractor | None = None,
+        media_ingester=None,           # MediaIngester | FakeMediaIngester | None
         data_dir: str = "data/web",
         max_pages_per_goal: int = 3,
         idle_threshold: float = 10.0,
@@ -69,6 +71,8 @@ class WebLearningLoop:
         self.world_model = world_model
         self.text_extractor = text_extractor or TextExtractor()
         self.fact_extractor = fact_extractor or FactExtractor()
+        # Default real ingester is lazy — whisper/yt-dlp only load when media URLs appear
+        self.media = media_ingester if media_ingester is not None else MediaIngester()
         self.max_pages_per_goal = max_pages_per_goal
         self.idle_threshold = idle_threshold
 
@@ -88,6 +92,15 @@ class WebLearningLoop:
     def learn(self, topic: str) -> LearnReport:
         """Learn one explicit topic right now."""
         goal = self.curiosity.add_user_topic(topic)
+        report = self._pursue(goal)
+        self._persist()
+        return report
+
+    def learn_url(self, url: str, topic: str | None = None) -> LearnReport:
+        """Learn from one explicit URL — a web page, YouTube video, or audio file."""
+        topic = topic or url
+        goal = self.curiosity.add_user_topic(topic)
+        goal.urls = [url]
         report = self._pursue(goal)
         self._persist()
         return report
@@ -180,6 +193,21 @@ class WebLearningLoop:
 
     def _fetch_text(self, kind: str, ref: str, report: LearnReport) -> tuple[str, str]:
         """Fetch one source, return (clean_text, url)."""
+        # Media URLs (YouTube, audio, video) go through transcription
+        if kind == "url" and self.media is not None and classify_media(ref):
+            try:
+                media = self.media.ingest(ref)
+            except Exception as e:
+                report.errors.append(f"media ingest failed: {ref} ({e})")
+                return "", ref
+            if not media.ok:
+                report.errors.append(f"media ingest failed: {ref} ({media.error})")
+                return "", ref
+            text = media.text
+            if media.title:
+                text = f"{media.title}. {text}"
+            return text, ref
+
         if kind == "wiki":
             result = self.fetcher.wiki_summary(ref)
             if not result.ok:

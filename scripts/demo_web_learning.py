@@ -37,6 +37,8 @@ OFFLINE_WIKI = {
 def main() -> None:
     parser = argparse.ArgumentParser(description="SynapseOS Web Learning demo")
     parser.add_argument("--topic", default="Photosynthesis")
+    parser.add_argument("--url", default=None,
+                        help="learn from a specific URL — web page, YouTube video, or audio file")
     parser.add_argument("--n-goals", type=int, default=0,
                         help="run N curiosity-driven goals instead of a single topic")
     parser.add_argument("--offline", action="store_true",
@@ -64,7 +66,10 @@ def main() -> None:
         print("Web learning failed to initialize — aborting")
         sys.exit(1)
 
-    if args.n_goals > 0:
+    if args.url:
+        print(f"\n→ Learning from URL: {args.url}")
+        reports = [controller.learn_from_url(args.url, topic=args.topic)]
+    elif args.n_goals > 0:
         print(f"\n→ Curiosity-driven batch: {args.n_goals} goals")
         reports = [r.to_dict() for r in controller.web_loop.run(args.n_goals)]
     else:

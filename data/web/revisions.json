@@ -83,6 +83,30 @@
       "action": "reinforced",
       "reason": "independent confirmation",
       "source_url": "https://en.wikipedia.org/wiki/Photosynthesis"
+    },
+    {
+      "timestamp": 1781209901.4091341,
+      "subject": "Alright, so here we",
+      "predicate": "located_in",
+      "old_obj": null,
+      "new_obj": "front of the elephants",
+      "old_confidence": 0.0,
+      "new_confidence": 0.6,
+      "action": "added",
+      "reason": "no conflicting belief",
+      "source_url": "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+    },
+    {
+      "timestamp": 1781209901.4093308,
+      "subject": "Cool thing about these guys is that they",
+      "predicate": "has_property",
+      "old_obj": null,
+      "new_obj": "really, really, really long fums",
+      "old_confidence": 0.0,
+      "new_confidence": 0.45,
+      "action": "added",
+      "reason": "no conflicting belief",
+      "source_url": "https://www.youtube.com/watch?v=jNQXAC9IVRw"
     }
   ]
 }

@@ -702,6 +702,12 @@ class CognitiveController:
             return {"error": "web learning is disabled (enable_web_learning=False)"}
         return self.web_loop.learn(topic).to_dict()
 
+    def learn_from_url(self, url: str, topic: str | None = None) -> dict:
+        """Learn from a specific URL — web page, YouTube video, or audio file."""
+        if self.web_loop is None:
+            return {"error": "web learning is disabled (enable_web_learning=False)"}
+        return self.web_loop.learn_url(url, topic=topic).to_dict()
+
     def _init_world_model(self, wm_dir: str) -> None:
         try:
             from synapseos.world_model.world_model import WorldModel

@@ -37,6 +37,7 @@ from synapseos.web.kg_writer import KGWriter
 from synapseos.web.belief import BeliefReviser, source_trust
 from synapseos.web.curiosity import CuriosityEngine, GoalQueue, LearningGoal
 from synapseos.web.learning_loop import WebLearningLoop
+from synapseos.web.media import FakeMediaIngester, classify_media, _parse_subtitles
 from synapseos.phase3.neurosymbolic_core import KnowledgeGraph
 from synapseos.phase5.memory import SemanticMemory
 from synapseos.phase4.idle_loop import HypothesisStore, WeakHypothesis
@@ -483,6 +484,68 @@ def test_loop_background():
 
 
 # ---------------------------------------------------------------------------
+# Media ingestion
+# ---------------------------------------------------------------------------
+
+SAMPLE_SRT = """1
+00:00:01,000 --> 00:00:04,000
+Mitochondria are the powerhouse of the cell.
+
+2
+00:00:04,000 --> 00:00:08,000
+Mitochondria are the powerhouse of the cell.
+
+3
+00:00:08,000 --> 00:00:12,000
+They produce energy through respiration.
+"""
+
+
+@test("media classification by url")
+def test_media_classify():
+    assert classify_media("https://www.youtube.com/watch?v=abc123") == "youtube"
+    assert classify_media("https://youtu.be/abc123") == "youtube"
+    assert classify_media("https://example.com/podcast/episode.mp3") == "audio"
+    assert classify_media("https://example.com/talk.mp4") == "video"
+    assert classify_media("https://example.com/article.html") is None
+    assert classify_media("https://en.wikipedia.org/wiki/Cat") is None
+
+
+@test("subtitle parser strips timestamps and dedups repeats")
+def test_subtitle_parse():
+    text = _parse_subtitles(SAMPLE_SRT)
+    assert "powerhouse of the cell" in text
+    assert "-->" not in text and "00:00" not in text
+    assert text.count("powerhouse") == 1     # repeated caption deduped
+    assert "respiration" in text
+
+
+@test("learning loop ingests youtube via media ingester")
+def test_loop_media_youtube():
+    loop, mem, _, _ = _build_loop(with_world_model=False)
+    yt_url = "https://www.youtube.com/watch?v=cellbio42"
+    loop.media = FakeMediaIngester(transcripts={
+        yt_url: ("Mitochondria are the powerhouse of the cell. "
+                 "Respiration is a chemical process."),
+    })
+    report = loop.learn_url(yt_url, topic="cell biology")
+    assert report.urls_fetched == [yt_url], f"errors: {report.errors}"
+    assert report.facts_added > 0
+    facts = mem.retrieve("Mitochondria")
+    assert any("powerhouse" in f.obj for f in facts)
+    assert loop.media.calls == [yt_url]
+
+
+@test("learning loop reports media failure gracefully")
+def test_loop_media_failure():
+    loop, _, _, _ = _build_loop(with_world_model=False)
+    loop.media = FakeMediaIngester()    # empty fixture set
+    report = loop.learn_url("https://youtu.be/unknown999")
+    assert report.facts_added == 0
+    assert any("media ingest failed" in e for e in report.errors)
+
+
+# ---------------------------------------------------------------------------
 # Controller integration
 # ---------------------------------------------------------------------------
 
@@ -577,6 +640,9 @@ if __name__ == "__main__":
         # Learning loop
         test_loop_end_to_end, test_loop_batch, test_loop_unknown_topic,
         test_loop_background,
+        # Media
+        test_media_classify, test_subtitle_parse, test_loop_media_youtube,
+        test_loop_media_failure,
         # Controller
         test_controller_disabled, test_controller_enabled,
         test_think_uses_learned_knowledge,

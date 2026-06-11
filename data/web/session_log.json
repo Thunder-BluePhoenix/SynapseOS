@@ -81,6 +81,22 @@
       "surprise": 0.2139,
       "errors": [],
       "duration": 0.011586189270019531
+    },
+    {
+      "goal_id": "65469d000a00",
+      "topic": "elephants",
+      "urls_fetched": [
+        "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+      ],
+      "text_chars": 207,
+      "facts_extracted": 2,
+      "facts_added": 2,
+      "facts_revised": 0,
+      "facts_rejected": 0,
+      "facts_reinforced": 0,
+      "surprise": 0.2117,
+      "errors": [],
+      "duration": 11.374521255493164
     }
   ]
 }

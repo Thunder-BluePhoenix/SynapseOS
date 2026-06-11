@@ -26,6 +26,12 @@ from synapseos.web.curiosity import CuriosityEngine, GoalQueue, LearningGoal
 from synapseos.web.belief import BeliefReviser, BeliefRevision
 from synapseos.web.kg_writer import KGWriter
 from synapseos.web.learning_loop import LearnReport, WebLearningLoop
+from synapseos.web.media import (
+    FakeMediaIngester,
+    MediaIngester,
+    MediaResult,
+    classify_media,
+)
 
 __all__ = [
     "BaseFetcher",
@@ -44,4 +50,8 @@ __all__ = [
     "KGWriter",
     "LearnReport",
     "WebLearningLoop",
+    "FakeMediaIngester",
+    "MediaIngester",
+    "MediaResult",
+    "classify_media",
 ]
