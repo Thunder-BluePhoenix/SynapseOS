@@ -138,7 +138,7 @@ class WorldModel:
         from collections import Counter
         self._transition_counts: Counter = Counter()
         self._last_concept: str = ""
-        self._vision = None   # lazy CLIP/SigLIP encoder for perceive_image()
+        self._vision_cache: dict = {}   # lazy vision encoders by backend ("clip"|"jepa")
 
     # ------------------------------------------------------------------
     # Persistence of the neural net
@@ -165,25 +165,35 @@ class WorldModel:
         return self._perceive_obs(o_t, label=text, concept_text=text, dt=dt, tags=tags)
 
     def perceive_image(self, image, dt: float = 1.0, tags: list[str] | None = None,
-                       caption: str | None = None) -> PerceptionResult:
+                       caption: str | None = None, backend: str = "clip") -> PerceptionResult:
         """
         Perceive an image observation — runs the SAME predictive loop as text.
-        Uses the real CLIP/SigLIP vision encoder (synapseos.local.vision) so the
-        image obs carries semantics; falls back to a deterministic stub if absent.
 
-        `caption` (optional) labels the episode and seeds the sequential concept;
-        without it images are tagged generically.
+        backend="clip" (default): real CLIP/SigLIP (practical route, semantic).
+        backend="jepa":           the from-scratch I-JEPA encoder (research route).
+        Either falls back to a deterministic stub if its model/checkpoint is absent.
+
+        `caption` (optional) labels the episode and seeds the sequential concept.
         """
-        if self._vision is None:
-            from synapseos.local.vision import VisionEncoder
-            self._vision = VisionEncoder(obs_dim=self.obs_dim)
-        emb = self._vision.encode_image(image)
+        enc = self._get_vision(backend)
+        emb = enc.encode_image(image)
         o_t = emb.obs_tensor().to(self.device)
         label = caption or f"[image:{emb.model_used}:{emb.dim}d]"
         return self._perceive_obs(
             o_t, label=label, concept_text=(caption or "image"),
             dt=dt, tags=(tags or []) + ["image", emb.model_used],
         )
+
+    def _get_vision(self, backend: str):
+        """Lazily build + cache the requested vision encoder backend."""
+        if backend not in self._vision_cache:
+            if backend == "jepa":
+                from synapseos.local.jepa_vision import JEPAVisionEncoder
+                self._vision_cache[backend] = JEPAVisionEncoder(obs_dim=self.obs_dim)
+            else:
+                from synapseos.local.vision import VisionEncoder
+                self._vision_cache[backend] = VisionEncoder(obs_dim=self.obs_dim)
+        return self._vision_cache[backend]
 
     def _perceive_obs(self, o_t: torch.Tensor, label: str, concept_text: str,
                       dt: float = 1.0, tags: list[str] | None = None) -> PerceptionResult:

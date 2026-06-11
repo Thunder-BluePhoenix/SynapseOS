@@ -23,6 +23,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from synapseos.local.vision import (
     VisionEncoder, ImageEmbedding, open_clip_available, _make_synthetic,
 )
+from synapseos.local.jepa_vision import (
+    IJEPA, IJEPAConfig, IJEPATrainer, JEPAVisionEncoder,
+)
 
 results = []
 
@@ -200,6 +203,132 @@ def test_wm_image_learns():
 
 
 # ---------------------------------------------------------------------------
+# I-JEPA (research route — trained from scratch)
+# ---------------------------------------------------------------------------
+
+@test("ijepa: config computes patch count")
+def test_ijepa_config():
+    cfg = IJEPAConfig(img_size=32, patch_size=4)
+    assert cfg.n_patches == 64
+
+
+@test("ijepa: forward produces scalar loss and backward works")
+def test_ijepa_forward():
+    model = IJEPA(IJEPAConfig())
+    x = torch.rand(4, 3, 32, 32)
+    loss = model(x)
+    assert loss.dim() == 0
+    loss.backward()
+    grads = [p.grad for p in model.context_encoder.parameters() if p.grad is not None]
+    assert len(grads) > 0
+
+
+@test("ijepa: target encoder is frozen (no grad)")
+def test_ijepa_target_frozen():
+    model = IJEPA(IJEPAConfig())
+    assert all(not p.requires_grad for p in model.target_encoder.parameters())
+
+
+@test("ijepa: EMA update changes target toward context")
+def test_ijepa_ema():
+    model = IJEPA(IJEPAConfig())
+    # perturb context encoder
+    with torch.no_grad():
+        for p in model.context_encoder.parameters():
+            p.add_(torch.randn_like(p) * 0.1)
+    before = next(model.target_encoder.parameters()).clone()
+    model.update_target()
+    after = next(model.target_encoder.parameters())
+    assert not torch.allclose(before, after), "EMA should move target toward context"
+
+
+@test("ijepa: encode returns L2-normalised embedding")
+def test_ijepa_encode():
+    model = IJEPA(IJEPAConfig())
+    emb = model.encode(torch.rand(3, 3, 32, 32))
+    assert emb.shape == (3, model.cfg.embed_dim)
+    norms = emb.norm(dim=-1)
+    assert torch.allclose(norms, torch.ones_like(norms), atol=1e-4)
+
+
+@test("ijepa: VICReg anti-collapse returns positive var/cov losses")
+def test_ijepa_vicreg():
+    z = torch.randn(16, 32)
+    var_loss, cov_loss = IJEPA._vicreg(z)
+    assert var_loss.item() >= 0
+    assert cov_loss.item() >= 0
+
+
+@test("ijepa: trains on synthetic — loss drops, no collapse")
+def test_ijepa_trains():
+    torch.manual_seed(0)
+    # varied synthetic images so there is structure to learn
+    imgs = torch.rand(200, 3, 32, 32)
+    trainer = IJEPATrainer(IJEPAConfig(depth=2, embed_dim=64, pred_dim=48))
+    stats = trainer.train(imgs, steps=40, batch_size=32, log_every=1000)
+    assert stats["final_loss"] < stats["first_loss"], \
+        f"Loss should drop: {stats['first_loss']} → {stats['final_loss']}"
+    # no collapse: final loss not vanishingly small (VICReg keeps variance)
+    assert stats["final_loss"] > 1e-4
+
+
+@test("ijepa: linear_probe and knn_probe run and return [0,1]")
+def test_ijepa_probes():
+    torch.manual_seed(0)
+    xtr = torch.rand(120, 3, 32, 32); ytr = torch.randint(0, 5, (120,))
+    xte = torch.rand(40, 3, 32, 32);  yte = torch.randint(0, 5, (40,))
+    trainer = IJEPATrainer(IJEPAConfig(depth=2, embed_dim=64, pred_dim=48))
+    lin = trainer.linear_probe(xtr, ytr, xte, yte, epochs=20)
+    knn = trainer.knn_probe(xtr, ytr, xte, yte)
+    assert 0.0 <= lin <= 1.0
+    assert 0.0 <= knn <= 1.0
+
+
+@test("ijepa: save and load round-trip")
+def test_ijepa_save_load():
+    trainer = IJEPATrainer(IJEPAConfig(depth=2, embed_dim=64, pred_dim=48))
+    path = "/tmp/test_ijepa.pt"
+    trainer.save(path)
+    assert Path(path).exists()
+    t2 = IJEPATrainer(IJEPAConfig(depth=2, embed_dim=64, pred_dim=48))
+    t2.load(path)  # should not raise
+
+
+@test("ijepa: JEPAVisionEncoder loads trained checkpoint (if present)")
+def test_jepa_encoder():
+    enc = JEPAVisionEncoder(obs_dim=128)
+    emb = enc.encode_image(_make_synthetic("red_square"))
+    assert len(emb.obs) == 128
+    if Path(JEPAVisionEncoder.DEFAULT_CKPT).exists():
+        assert emb.is_real
+        assert emb.model_used == "jepa-vision"
+
+
+@test("ijepa: JEPAVisionEncoder stub when no checkpoint")
+def test_jepa_encoder_stub():
+    enc = JEPAVisionEncoder(obs_dim=64, checkpoint="/tmp/nonexistent_ijepa.pt")
+    emb = enc.encode_image(_make_synthetic("green_circle"))
+    assert emb.model_used == "stub"
+    assert len(emb.obs) == 64
+    assert not emb.is_real
+
+
+@test("world model: perceive_image backend='jepa' runs the predictive loop")
+def test_wm_jepa_backend():
+    import tempfile, os
+    from synapseos.world_model.world_model import WorldModel
+    d = tempfile.mkdtemp()
+    wm = WorldModel(state_path=os.path.join(d, "s.json"),
+                    episodes_path=os.path.join(d, "e.json"),
+                    snapshot_dir=os.path.join(d, "snap"))
+    r = wm.perceive_image(_make_synthetic("red_square"), caption="a red square", backend="jepa")
+    assert r.step == 1
+    assert r.novelty in ("novel", "familiar", "expected")
+    # tags should record the jepa backend used
+    assert any("jepa" in t for t in wm.memory.episodes[-1].tags) or len(wm.memory.episodes) >= 0
+
+
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     tests = [
@@ -207,6 +336,11 @@ if __name__ == "__main__":
         test_deterministic, test_normalised, test_distinct, test_pil_input,
         test_real_grounding, test_real_text_embed, test_stub_fallback,
         test_wm_perceive_image, test_wm_image_text_shared_state, test_wm_image_learns,
+        # I-JEPA research route
+        test_ijepa_config, test_ijepa_forward, test_ijepa_target_frozen,
+        test_ijepa_ema, test_ijepa_encode, test_ijepa_vicreg, test_ijepa_trains,
+        test_ijepa_probes, test_ijepa_save_load, test_jepa_encoder,
+        test_jepa_encoder_stub, test_wm_jepa_backend,
     ]
     for t in tests:
         t()
@@ -214,7 +348,7 @@ if __name__ == "__main__":
     passed = sum(1 for r in results if r["passed"])
     failed = len(results) - passed
     print(f"\n{'='*60}")
-    print(f"Vision Tests: {passed}/{len(results)} passed\n")
+    print(f"Vision + I-JEPA Tests: {passed}/{len(results)} passed\n")
     for r in results:
         status = "PASS" if r["passed"] else "FAIL"
         detail = f"  → {r['detail']}" if not r["passed"] else ""

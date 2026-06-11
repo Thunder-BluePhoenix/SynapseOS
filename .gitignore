@@ -84,12 +84,13 @@ data/external_repos/
 
 # ============================================================
 # Large regenerable training data
-#   corpus  → scripts/build_corpus.py, scripts/augment_corpus.py
-#   jepa    → synapseos/phase2/synth_data_generator.py
-#   liquid  → synapseos/phase2/synth_data_generator.py
-#   bridges → synapseos/phase3/synth_bridge_generator.py
-#   sft     → synapseos/phase3/output_synth_data.py
-#   mamba   → scripts/prepare_mamba_data.py
+#   corpus    → scripts/build_corpus.py, scripts/augment_corpus.py
+#   jepa      → synapseos/phase2/synth_data_generator.py
+#   liquid    → synapseos/phase2/synth_data_generator.py
+#   bridges   → synapseos/phase3/synth_bridge_generator.py
+#   sft       → synapseos/phase3/output_synth_data.py
+#   mamba     → scripts/prepare_mamba_data.py
+#   datasets/ → torchvision auto-download (CIFAR-10 via load_cifar() in jepa_vision.py)
 # ============================================================
 data/corpus/
 data/jepa/
@@ -97,6 +98,7 @@ data/liquid/
 data/bridges/
 data/sft/
 data/mamba_train/
+data/datasets/
 
 # ============================================================
 # KEPT IN GIT (essential, small, hard to regenerate):

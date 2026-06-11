@@ -1,6 +1,6 @@
 # SynapseOS — Implementation Tracker
 
-> Last updated: 2026-06-04 (World Model wired into CognitiveController + real CLIP/SigLIP vision + image perception — 374 tests passing)
+> Last updated: 2026-06-04 (JEPA-vision research route: I-JEPA trained from scratch on CIFAR, linear probe 25.4%→33.3% with NO labels — 386 tests passing)
 
 ---
 
@@ -303,6 +303,16 @@ The world model is no longer standalone — it conditions live reasoning:
 
 **Tests:** `test_vision.py` 14/14 · world-model integration 9 tests in `test_phase5.py` · **total 374 passing**
 
+### JEPA-vision research route ✅ (2026-06-04) — `synapseos/local/jepa_vision.py`
+Trained an image world model **from scratch, no pretrained weights, no labels** — the SynapseOS-aligned route.
+- `IJEPA` — patch embed + ViT context encoder + **EMA target encoder** (stop-grad teacher) + predictor; predicts masked-region **latents** (not pixels), the defining JEPA property
+- Anti-collapse: VICReg variance+covariance regularization (first attempt collapsed to ~0 loss; fixed) + data augmentation (flip/crop)
+- Trained on **CIFAR-10** (real natural images) on MPS, ~2 min, 2500 steps
+- **Result: frozen-encoder linear probe 25.4% → 33.3% (+7.9%) with NO labels** — proof it learned visual structure self-supervised (chance = 10%). k-NN was too insensitive to show it; linear probe (standard SSL eval) does.
+- `JEPAVisionEncoder` wraps the trained checkpoint; `WorldModel.perceive_image(..., backend="jepa")` runs images through the same predictive loop. Interchangeable with the CLIP/SigLIP practical encoder (`backend="clip"`).
+- Run: `python -m synapseos.local.jepa_vision --train --steps 2500`
+- Tests: `test_vision.py` 26/26 (12 I-JEPA tests). **Both vision routes now done: CLIP/SigLIP (practical) + I-JEPA (research).**
+
 ### Still open
-- JEPA-vision research route (train image→latent world model from scratch on MPS) — tracked, not started
+- Scale I-JEPA further (more data/steps/capacity → higher probe accuracy); current is a small-scale proof on CIFAR
 - Cross-modal retrieval refinement: text-query vs image-obs live in different spaces, linked through shared z_t + captions; a unified CLIP text+image space would tighten it
