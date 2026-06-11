@@ -295,6 +295,30 @@ class SemanticMemory:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [f for _, f in scored[:top_k]]
 
+    # Sources representing knowledge the system acquired (web learning,
+    # consolidation, user statements) rather than the bulk KG import.
+    LEARNED_SOURCES = ("web:", "world_model_consolidation", "user_stated", "inferred")
+
+    def retrieve_learned(self, query: str, top_k: int = 3) -> list[SemanticFact]:
+        """
+        Retrieve learned facts only — a separate lane so the 5k KG-imported
+        facts can't crowd acquired knowledge out of the context window.
+        Content words (4+ chars) only, to avoid spurious substring hits.
+        """
+        tokens = [t for t in re.findall(r"\w+", query.lower()) if len(t) >= 4]
+        if not tokens:
+            return []
+        scored: list[tuple[int, SemanticFact]] = []
+        for fact in self.facts:
+            if not any(fact.source.startswith(s) for s in self.LEARNED_SOURCES):
+                continue
+            fact_text = fact.as_text().lower()
+            hits = sum(1 for t in tokens if t in fact_text)
+            if hits > 0:
+                scored.append((hits, fact))
+        scored.sort(key=lambda x: (x[0], x[1].confidence), reverse=True)
+        return [f for _, f in scored[:top_k]]
+
     def __len__(self) -> int:
         return len(self.facts)
 
@@ -395,6 +419,13 @@ class MemoryController:
         recent    = [e.to_dict() for e in self.episodic.get_recent(3)]
         similar   = [(score, e.to_dict()) for score, e in self.episodic.retrieve(query, top_k=top_k)]
         sem_facts = [f.to_dict() for f in self.semantic.retrieve_text(query, top_k=top_k)]
+        # Learned knowledge gets its own retrieval lane — merge, dedup
+        seen_facts = {(f["subject"], f["predicate"], f["obj"]) for f in sem_facts}
+        for fact in self.semantic.retrieve_learned(query, top_k=top_k):
+            key = (fact.subject, fact.predicate, fact.obj)
+            if key not in seen_facts:
+                seen_facts.add(key)
+                sem_facts.append(fact.to_dict())
         working   = self.working.snapshot()
 
         similar_dicts = [{"score": round(s, 3), **e} for s, e in similar]

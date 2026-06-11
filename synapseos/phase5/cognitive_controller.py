@@ -418,6 +418,30 @@ class ResultSynthesizer:
     - Secondary modes contribute to the trace/context section.
     """
 
+    # Facts from these sources were learned (web, consolidation, user) rather
+    # than imported from the curated KG — the KG already feeds the modes.
+    _LEARNED_SOURCES = ("web:", "world_model_consolidation", "user_stated", "inferred")
+
+    _PREDICATE_TEXT = {
+        "is_a": "is a", "part_of": "is part of", "located_in": "is located in",
+        "created_by": "was created by", "used_for": "is used for",
+        "causes": "causes", "has_property": "has", "born_in": "was born in",
+        "died_in": "died in",
+    }
+
+    def _learned_facts(self, context: MemoryContext) -> list[dict]:
+        return [
+            f for f in context.semantic_facts
+            if any(f.get("source", "").startswith(s) for s in self._LEARNED_SOURCES)
+        ]
+
+    def _render_fact(self, f: dict) -> str:
+        pred = self._PREDICATE_TEXT.get(f.get("predicate", ""), f.get("predicate", ""))
+        src = f.get("source", "")
+        origin = src[4:] if src.startswith("web:") else src.replace("_", " ")
+        return (f"{f.get('subject', '')} {pred} {f.get('obj', '')} "
+                f"(learned from {origin}, confidence {f.get('confidence', 0):.2f})")
+
     def synthesize(
         self,
         query: str,
@@ -430,6 +454,13 @@ class ResultSynthesizer:
         """
         successful = [r for r in mode_results if not r.error]
         if not successful:
+            # Modes came up empty — answer from learned knowledge if we have any.
+            learned = self._learned_facts(context)
+            if learned:
+                lines = "\n".join(f"  - {self._render_fact(f)}" for f in learned[:5])
+                confidence = max(f.get("confidence", 0.0) for f in learned[:5])
+                return (f"From what I've learned:\n{lines}", "language",
+                        min(confidence, 0.85))
             return "[No mode produced a valid output.]", "language", 0.0
 
         # Separate code and language results
@@ -457,6 +488,12 @@ class ResultSynthesizer:
             output_type = "language"
             primary_output = language_results[0].output
             confidence = language_results[0].confidence
+
+        # Surface learned knowledge relevant to the query alongside mode output
+        learned = self._learned_facts(context)
+        if learned:
+            lines = "\n".join(f"  - {self._render_fact(f)}" for f in learned[:3])
+            primary_output += f"\n\n[Learned knowledge]\n{lines}"
 
         # Enrich with context from similar past interactions
         if context.similar_past:
@@ -591,6 +628,10 @@ class CognitiveController:
         enable_agents: bool = True,
         enable_world_model: bool = True,
         world_model_dir: str = "data/world_model",
+        enable_web_learning: bool = False,
+        web_data_dir: str = "data/web",
+        web_allowed_domains: list[str] | None = None,
+        web_fetcher=None,
     ):
         self.router       = ModeRouter()
         self.executor     = ParallelExecutor(mode_timeout=mode_timeout)
@@ -612,6 +653,54 @@ class CognitiveController:
 
         if enable_idle_loop:
             self._start_idle_loop(kg_path)
+
+        # Web learning loop: curiosity-driven ingestion from the web.
+        # Optional + graceful — a failure here never breaks inference.
+        self.web_loop = None
+        if enable_web_learning:
+            self._init_web_learning(web_data_dir, kg_path, web_allowed_domains,
+                                    web_fetcher)
+
+    def _init_web_learning(self, web_dir: str, kg_path: str,
+                           allowed_domains: list[str] | None, fetcher) -> None:
+        try:
+            import os
+            from synapseos.phase3.neurosymbolic_core import KnowledgeGraph
+            from synapseos.web import (
+                BeliefReviser, CuriosityEngine, FetchPolicy, GoalQueue,
+                KGWriter, WebFetcher, WebLearningLoop,
+            )
+            if fetcher is None:
+                fetcher = WebFetcher(
+                    policy=FetchPolicy(allowed_domains=allowed_domains),
+                    seen_path=os.path.join(web_dir, "seen_urls.json"),
+                )
+            kg = KnowledgeGraph(kg_path)
+            kg_writer = KGWriter(kg, graph_path=os.path.join(web_dir, "web_graph.json"))
+            hypothesis_store = self._idle_loop.hypothesis_store if self._idle_loop else None
+            curiosity = CuriosityEngine(
+                hypothesis_store=hypothesis_store,
+                world_model=self.world_model,
+                knowledge_graph=kg,
+                queue=GoalQueue(os.path.join(web_dir, "goals.json")),
+            )
+            reviser = BeliefReviser(
+                self.memory.semantic, kg_writer=kg_writer,
+                audit_path=os.path.join(web_dir, "revisions.json"),
+            )
+            self.web_loop = WebLearningLoop(
+                fetcher=fetcher, curiosity=curiosity, reviser=reviser,
+                world_model=self.world_model, data_dir=web_dir,
+            )
+        except Exception as e:
+            print(f"[CognitiveController] Web learning init failed ({e}) — disabled")
+            self.web_loop = None
+
+    def learn_from_web(self, topic: str) -> dict:
+        """Pursue one web learning topic immediately. Returns a report dict."""
+        if self.web_loop is None:
+            return {"error": "web learning is disabled (enable_web_learning=False)"}
+        return self.web_loop.learn(topic).to_dict()
 
     def _init_world_model(self, wm_dir: str) -> None:
         try:
@@ -648,9 +737,11 @@ class CognitiveController:
         """
         t0 = time.time()
 
-        # Signal active to idle loop
+        # Signal active to idle loop + background web learning
         if self._idle_loop:
             self._idle_loop.signal_active()
+        if self.web_loop is not None:
+            self.web_loop.signal_active()
 
         # 1. Retrieve memory context
         ctx = self.memory.get_context(query)
@@ -783,6 +874,11 @@ class CognitiveController:
     def shutdown(self) -> None:
         if self._idle_loop:
             self._idle_loop.stop()
+        if self.web_loop is not None:
+            try:
+                self.web_loop.stop()
+            except Exception:
+                pass
         self.memory.save()
         if self.world_model is not None:
             try:
@@ -802,6 +898,7 @@ class CognitiveController:
             }
         else:
             s["world_model"] = None
+        s["web_learning"] = self.web_loop.stats() if self.web_loop is not None else None
         return s
 
 

@@ -1,0 +1,91 @@
+{
+  "directed": true,
+  "nodes": [
+    {
+      "id": "Photosynthesis",
+      "type": "concept",
+      "source": "web",
+      "provenance": {
+        "url": "https://en.wikipedia.org/wiki/Photosynthesis",
+        "timestamp": 1781197957.005607
+      }
+    },
+    {
+      "id": "biological process",
+      "type": "concept",
+      "source": "web",
+      "provenance": {
+        "url": "https://en.wikipedia.org/wiki/Photosynthesis",
+        "timestamp": 1781197957.005607
+      }
+    },
+    {
+      "id": "Chlorophyll",
+      "type": "concept",
+      "source": "web",
+      "provenance": {
+        "url": "https://en.wikipedia.org/wiki/Photosynthesis",
+        "timestamp": 1781197957.005683
+      }
+    },
+    {
+      "id": "green pigment",
+      "type": "concept",
+      "source": "web",
+      "provenance": {
+        "url": "https://en.wikipedia.org/wiki/Photosynthesis",
+        "timestamp": 1781197957.005683
+      }
+    },
+    {
+      "id": "Quantum Computing Since Democritus",
+      "type": "concept",
+      "source": "web",
+      "provenance": {
+        "url": "https://en.wikipedia.org/wiki/Quantum_Computing_Since_Democritus",
+        "timestamp": 1781198086.093374
+      }
+    },
+    {
+      "id": "2013 book on quantum information science written by Scott Aaronson",
+      "type": "concept",
+      "source": "web",
+      "provenance": {
+        "url": "https://en.wikipedia.org/wiki/Quantum_Computing_Since_Democritus",
+        "timestamp": 1781198086.093374
+      }
+    }
+  ],
+  "links": [
+    {
+      "source": "Photosynthesis",
+      "target": "biological process",
+      "relation": "is_a",
+      "confidence": 0.6,
+      "provenance": {
+        "url": "https://en.wikipedia.org/wiki/Photosynthesis",
+        "timestamp": 1781197957.005607
+      }
+    },
+    {
+      "source": "Chlorophyll",
+      "target": "green pigment",
+      "relation": "is_a",
+      "confidence": 0.6,
+      "provenance": {
+        "url": "https://en.wikipedia.org/wiki/Photosynthesis",
+        "timestamp": 1781197957.005683
+      }
+    },
+    {
+      "source": "Quantum Computing Since Democritus",
+      "target": "2013 book on quantum information science written by Scott Aaronson",
+      "relation": "is_a",
+      "confidence": 0.6,
+      "provenance": {
+        "url": "https://en.wikipedia.org/wiki/Quantum_Computing_Since_Democritus",
+        "timestamp": 1781198086.093374
+      }
+    }
+  ]
+}

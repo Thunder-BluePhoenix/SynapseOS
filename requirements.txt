@@ -30,3 +30,5 @@ tqdm>=4.66.0
 numpy>=1.26.0
 scipy>=1.13.0
 scikit-learn>=1.4.0
+
+# optional: requests, trafilatura (web learning loop — stdlib fallbacks built in)

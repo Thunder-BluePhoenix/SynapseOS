@@ -1,0 +1,26 @@
+{
+  "goals": [
+    {
+      "id": "ecbb8804454d",
+      "topic": "Photosynthesis",
+      "reason": "user requested",
+      "source": "user",
+      "priority": 1.0,
+      "created_at": 1781197956.9903512,
+      "status": "done",
+      "attempts": 0,
+      "urls": []
+    },
+    {
+      "id": "900ebb9242b9",
+      "topic": "Quantum computing",
+      "reason": "user requested",
+      "source": "user",
+      "priority": 1.0,
+      "created_at": 1781198004.4606059,
+      "status": "done",
+      "attempts": 0,
+      "urls": []
+    }
+  ]
+}
