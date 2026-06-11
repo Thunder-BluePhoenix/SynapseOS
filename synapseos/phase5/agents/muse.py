@@ -32,7 +32,8 @@ class MUSEAgent(AdvisorAgent):
                   "paint", "generate an image", "generate image", "create an image",
                   "make a video", "create a video", "animate", "artwork",
                   "new idea", "brainstorm", "invent", "imagine", "creative",
-                  "sing", "raag", "raga", "lyrics", "bhajan", "ghazal"],
+                  "sing", "raag", "raga", "lyrics", "bhajan", "ghazal",
+                  "poster", "banner", "album cover"],
         anti_keywords=["doctype", "invoice", "deploy", "rules"],
         base_confidence=0.55,
         description="Creative output: music composition, image/video generation, ideas",
@@ -84,7 +85,8 @@ class MUSEAgent(AdvisorAgent):
             return self._music(query, ql, trace)
         if any(w in ql for w in ("video", "animate", "animation")):
             return self._video(query, ql, trace)
-        if any(w in ql for w in ("draw", "paint", "image", "picture", "artwork")):
+        if any(w in ql for w in ("draw", "paint", "image", "picture", "artwork",
+                                 "poster", "banner", "cover", "card")):
             return self._image(query, ql, trace)
         return self._ideas(query, trace)
 

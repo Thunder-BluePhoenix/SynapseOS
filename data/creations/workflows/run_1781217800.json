@@ -1,0 +1,121 @@
+{
+  "workflow": {
+    "1": {
+      "type": "lyrics.write",
+      "inputs": {
+        "theme": "the rising sun",
+        "emotion": "devotion",
+        "seed": 7
+      }
+    },
+    "2": {
+      "type": "song.sing",
+      "inputs": {
+        "theme": "the rising sun",
+        "raag": "bhairav",
+        "cycles": 2,
+        "seed": 7
+      }
+    },
+    "3": {
+      "type": "video.create",
+      "inputs": {
+        "concept": "rising sun",
+        "seconds": 2,
+        "soundtrack": [
+          "2",
+          "path"
+        ],
+        "seed": 7
+      }
+    },
+    "4": {
+      "type": "poster.create",
+      "inputs": {
+        "title": [
+          "1",
+          "title"
+        ],
+        "subtitle": "an original raag bhairav song",
+        "footer": "made by SynapseOS",
+        "seed": 7
+      }
+    }
+  },
+  "order": [
+    "1",
+    "2",
+    "3",
+    "4"
+  ],
+  "duration_s": 1.18,
+  "outputs": {
+    "1": {
+      "title": "Deep The Rising Sun",
+      "text": "\"Deep The Rising Sun\"\n\n[Verse]\nWhere the temple carries, the rising sun finds its told\nAnd the rising sun remains like temple in the heart\nThe sacred flame of the rising sun carries through the gold\nCarry me through sacred dawn to the art\n\n[Chorus]\nOh, the rising sun, my sacred chain\nHold the rising sun and never let it plain",
+      "verse": [
+        "Where the temple carries, the rising sun finds its told",
+        "And the rising sun remains like temple in the heart",
+        "The sacred flame of the rising sun carries through the gold",
+        "Carry me through sacred dawn to the art"
+      ],
+      "chorus": [
+        "Oh, the rising sun, my sacred chain",
+        "Hold the rising sun and never let it plain"
+      ]
+    },
+    "2": {
+      "path": "data/creations/songs/the_rising_sun_bhairav_7.wav",
+      "title": "Deep The Rising Sun",
+      "raag": "Bhairav",
+      "taal": "Keherwa",
+      "rasa": "bhakti",
+      "emotion": "devotion",
+      "tempo": 80,
+      "seed": 7,
+      "duration_s": 19.75,
+      "lyrics_text": "\"Deep The Rising Sun\"\n\n[Verse]\nWhere the temple carries, the rising sun finds its told\nAnd the rising sun remains like temple in the heart\nThe sacred flame of the rising sun carries through the gold\nCarry me through sacred dawn to the art\n\n[Chorus]\nOh, the rising sun, my sacred chain\nHold the rising sun and never let it plain",
+      "melody_swaras": [
+        "G",
+        "m",
+        "d",
+        "P",
+        "G",
+        "m",
+        "r",
+        "S",
+        "P",
+        "d",
+        "d",
+        "N",
+        "r",
+        "S",
+        "d",
+        "d",
+        "d",
+        "m",
+        "d",
+        "S"
+      ],
+      "instrument": "sitar"
+    },
+    "3": {
+      "path": "data/creations/videos/rising_sun_7.mp4",
+      "concept": "rising sun",
+      "seed": 7,
+      "frames": 24,
+      "fps": 12,
+      "duration_s": 2.0,
+      "format": "mp4",
+      "audio_path": "data/creations/songs/the_rising_sun_bhairav_7.wav"
+    },
+    "4": {
+      "path": "data/creations/posters/deep_the_rising_sun_7.png",
+      "title": "Deep The Rising Sun",
+      "seed": 7,
+      "background": "flow",
+      "fonts": "Avenir Next"
+    }
+  },
+  "errors": {}
+}
