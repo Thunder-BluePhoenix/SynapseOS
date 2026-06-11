@@ -47,6 +47,7 @@ class MUSEAgent(AdvisorAgent):
         self._videographer = None
         self._creativity = None
         self._song_composer = None
+        self._poster_gen = None
 
     # Lazy builders — heavy imports only when actually creating
     @property
@@ -165,21 +166,9 @@ class MUSEAgent(AdvisorAgent):
 
     def _image(self, query: str, ql: str, trace: list[str]) -> AgentResult:
         concept = self._concept(ql)
-        # Neural upgrade path: local ComfyUI with an installed checkpoint
-        try:
-            from synapseos.create.neural_backends import generate_via_comfyui
-            neural_path = generate_via_comfyui(concept)
-            if neural_path:
-                trace.append("rendered via local ComfyUI diffusion")
-                self._record(f"image:{concept}")
-                return self._result(
-                    query,
-                    f"[MUSE — image]\nGenerated via local ComfyUI diffusion: "
-                    f"\"{concept}\"\nImage: {neural_path}",
-                    0.85, trace, {"kind": "image", "backend": "comfyui",
-                                  "path": neural_path, "concept": concept})
-        except Exception:
-            pass
+        # Posters/banners with rendered text → typography engine
+        if any(w in ql for w in ("poster", "banner", "cover", "card", "logo text")):
+            return self._poster(query, ql, concept, trace)
         style = next((s for s in ("flow", "fractal", "geo") if s in ql), "auto")
         img = self.imager.create(concept, style=style)
         trace.append(f"procedural {img.style} render, seed {img.seed}")
@@ -192,6 +181,33 @@ class MUSEAgent(AdvisorAgent):
                f"(Procedural art seeded by the concept — not photorealistic; "
                f"that needs a diffusion model on the neural path.)")
         return self._result(query, out, 0.8, trace, {"kind": "image", **img.to_dict()})
+
+    def _poster(self, query: str, ql: str, concept: str,
+                trace: list[str]) -> AgentResult:
+        from synapseos.create.poster import PosterGenerator, PosterSpec
+        # title = the concept; subtitle from "saying/that says '...'"
+        import re as _re
+        m = _re.search(r"(?:saying|that says|with text)\s+[\"']?([^\"']+)[\"']?", ql)
+        subtitle = m.group(1).strip() if m else ""
+        title = concept.replace(subtitle, "").strip() or "untitled"
+        for w in ("poster", "banner", "cover", "card"):
+            title = title.replace(w, " ").strip()
+        spec = PosterSpec(title=title or "untitled", subtitle=subtitle,
+                          footer="made by SynapseOS")
+        if self._poster_gen is None:
+            from synapseos.create.poster import PosterGenerator as PG
+            self._poster_gen = PG()
+        poster = self._poster_gen.create(spec)
+        trace.append(f"typeset poster, fonts {poster.fonts_used}, seed {poster.seed}")
+        self._record(f"poster:{title}")
+        out = (f"[MUSE — poster]\n"
+               f"Typeset an original poster: \"{spec.title}\""
+               + (f" / \"{subtitle}\"" if subtitle else "") + "\n"
+               f"Image: {poster.path}\n"
+               f"(Real rendered typography over procedural art — text is crisp "
+               f"by construction, not by diffusion.)")
+        return self._result(query, out, 0.8, trace,
+                            {"kind": "poster", **poster.to_dict()})
 
     # -- video ---------------------------------------------------------------------
 

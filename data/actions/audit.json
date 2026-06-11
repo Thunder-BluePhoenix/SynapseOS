@@ -1,0 +1,15 @@
+{
+  "actions": [
+    {
+      "tool": "shell.run",
+      "args": {
+        "command": "echo cognitive-hands"
+      },
+      "ok": true,
+      "output": "cognitive-hands\n",
+      "error": "",
+      "duration_ms": 3.247976303100586,
+      "timestamp": 1781217729.1138408
+    }
+  ]
+}

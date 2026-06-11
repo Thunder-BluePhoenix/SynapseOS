@@ -579,6 +579,11 @@ class AgentRouter:
             self._agents.append(MUSEAgent())
         except Exception as e:
             print(f"[AgentRouter] MUSE load failed: {e}")
+        try:
+            from synapseos.phase5.agents.karma import KARMAAgent
+            self._agents.append(KARMAAgent())
+        except Exception as e:
+            print(f"[AgentRouter] KARMA load failed: {e}")
 
     def wire_advisors(self, **resources) -> None:
         """Inject shared resources (memory, tracker, world model, web loop)."""

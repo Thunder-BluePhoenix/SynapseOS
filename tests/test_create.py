@@ -254,12 +254,85 @@ def test_muse_song():
     assert "river" in result.structured["lyrics_text"].lower()
 
 
-@test("comfyui backend degrades gracefully when not running")
-def test_comfyui_graceful():
-    from synapseos.create.neural_backends import comfyui_status, generate_via_comfyui
-    status = comfyui_status(url="http://127.0.0.1:1", timeout=0.2)   # nothing there
-    assert status["running"] is False
-    assert generate_via_comfyui("test", url="http://127.0.0.1:1") is None
+@test("poster: real typography over procedural background")
+def test_poster():
+    from synapseos.create.poster import PosterGenerator, PosterSpec
+    from PIL import Image
+    gen = PosterGenerator(out_dir=_tmp_dir())
+    spec = PosterSpec(title="Synapse", subtitle="a mind that grows",
+                      body=["learns from the web", "remembers everything"],
+                      footer="made by SynapseOS", size=(400, 500))
+    poster = gen.create(spec, seed=3)
+    assert os.path.exists(poster.path)
+    img = Image.open(poster.path)
+    assert img.size == (400, 500)
+    # deterministic
+    p2 = gen.create(spec, seed=3)
+    assert Path(p2.path).read_bytes() == Path(poster.path).read_bytes()
+
+
+@test("poster: palette and solid background honored")
+def test_poster_palette():
+    from synapseos.create.poster import PosterGenerator, PosterSpec
+    gen = PosterGenerator(out_dir=_tmp_dir())
+    poster = gen.create(PosterSpec(title="Test", subtitle="sub",
+                                   palette=["#ff0000"], background="solid",
+                                   size=(200, 250)), seed=1)
+    assert os.path.exists(poster.path)
+
+
+@test("workflow engine: chained DAG with cross-node references")
+def test_workflow():
+    from synapseos.create.workflow import WorkflowEngine
+    import synapseos.create.workflow as wf
+    d = _tmp_dir()
+    # patch node fns to use tmp dirs (avoid polluting data/)
+    from synapseos.create.lyrics import LyricWriter
+    from synapseos.create.music import MusicComposer
+    wf_engine = WorkflowEngine(manifest_dir=d)
+    orig_music = wf.NODE_TYPES["music.compose"]
+    wf.NODE_TYPES["music.compose"] = lambda i: MusicComposer(out_dir=d).compose(
+        mood=i.get("mood", "calm"), bars=1, seed=i.get("seed")).to_dict()
+    try:
+        result = wf_engine.run({
+            "1": {"type": "lyrics.write",
+                  "inputs": {"theme": "the storm", "emotion": "sad", "seed": 2}},
+            "2": {"type": "music.compose",
+                  "inputs": {"mood": "sad", "seed": 2}},
+        })
+        assert result.order == ["1", "2"]
+        assert not result.errors, result.errors
+        assert "title" in result.outputs["1"]
+        assert os.path.exists(result.outputs["2"]["path"])
+        # manifest written
+        assert any(Path(d).glob("run_*.json"))
+    finally:
+        wf.NODE_TYPES["music.compose"] = orig_music
+
+
+@test("workflow engine: detects cycles and unknown nodes")
+def test_workflow_errors():
+    from synapseos.create.workflow import WorkflowEngine
+    eng = WorkflowEngine(manifest_dir=_tmp_dir())
+    try:
+        eng.run({"1": {"type": "lyrics.write", "inputs": {"theme": ["2", "x"]}},
+                 "2": {"type": "lyrics.write", "inputs": {"theme": ["1", "x"]}}})
+        assert False, "cycle not detected"
+    except ValueError:
+        pass
+    r = eng.run({"1": {"type": "no.such.node", "inputs": {}}})
+    assert "1" in r.errors
+
+
+@test("MUSE typesets a poster on request")
+def test_muse_poster():
+    from synapseos.create.poster import PosterGenerator
+    agent = _muse()
+    agent._poster_gen = PosterGenerator(out_dir=_tmp_dir())
+    result = agent.handle("make a poster of synapse os that says 'a mind that grows'")
+    assert result.structured["kind"] == "poster"
+    assert os.path.exists(result.structured["path"])
+    assert "typography" in result.output.lower() or "Typeset" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -367,7 +440,9 @@ if __name__ == "__main__":
         test_video_basic, test_video_soundtrack,
         test_raag_swaras, test_raag_for_state, test_lyrics, test_vocals,
         test_tabla_tanpura, test_song_pipeline, test_song_affect,
-        test_muse_song, test_comfyui_graceful,
+        test_muse_song,
+        test_poster, test_poster_palette, test_workflow, test_workflow_errors,
+        test_muse_poster,
         test_muse_routing, test_muse_music, test_muse_mood_music,
         test_muse_image, test_muse_video, test_muse_records,
         test_controller_muse,

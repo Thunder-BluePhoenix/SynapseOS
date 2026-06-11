@@ -20,7 +20,11 @@ from synapseos.create.video import VideoGenerator, GeneratedVideo
 from synapseos.create.raag import RAAGS, TAALS, Raag, raag_for_state
 from synapseos.create.lyrics import LyricWriter, Lyrics
 from synapseos.create.song import Song, SongComposer
+from synapseos.create.poster import GeneratedPoster, PosterGenerator, PosterSpec
+from synapseos.create.workflow import WorkflowEngine, WorkflowResult, NODE_TYPES
 
 __all__ = ["MusicComposer", "Composition", "ImageGenerator", "GeneratedImage",
            "VideoGenerator", "GeneratedVideo", "RAAGS", "TAALS", "Raag",
-           "raag_for_state", "LyricWriter", "Lyrics", "Song", "SongComposer"]
+           "raag_for_state", "LyricWriter", "Lyrics", "Song", "SongComposer",
+           "GeneratedPoster", "PosterGenerator", "PosterSpec",
+           "WorkflowEngine", "WorkflowResult", "NODE_TYPES"]
