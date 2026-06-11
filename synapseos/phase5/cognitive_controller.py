@@ -569,6 +569,11 @@ class AgentRouter:
                 self._agents.append(advisor_cls())
         except Exception as e:
             print(f"[AgentRouter] Advisors load failed: {e}")
+        try:
+            from synapseos.phase5.agents.mentor import MENTORAgent
+            self._agents.append(MENTORAgent())
+        except Exception as e:
+            print(f"[AgentRouter] MENTOR load failed: {e}")
 
     def wire_advisors(self, **resources) -> None:
         """Inject shared resources (memory, tracker, world model, web loop)."""
@@ -754,6 +759,23 @@ class CognitiveController:
         if self.web_loop is None:
             return {"error": "web learning is disabled (enable_web_learning=False)"}
         return self.web_loop.learn_url(url, topic=topic).to_dict()
+
+    def study(self, subject: str = "all", run_goals: int = 0) -> dict:
+        """
+        Seed a subject curriculum (mathematics, physics, chemistry, biology,
+        geography, history, management, technology, economics, languages —
+        or 'all') into the learning queue; optionally pursue some goals now.
+        """
+        if self.web_loop is None:
+            return {"error": "web learning is disabled (enable_web_learning=False)"}
+        from synapseos.web.curriculum import curriculum_progress, seed_curriculum
+        seeded = seed_curriculum(self.web_loop.curiosity, subject)
+        reports = []
+        if run_goals > 0:
+            reports = [r.to_dict() for r in self.web_loop.run(run_goals)]
+        return {"seeded": seeded,
+                "progress": curriculum_progress(self.web_loop.curiosity),
+                "pursued_now": reports}
 
     def _init_world_model(self, wm_dir: str) -> None:
         try:
