@@ -17,6 +17,10 @@ and can compose to the user's tracked emotional state.
 from synapseos.create.music import MusicComposer, Composition
 from synapseos.create.image import ImageGenerator, GeneratedImage
 from synapseos.create.video import VideoGenerator, GeneratedVideo
+from synapseos.create.raag import RAAGS, TAALS, Raag, raag_for_state
+from synapseos.create.lyrics import LyricWriter, Lyrics
+from synapseos.create.song import Song, SongComposer
 
 __all__ = ["MusicComposer", "Composition", "ImageGenerator", "GeneratedImage",
-           "VideoGenerator", "GeneratedVideo"]
+           "VideoGenerator", "GeneratedVideo", "RAAGS", "TAALS", "Raag",
+           "raag_for_state", "LyricWriter", "Lyrics", "Song", "SongComposer"]

@@ -156,6 +156,113 @@ def test_video_soundtrack():
 
 
 # ---------------------------------------------------------------------------
+# Raag system, lyrics, singing
+# ---------------------------------------------------------------------------
+
+@test("raag grammar: swara math and structure")
+def test_raag_swaras():
+    from synapseos.create.raag import RAAGS, swara_to_semitone
+    assert swara_to_semitone("S") == 0
+    assert swara_to_semitone("M") == 6          # tivra Ma
+    assert swara_to_semitone("m") == 5
+    assert swara_to_semitone("S'") == 12        # upper octave
+    yaman = RAAGS["yaman"]
+    assert 6 in yaman.aroha_semitones()          # Yaman uses tivra Ma
+    bhupali = RAAGS["bhupali"]
+    assert len(bhupali.aroha) == 6               # pentatonic + upper Sa
+    assert 5 not in bhupali.aroha_semitones() and 11 not in bhupali.aroha_semitones()
+
+
+@test("raag chosen from emotional state by rasa")
+def test_raag_for_state():
+    from synapseos.create.raag import raag_for_state
+    assert raag_for_state(-0.5, 0.2).rasa == "karuna"      # sad+low → pathos
+    assert raag_for_state(0.5, 0.8).rasa == "veera"        # joy+energy → valor
+    assert raag_for_state(0.0, 0.2).rasa == "shanta"       # neutral → peace
+
+
+@test("lyrics: themed, rhymed, deterministic")
+def test_lyrics():
+    from synapseos.create.lyrics import LyricWriter, RHYME_GROUPS
+    a = LyricWriter().write("the ocean", emotion="sad", seed=5)
+    b = LyricWriter().write("the ocean", emotion="sad", seed=5)
+    assert a.verse == b.verse                    # seeded
+    assert len(a.verse) == 4 and len(a.chorus) == 2
+    assert "ocean" in a.full_text()
+    # ABAB rhyme: lines 1&3 end in same rhyme group
+    def group(line):
+        w = line.split()[-1].lower()
+        return next((g for g, words in RHYME_GROUPS.items() if w in words), None)
+    assert group(a.verse[0]) == group(a.verse[2]) is not None
+    assert a.syllables                            # singer input present
+
+
+@test("vocals: formant singing renders with emotion differences")
+def test_vocals():
+    import numpy as np
+    from synapseos.create.vocals import sing_note
+    sad = sing_note(220.0, 0.6, "la", emotion="sad")
+    energetic = sing_note(220.0, 0.6, "la", emotion="energetic")
+    assert len(sad) == len(energetic) > 1000
+    assert np.abs(sad).max() <= 1.0
+    # energetic voice is louder by configuration (amp 1.1 vs 0.8)
+    assert np.abs(energetic).max() > np.abs(sad).max()
+
+
+@test("tabla and tanpura synthesize")
+def test_tabla_tanpura():
+    import numpy as np
+    from synapseos.create.instruments import tabla_stroke, tanpura_drone
+    dha = tabla_stroke("dha")
+    assert len(dha) > 100 and np.abs(dha).max() <= 1.0
+    drone = tanpura_drone(1.0)
+    assert abs(len(drone) - 22050) < 100
+
+
+@test("full song: write, compose in raag, sing")
+def test_song_pipeline():
+    from synapseos.create.song import SongComposer
+    song = SongComposer(out_dir=_tmp_dir()).sing(
+        "the monsoon rain", raag="malkauns", cycles=1, seed=9)
+    assert os.path.exists(song.path)
+    assert song.raag == "Malkauns" and song.rasa == "karuna"
+    assert song.emotion == "sad"                 # rasa → voice emotion
+    assert "[Verse]" in song.lyrics_text and "[Chorus]" in song.lyrics_text
+    assert song.melody_swaras[: 7] == ["m", "g", "m", "d", "n", "d", "m"]  # pakad opens
+    with wave.open(song.path) as w:
+        assert w.getnframes() / w.getframerate() > 5.0
+
+
+@test("song picks raag from affect state when no raag given")
+def test_song_affect():
+    from synapseos.create.song import SongComposer
+    song = SongComposer(out_dir=_tmp_dir()).sing(
+        "lost time", valence=-0.5, arousal=0.2, cycles=1, seed=4)
+    assert song.rasa == "karuna"
+
+
+@test("MUSE sings a song end to end")
+def test_muse_song():
+    from synapseos.create import SongComposer as SC
+    agent = _muse()
+    agent._song_composer = SC(out_dir=_tmp_dir())
+    result = agent.handle("sing a song about the river in raag bhupali")
+    assert result.structured["kind"] == "song"
+    assert result.structured["raag"] == "Bhupali"
+    assert os.path.exists(result.structured["path"])
+    assert "[Verse]" in result.output
+    assert "river" in result.structured["lyrics_text"].lower()
+
+
+@test("comfyui backend degrades gracefully when not running")
+def test_comfyui_graceful():
+    from synapseos.create.neural_backends import comfyui_status, generate_via_comfyui
+    status = comfyui_status(url="http://127.0.0.1:1", timeout=0.2)   # nothing there
+    assert status["running"] is False
+    assert generate_via_comfyui("test", url="http://127.0.0.1:1") is None
+
+
+# ---------------------------------------------------------------------------
 # MUSE agent
 # ---------------------------------------------------------------------------
 
@@ -180,7 +287,7 @@ def test_muse_routing():
 
 @test("MUSE composes music with score in output")
 def test_muse_music():
-    result = _muse().handle("compose a sad song")
+    result = _muse().handle("compose a sad melody")
     assert "natural minor" in result.output
     assert "Audio: " in result.output
     assert result.structured["kind"] == "music"
@@ -258,6 +365,9 @@ if __name__ == "__main__":
         test_music_for_state, test_music_all_moods,
         test_image_basic, test_image_deterministic, test_image_styles,
         test_video_basic, test_video_soundtrack,
+        test_raag_swaras, test_raag_for_state, test_lyrics, test_vocals,
+        test_tabla_tanpura, test_song_pipeline, test_song_affect,
+        test_muse_song, test_comfyui_graceful,
         test_muse_routing, test_muse_music, test_muse_mood_music,
         test_muse_image, test_muse_video, test_muse_records,
         test_controller_muse,

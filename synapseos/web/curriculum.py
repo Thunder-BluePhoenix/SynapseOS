@@ -63,6 +63,12 @@ SUBJECTS: dict[str, list[str]] = {
         "Japanese language", "English grammar", "Linguistics",
         "Writing system", "Phonetics",
     ],
+    "music": [
+        "Music theory", "Raga", "Hindustani classical music",
+        "Carnatic music", "Tala (music)", "Harmony", "Melody",
+        "Counterpoint", "Swara", "Thaat", "Scale (music)",
+        "Chord progression", "Musical tuning",
+    ],
 }
 
 

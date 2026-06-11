@@ -31,7 +31,8 @@ class MUSEAgent(AdvisorAgent):
         keywords=["compose", "music", "song", "melody", "tune", "draw",
                   "paint", "generate an image", "generate image", "create an image",
                   "make a video", "create a video", "animate", "artwork",
-                  "new idea", "brainstorm", "invent", "imagine", "creative"],
+                  "new idea", "brainstorm", "invent", "imagine", "creative",
+                  "sing", "raag", "raga", "lyrics", "bhajan", "ghazal"],
         anti_keywords=["doctype", "invoice", "deploy", "rules"],
         base_confidence=0.55,
         description="Creative output: music composition, image/video generation, ideas",
@@ -45,6 +46,7 @@ class MUSEAgent(AdvisorAgent):
         self._imager = None
         self._videographer = None
         self._creativity = None
+        self._song_composer = None
 
     # Lazy builders — heavy imports only when actually creating
     @property
@@ -74,7 +76,10 @@ class MUSEAgent(AdvisorAgent):
         ql = query.lower()
         trace = ["MUSE creative agent engaged"]
 
-        if any(w in ql for w in ("compose", "music", "song", "melody", "tune")):
+        if any(w in ql for w in ("sing", "song", "lyrics", "raag", "raga",
+                                 "bhajan", "ghazal")):
+            return self._song(query, ql, trace)
+        if any(w in ql for w in ("compose", "music", "melody", "tune")):
             return self._music(query, ql, trace)
         if any(w in ql for w in ("video", "animate", "animation")):
             return self._video(query, ql, trace)
@@ -108,6 +113,46 @@ class MUSEAgent(AdvisorAgent):
         return self._result(query, out, 0.85, trace,
                             {"kind": "music", **comp.to_dict()})
 
+    # -- song: write + compose + sing -------------------------------------------------
+
+    def _song(self, query: str, ql: str, trace: list[str]) -> AgentResult:
+        from synapseos.create import RAAGS, SongComposer
+        raag = next((name for name in RAAGS if name in ql), None)
+        mood = next((m for m in _MOOD_WORDS if m in ql), None)
+        emotion = {"happy": "joyful", "sad": "sad", "calm": "calm",
+                   "energetic": "energetic", "mysterious": "devotion",
+                   "bluesy": "sad"}.get(mood)
+        theme = self._concept(ql.replace("sing", " ").replace("a song", " ")
+                              .replace("song", " ").replace("lyrics", " "))
+        for name in RAAGS:
+            theme = theme.replace(f"in raag {name}", "").replace(f"raag {name}", "")
+        theme = theme.replace("raag", "").replace("raga", "").strip() or "the journey"
+
+        kwargs: dict = {"theme": theme, "raag": raag, "emotion": emotion}
+        if emotion is None and raag is None and self.emotion_tracker is not None:
+            state = self.emotion_tracker.state
+            kwargs["valence"] = state.valence_ema
+            kwargs["arousal"] = state.arousal_ema
+            trace.append(f"raag chosen from affect state (v={state.valence_ema:+.2f})")
+
+        if self._song_composer is None:
+            from synapseos.create import SongComposer as SC
+            self._song_composer = SC()
+        song = self._song_composer.sing(**kwargs)
+        trace.append(f"raag {song.raag} ({song.rasa}), {song.taal}, "
+                     f"{song.tempo} BPM, sung with {song.emotion} voice")
+        self._record(f"song:{theme}")
+        out = (f"[MUSE — song]\n"
+               f"Wrote, composed and sang an original song on \"{theme}\".\n"
+               f"Raag {song.raag} ({song.rasa} rasa, {song.taal}, {song.tempo} BPM), "
+               f"voice: {song.emotion}, instrument: {song.instrument} + tanpura + tabla.\n"
+               f"Audio: {song.path}  ({song.duration_s}s)\n\n"
+               f"{song.lyrics_text}\n\n"
+               f"Opening swaras: {' '.join(song.melody_swaras[:10])}\n"
+               f"(Seed {song.seed}. Vocals are formant-synthesized — expressive "
+               f"vowel singing; crisp lyric diction needs a neural vocal model.)")
+        return self._result(query, out, 0.85, trace, {"kind": "song", **song.to_dict()})
+
     # -- image ----------------------------------------------------------------------
 
     def _concept(self, ql: str) -> str:
@@ -120,6 +165,21 @@ class MUSEAgent(AdvisorAgent):
 
     def _image(self, query: str, ql: str, trace: list[str]) -> AgentResult:
         concept = self._concept(ql)
+        # Neural upgrade path: local ComfyUI with an installed checkpoint
+        try:
+            from synapseos.create.neural_backends import generate_via_comfyui
+            neural_path = generate_via_comfyui(concept)
+            if neural_path:
+                trace.append("rendered via local ComfyUI diffusion")
+                self._record(f"image:{concept}")
+                return self._result(
+                    query,
+                    f"[MUSE — image]\nGenerated via local ComfyUI diffusion: "
+                    f"\"{concept}\"\nImage: {neural_path}",
+                    0.85, trace, {"kind": "image", "backend": "comfyui",
+                                  "path": neural_path, "concept": concept})
+        except Exception:
+            pass
         style = next((s for s in ("flow", "fractal", "geo") if s in ql), "auto")
         img = self.imager.create(concept, style=style)
         trace.append(f"procedural {img.style} render, seed {img.seed}")

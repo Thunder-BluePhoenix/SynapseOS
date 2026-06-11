@@ -1,15 +1,18 @@
 {
   "state": {
-    "valence_ema": 0.2,
-    "arousal_ema": 0.35,
-    "dominant_emotion": "joy",
-    "observations": 1,
-    "last_shift": "",
-    "updated_at": 1781216375.687028
+    "valence_ema": -0.025,
+    "arousal_ema": 0.337,
+    "dominant_emotion": "sadness",
+    "observations": 2,
+    "last_shift": "mood dropped (+0.20 \u2192 -0.70) on: \"sing a sad song about the monsoon rain in raag malkauns\"",
+    "updated_at": 1781217303.7525802
   },
   "trigger_counts": {
     "joy": {
       "compose happy song": 1
+    },
+    "sadness": {
+      "sing sad song": 1
     }
   }
 }
