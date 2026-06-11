@@ -574,6 +574,11 @@ class AgentRouter:
             self._agents.append(MENTORAgent())
         except Exception as e:
             print(f"[AgentRouter] MENTOR load failed: {e}")
+        try:
+            from synapseos.phase5.agents.muse import MUSEAgent
+            self._agents.append(MUSEAgent())
+        except Exception as e:
+            print(f"[AgentRouter] MUSE load failed: {e}")
 
     def wire_advisors(self, **resources) -> None:
         """Inject shared resources (memory, tracker, world model, web loop)."""

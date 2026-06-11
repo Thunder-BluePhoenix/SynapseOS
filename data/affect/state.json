@@ -1,11 +1,15 @@
 {
   "state": {
-    "valence_ema": 0.0,
-    "arousal_ema": 0.3,
-    "dominant_emotion": "neutral",
-    "observations": 0,
+    "valence_ema": 0.2,
+    "arousal_ema": 0.35,
+    "dominant_emotion": "joy",
+    "observations": 1,
     "last_shift": "",
-    "updated_at": 1781211731.48278
+    "updated_at": 1781216375.687028
   },
-  "trigger_counts": {}
+  "trigger_counts": {
+    "joy": {
+      "compose happy song": 1
+    }
+  }
 }
