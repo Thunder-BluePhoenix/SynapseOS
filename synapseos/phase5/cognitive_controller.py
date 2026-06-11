@@ -592,6 +592,14 @@ class AgentRouter:
             if isinstance(agent, AdvisorAgent):
                 agent.wire(**resources)
 
+    def wire_karma(self, executor, scheduler, outbox) -> None:
+        """Give KARMA the credentialed executor, scheduler, and approval outbox."""
+        for agent in self._agents:
+            if agent.capability.name == "KARMA":
+                agent._executor = executor
+                agent._scheduler = scheduler
+                agent._outbox = outbox
+
     def score(self, query: str) -> list[tuple[float, Any]]:
         """Return (confidence, agent) pairs for agents above threshold, highest first."""
         scored = [(a.can_handle(query), a) for a in self._agents]
@@ -669,6 +677,10 @@ class CognitiveController:
         web_fetcher=None,
         enable_affect: bool = True,
         affect_state_path: str = "data/affect/state.json",
+        enable_actions: bool = True,
+        action_trust: int = 1,                 # 0 OBSERVE 1 STANDARD 2 TRUSTED 3 FULL
+        outbox_auto_approve: bool = False,
+        enable_soul: bool = True,
     ):
         self.router       = ModeRouter()
         self.executor     = ParallelExecutor(mode_timeout=mode_timeout)
@@ -713,8 +725,41 @@ class CognitiveController:
             except Exception as e:
                 print(f"[CognitiveController] Affect init failed ({e}) — disabled")
 
+        # Actions + identity: the companion's hands and its own accounts.
+        self.action_executor = None
+        self.scheduler = None
+        self.outbox = None
+        self.identity = None
+        if enable_actions:
+            try:
+                from synapseos.actions import ActionExecutor, PermissionPolicy, TaskScheduler
+                from synapseos.identity import CredentialStore, Identity, Outbox
+                creds = CredentialStore()
+                policy = PermissionPolicy(trust_level=action_trust,
+                                          credentials=creds.as_policy_dict())
+                self.action_executor = ActionExecutor(policy=policy)
+                self.scheduler = TaskScheduler(self.action_executor)
+                self.outbox = Outbox(self.action_executor,
+                                     auto_approve=outbox_auto_approve)
+                self.identity = Identity.load()
+            except Exception as e:
+                print(f"[CognitiveController] Actions init failed ({e}) — disabled")
+
+        # Soul: aesthetics, self-reflection, moral courage.
+        self.aesthetics = None
+        self.reflection = None
+        self.values = None
+        if enable_soul:
+            try:
+                from synapseos.soul import AestheticPreferences, SelfReflection, ValueSystem
+                self.aesthetics = AestheticPreferences()
+                self.reflection = SelfReflection()
+                self.values = ValueSystem()
+            except Exception as e:
+                print(f"[CognitiveController] Soul init failed ({e}) — disabled")
+
         # Advisor personas share the companion's memory, emotional state,
-        # world model and learning loop.
+        # world model, learning loop, hands, and soul.
         if self.agent_router is not None:
             self.agent_router.wire_advisors(
                 semantic_memory=self.memory.semantic,
@@ -722,6 +767,8 @@ class CognitiveController:
                 world_model=self.world_model,
                 web_loop=self.web_loop,
             )
+            self.agent_router.wire_karma(self.action_executor, self.scheduler,
+                                         self.outbox)
 
     def _init_web_learning(self, web_dir: str, kg_path: str,
                            allowed_domains: list[str] | None, fetcher) -> None:
@@ -851,6 +898,22 @@ class CognitiveController:
                     query_tags.append(f"emotion:{affect.dominant_emotion}")
             except Exception:
                 pass
+
+        # 1a-moral. Moral courage: if the request violates a held value, the
+        #     companion refuses — naming the value and accepting the cost. This
+        #     is conviction, not an external filter, and it short-circuits.
+        if self.values is not None:
+            judgment = self.values.judge(query)
+            if not judgment.permitted:
+                self.memory.record_interaction(
+                    query=query, response=judgment.response[:500],
+                    mode_used="moral_refusal", tags=["values", judgment.value])
+                return CognitionResult(
+                    query=query, modes_activated=[], primary_output=judgment.response,
+                    output_type="language", mode_results=[],
+                    memory_context={"summary": "moral judgment"},
+                    total_latency_ms=(time.time() - t0) * 1000,
+                    confidence=judgment.conviction, affect=affect_info)
 
         # 1b. World model: perceive the query (advances persistent z_t, measures
         #     surprise/novelty) and recall state-conditioned past experiences.
@@ -1002,6 +1065,18 @@ class CognitiveController:
                 self.emotion_tracker.save()
             except Exception:
                 pass
+        if self.scheduler is not None:
+            try:
+                self.scheduler.stop()
+            except Exception:
+                pass
+        if self.reflection is not None:
+            # snapshot the inner state on shutdown — fuel for future reflection
+            try:
+                self.reflection.capture(self.emotion_tracker, self.aesthetics,
+                                        self.values, self.memory, note="shutdown")
+            except Exception:
+                pass
         self.memory.save()
         if self.world_model is not None:
             try:
@@ -1023,7 +1098,56 @@ class CognitiveController:
             s["world_model"] = None
         s["web_learning"] = self.web_loop.stats() if self.web_loop is not None else None
         s["affect"] = self.emotion_tracker.stats() if self.emotion_tracker is not None else None
+        s["actions"] = self.action_executor.stats() if self.action_executor is not None else None
+        s["outbox"] = self.outbox.stats() if self.outbox is not None else None
+        s["soul"] = {
+            "taste": self.aesthetics.taste() if self.aesthetics else None,
+            "values": self.values.stats() if self.values else None,
+            "reflection": self.reflection.stats() if self.reflection else None,
+        } if self.aesthetics is not None else None
         return s
+
+    # -- soul + identity public surface --------------------------------------------
+
+    def reflect(self) -> str:
+        """Narrate how the companion has changed over time."""
+        if self.reflection is None:
+            return "Self-reflection is disabled."
+        # capture a fresh point so 'now' is current
+        self.reflection.capture(self.emotion_tracker, self.aesthetics,
+                                self.values, self.memory, note="on request")
+        return self.reflection.reflect()
+
+    def appraise(self, subject: str, text: str, kind: str = "idea") -> dict:
+        """Have the companion react to something's beauty, and learn from it."""
+        if self.aesthetics is None:
+            return {"error": "aesthetics disabled"}
+        reaction = self.aesthetics.encounter(subject, text, kind)
+        self.aesthetics.save()
+        return {"reaction": reaction.to_dict(),
+                "says": self.aesthetics.explain(reaction),
+                "taste": self.aesthetics.describe_taste()}
+
+    def challenge_value(self, value_name: str, argument: str) -> dict:
+        """Push back on one of the companion's values."""
+        if self.values is None:
+            return {"error": "values disabled"}
+        return self.values.challenge(value_name, argument)
+
+    def grant_account(self, platform: str, handle: str, purpose: str = "",
+                      cred_keys: list[str] | None = None) -> dict:
+        """Register an account the companion owns (Gmail, YouTube, Git, social)."""
+        if self.identity is None:
+            return {"error": "identity disabled"}
+        acct = self.identity.add_account(platform, handle, purpose, cred_keys)
+        self.identity.save()
+        return acct.to_dict()
+
+    def approve_outbox(self, item_id: str) -> dict:
+        if self.outbox is None:
+            return {"error": "outbox disabled"}
+        item = self.outbox.approve(item_id)
+        return item.to_dict() if item else {"error": "not found"}
 
 
 # ---------------------------------------------------------------------------

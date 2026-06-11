@@ -20,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from synapseos.actions import ActionExecutor, PermissionPolicy, TaskScheduler
+from synapseos.actions.executor import OBSERVE, STANDARD, TRUSTED, FULL
 
 
 results = []
@@ -42,9 +43,9 @@ def test(name: str):
     return decorator
 
 
-def _tmp_executor(**policy_kw) -> ActionExecutor:
+def _tmp_executor(trust=STANDARD, **policy_kw) -> ActionExecutor:
     d = tempfile.mkdtemp(prefix="actions_test_")
-    policy = PermissionPolicy(workspace=os.path.join(d, "ws"),
+    policy = PermissionPolicy(trust_level=trust, workspace=os.path.join(d, "ws"),
                               read_roots=[d], **policy_kw)
     return ActionExecutor(policy=policy,
                           audit_path=os.path.join(d, "audit.json"))
@@ -85,6 +86,32 @@ def test_shell_allowlist():
     assert piped.ok and "|" in piped.output     # echoed literally, not executed
 
 
+@test("trust tiers gate tools; raising trust unlocks them")
+def test_trust_tiers():
+    # OBSERVE can't write
+    obs = _tmp_executor(trust=OBSERVE)
+    denied = obs.act("file.write", path="a.txt", content="x")
+    assert not denied.ok and "trust too low" in denied.error
+    # STANDARD can write but not run code (TRUSTED) or delete (FULL)
+    std = _tmp_executor(trust=STANDARD)
+    assert std.act("file.write", path="a.txt", content="x").ok
+    assert not std.act("code.python", code="print(1)").ok
+    # TRUSTED unlocks code execution
+    tr = _tmp_executor(trust=TRUSTED)
+    r = tr.act("code.python", code="print(6*7)")
+    assert r.ok and "42" in r.output
+    # FULL unlocks unrestricted shell + delete-anywhere
+    full = _tmp_executor(trust=FULL)
+    assert full.act("shell.run", command="echo full-power").ok
+
+
+@test("FULL trust allows shell features and any command")
+def test_full_shell():
+    full = _tmp_executor(trust=FULL)
+    r = full.act("shell.run", command="echo a && echo b")
+    assert r.ok and "a" in r.output and "b" in r.output   # && works under shell=True
+
+
 @test("audit trail records everything and persists")
 def test_audit():
     d = tempfile.mkdtemp(prefix="actions_test_")
@@ -118,6 +145,35 @@ def test_list_search():
     found = ex.act("file.search", pattern="findme_special",
                    root=ex.policy.workspace)
     assert found.ok and "findme_special" in found.output
+
+
+# ---------------------------------------------------------------------------
+# Expanded tools: code, web, registry
+# ---------------------------------------------------------------------------
+
+@test("code.python runs and returns output")
+def test_code_python():
+    ex = _tmp_executor(trust=TRUSTED)
+    r = ex.act("code.python", code="print(sum(range(10)))")
+    assert r.ok and "45" in r.output
+
+
+@test("registry exposes the broad toolset")
+def test_registry():
+    ex = _tmp_executor(trust=TRUSTED)
+    names = ex.tools()
+    for t in ("file.read", "shell.run", "http.get", "http.request",
+              "email.send", "browser.open", "code.python", "clipboard.read",
+              "notify", "screenshot"):
+        assert t in names, f"missing tool {t}"
+    assert len(names) >= 28
+
+
+@test("email.send fails clearly without credentials")
+def test_email_no_creds():
+    ex = _tmp_executor(trust=TRUSTED)
+    r = ex.act("email.send", to="x@y.com", subject="hi", body="test")
+    assert not r.ok and "credentials" in r.error
 
 
 # ---------------------------------------------------------------------------

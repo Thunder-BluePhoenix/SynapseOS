@@ -23,18 +23,24 @@ class KARMAAgent(AdvisorAgent):
                   "read file", "read the file", "write a file", "create a file",
                   "save to file", "search files", "find file", "fetch url",
                   "fetch the page", "schedule", "remind me", "every hour",
-                  "every day", "audit trail", "what have you done"],
+                  "every day", "audit trail", "what have you done",
+                  "send email", "email", "send a message", "post to",
+                  "open browser", "browse to", "screenshot", "notify",
+                  "run python", "run code", "http", "api call", "download",
+                  "clipboard", "draft", "outbox"],
         anti_keywords=["sing", "compose", "draw", "teach"],
         base_confidence=0.6,
-        description="Actions: files, sandboxed shell, web fetch, scheduling",
+        description="Actions: files, shell, HTTP, browser, email, messaging, "
+                    "code execution, macOS control, scheduling — tiered + audited",
     )
     domain = "action"
     seed_topics = []
 
-    def __init__(self, executor=None, scheduler=None) -> None:
+    def __init__(self, executor=None, scheduler=None, outbox=None) -> None:
         super().__init__()
         self._executor = executor
         self._scheduler = scheduler
+        self._outbox = outbox
 
     @property
     def executor(self):
@@ -55,6 +61,11 @@ class KARMAAgent(AdvisorAgent):
     def _handle(self, query: str, context=None) -> AgentResult:
         ql = query.lower()
         trace = ["KARMA action agent engaged"]
+
+        # Outbound communications go through the approval outbox (drafts)
+        draft = self._maybe_draft(query, ql, trace)
+        if draft is not None:
+            return draft
 
         if "audit" in ql or "what have you done" in ql:
             rows = self.executor.audit_trail(limit=8)
@@ -89,12 +100,18 @@ class KARMAAgent(AdvisorAgent):
         # tool mapping
         call = self._map_tool(query, ql)
         if call is None:
+            tools = sorted(self.executor.registry)
             return self._result(
                 query,
-                "[KARMA]\nI can: read/write/search files (workspace-sandboxed), "
-                "list directories, run allowlisted commands, fetch a URL, schedule "
-                "tasks, and show my audit trail. Phrase the action explicitly.",
-                0.4, trace, {"kind": "help"})
+                "[KARMA]\nI have hands. Files (read/write/search/move/delete), "
+                "shell, HTTP (any method), browser (open/read/js), email & "
+                "messaging (via outbox approval), code execution (python/node/"
+                "applescript), macOS control (clipboard/notify/say/screenshot/"
+                "apps), scheduling. Each tool needs a trust tier; mine is "
+                f"{self.executor.policy.trust_level}.\n"
+                f"Available: {', '.join(tools)}.\n"
+                "Phrase the action explicitly.",
+                0.4, trace, {"kind": "help", "tools": len(tools)})
 
         tool, args = call
         result = self.executor.act(tool, **args)
@@ -106,6 +123,47 @@ class KARMAAgent(AdvisorAgent):
             f"[KARMA — {tool}] {status}\n{body[:1200]}",
             0.8 if result.ok else 0.5, trace,
             {"kind": "action", "tool": tool, "ok": result.ok})
+
+    # -- outbound comms → approval outbox --------------------------------------------
+
+    def _maybe_draft(self, query: str, ql: str, trace: list[str]):
+        if self._outbox is None:
+            return None
+        # "send email to X about Y saying Z" / "email X: ..."
+        m = re.search(r"(?:send (?:an )?email|email)\s+(?:to\s+)?([\w.@+\-]+)"
+                      r"(?:\s+(?:about|subject)\s+([^:]+?))?(?:\s*[:\-]\s*|\s+saying\s+)(.+)$",
+                      query, re.IGNORECASE | re.DOTALL)
+        if m and "@" in m.group(1):
+            to, subject, body = m.group(1), (m.group(2) or "").strip(), m.group(3).strip()
+            item = self._outbox.draft("email", to=to, subject=subject or "(no subject)",
+                                      body=body)
+            trace.append(f"drafted email to outbox ({item.id})")
+            status = ("auto-approved and sent" if item.status == "sent"
+                      else "drafted — awaiting your approval")
+            return self._result(
+                query,
+                f"[KARMA — outbox] Email to {to} {status}.\n"
+                f"Subject: {item.subject}\n{item.body[:300]}\n"
+                f"(id {item.id}. Approve with the outbox; nothing leaves without it.)",
+                0.8, trace, {"kind": "draft", "channel": "email", "id": item.id,
+                             "status": item.status})
+        m = re.search(r"(?:message|telegram|dm)\s+(?:to\s+)?(\S+)\s+saying\s+(.+)$",
+                      query, re.IGNORECASE | re.DOTALL)
+        if m:
+            item = self._outbox.draft("telegram", to=m.group(1), body=m.group(2).strip())
+            trace.append(f"drafted message to outbox ({item.id})")
+            return self._result(
+                query, f"[KARMA — outbox] Message drafted to {m.group(1)} "
+                f"(id {item.id}, status {item.status}).", 0.8, trace,
+                {"kind": "draft", "channel": "telegram", "id": item.id})
+        if "outbox" in ql or "pending message" in ql or "pending email" in ql:
+            pend = self._outbox.pending()
+            lines = ["[KARMA — outbox]"] + [
+                f"  {i.id}  {i.channel} → {i.to}: {i.subject or i.body[:40]}"
+                for i in pend] or ["[KARMA — outbox]", "  (nothing pending)"]
+            return self._result(query, "\n".join(lines), 0.75, trace,
+                                {"kind": "outbox", "pending": len(pend)})
+        return None
 
     # -- request → explicit tool call ------------------------------------------------
 
@@ -133,7 +191,38 @@ class KARMAAgent(AdvisorAgent):
         m = re.search(r"fetch (?:url|the page|page)?\s*(https?://\S+)", query,
                       re.IGNORECASE)
         if m:
-            return "web.fetch", {"url": m.group(1)}
+            return "http.get", {"url": m.group(1)}
+        m = re.search(r"download\s+(https?://\S+)", query, re.IGNORECASE)
+        if m:
+            return "web.download", {"url": m.group(1)}
+        m = re.search(r"(?:open browser|browse to|open in browser)\s+(\S+)", query,
+                      re.IGNORECASE)
+        if m:
+            url = m.group(1)
+            return "browser.open", {"url": url if url.startswith("http") else "https://" + url}
+        m = re.search(r"read (?:the )?(?:web ?)?page\s+(https?://\S+)", query, re.IGNORECASE)
+        if m:
+            return "browser.read", {"url": m.group(1)}
+        if "screenshot" in ql:
+            return "screenshot", {}
+        m = re.search(r"notify\s+(?:me\s+)?(.+)$", query, re.IGNORECASE)
+        if m:
+            return "notify", {"text": m.group(1).strip()}
+        m = re.search(r"(?:say|speak)\s+(?:out loud\s+)?(.+)$", query, re.IGNORECASE)
+        if m and ql.startswith(("say", "speak")):
+            return "say", {"text": m.group(1).strip()}
+        m = re.search(r"run python\s+(.+)$", query, re.IGNORECASE | re.DOTALL)
+        if m:
+            return "code.python", {"code": m.group(1).strip()}
+        m = re.search(r"(?:api call|http)\s+(get|post|put|delete)?\s*(https?://\S+)",
+                      query, re.IGNORECASE)
+        if m:
+            return "http.request", {"url": m.group(2),
+                                    "method": (m.group(1) or "GET").upper()}
+        if "system info" in ql or "system information" in ql:
+            return "system.info", {}
+        if "list processes" in ql or "running processes" in ql:
+            return "process.list", {}
         return None
 
     def _result(self, query: str, output: str, confidence: float,

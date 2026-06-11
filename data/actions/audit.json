@@ -10,6 +10,17 @@
       "error": "",
       "duration_ms": 3.247976303100586,
       "timestamp": 1781217729.1138408
+    },
+    {
+      "tool": "shell.run",
+      "args": {
+        "command": "echo hi-from-hands"
+      },
+      "ok": true,
+      "output": "hi-from-hands\n",
+      "error": "",
+      "duration_ms": 10.759115219116211,
+      "timestamp": 1781218877.2014039
     }
   ]
 }

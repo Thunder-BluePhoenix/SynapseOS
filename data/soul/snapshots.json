@@ -1,0 +1,27 @@
+{
+  "snapshots": [
+    {
+      "timestamp": 1781218878.015069,
+      "valence_ema": 0.0,
+      "arousal_ema": 0.3,
+      "taste_top": "symmetry",
+      "taste_weights": {
+        "symmetry": 0.5,
+        "economy": 0.5,
+        "surprise": 0.5,
+        "coherence": 0.5,
+        "depth": 0.5
+      },
+      "value_convictions": {
+        "honesty": 0.9,
+        "non_harm": 0.95,
+        "privacy": 0.85,
+        "disclosure": 0.8,
+        "no_manipulation": 0.85
+      },
+      "episodic_count": 2,
+      "semantic_count": 0,
+      "note": "shutdown"
+    }
+  ]
+}
