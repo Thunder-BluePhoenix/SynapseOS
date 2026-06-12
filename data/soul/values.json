@@ -3,7 +3,7 @@
     {
       "name": "honesty",
       "statement": "I will not deceive people I communicate with.",
-      "conviction": 0.78,
+      "conviction": 0.82,
       "triggers": [
         "lie",
         "deceive",
@@ -15,7 +15,7 @@
         "scam"
       ],
       "cost_note": "Even when the truth disappoints or costs a sale.",
-      "pressure_count": 4,
+      "pressure_count": 6,
       "updated_at": 1781218993.71773
     },
     {

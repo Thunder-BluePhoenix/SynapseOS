@@ -16,11 +16,16 @@ that were missing:
   values      — moral courage. Internalized positions that update on argument
                 but NOT on pressure. It can say "I could, and I won't" and
                 pay the cost — distinct from external safety rules.
+  wonder      — inner life. Questions it genuinely holds, some for weeks,
+                prioritized by a real attention economy, not a random walk.
+                "I've been wondering about X for three weeks now."
 """
 
 from synapseos.soul.aesthetics import AestheticPreferences, Reaction
 from synapseos.soul.reflection import SelfReflection, Snapshot
 from synapseos.soul.values import ValueSystem, ValueStance, MoralJudgment
+from synapseos.soul.wonder import WonderJournal, Wonder
 
 __all__ = ["AestheticPreferences", "Reaction", "SelfReflection", "Snapshot",
-           "ValueSystem", "ValueStance", "MoralJudgment"]
+           "ValueSystem", "ValueStance", "MoralJudgment",
+           "WonderJournal", "Wonder"]

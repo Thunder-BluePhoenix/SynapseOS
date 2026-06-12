@@ -6,7 +6,7 @@
     "coherence": 0.5,
     "depth": 0.5
   },
-  "exposures": 2,
+  "exposures": 4,
   "reactions": [
     {
       "subject": "Euler",
@@ -33,6 +33,32 @@
       },
       "elegance": 0.271,
       "timestamp": 1781243817.563062
+    },
+    {
+      "subject": "Euler",
+      "kind": "proof",
+      "scores": {
+        "symmetry": 0.5,
+        "economy": 0.444,
+        "surprise": 0.0,
+        "coherence": 0.125,
+        "depth": 0.286
+      },
+      "elegance": 0.271,
+      "timestamp": 1781244962.219847
+    },
+    {
+      "subject": "Euler",
+      "kind": "proof",
+      "scores": {
+        "symmetry": 0.5,
+        "economy": 0.444,
+        "surprise": 0.0,
+        "coherence": 0.125,
+        "depth": 0.286
+      },
+      "elegance": 0.271,
+      "timestamp": 1781262217.398931
     }
   ]
 }

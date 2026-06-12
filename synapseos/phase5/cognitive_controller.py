@@ -682,6 +682,11 @@ class CognitiveController:
         outbox_auto_approve: bool = False,
         enable_soul: bool = True,
         gateway_config=None,
+        enable_mesh: bool = False,
+        mesh_peers: list[str] | None = None,
+        mesh_store_path: str = "data/mesh/sync.json",
+        mesh_sync_every: float = 30.0,
+        mesh_transport=None,
     ):
         self.router       = ModeRouter()
         self.executor     = ParallelExecutor(mode_timeout=mode_timeout)
@@ -750,12 +755,15 @@ class CognitiveController:
         self.aesthetics = None
         self.reflection = None
         self.values = None
+        self.wonder = None
         if enable_soul:
             try:
-                from synapseos.soul import AestheticPreferences, SelfReflection, ValueSystem
+                from synapseos.soul import (AestheticPreferences, SelfReflection,
+                                            ValueSystem, WonderJournal)
                 self.aesthetics = AestheticPreferences()
                 self.reflection = SelfReflection()
                 self.values = ValueSystem()
+                self.wonder = WonderJournal()
             except Exception as e:
                 print(f"[CognitiveController] Soul init failed ({e}) — disabled")
 
@@ -775,6 +783,22 @@ class CognitiveController:
         # Built but NOT started here — call start_gateway() explicitly.
         self.gateway = None
         self._gateway_config = gateway_config
+
+        # Device mesh: offline-first peer memory sync.
+        # Built but background thread NOT started here — call start_mesh() explicitly.
+        self.mesh: "MeshNode | None" = None
+        if enable_mesh:
+            try:
+                from synapseos.mesh import MeshNode, SyncStore
+                _store = SyncStore(path=mesh_store_path)
+                self.mesh = MeshNode(
+                    store=_store,
+                    peers=list(mesh_peers or []),
+                    transport=mesh_transport,
+                    sync_every=mesh_sync_every,
+                )
+            except Exception as e:
+                print(f"[CognitiveController] Mesh init failed ({e}) — disabled")
 
     def _init_web_learning(self, web_dir: str, kg_path: str,
                            allowed_domains: list[str] | None, fetcher) -> None:
@@ -930,6 +954,9 @@ class CognitiveController:
                 wm_surprise, wm_novelty = percept.surprise, percept.novelty
                 recalled = [r.to_dict() for r in self.world_model.reason(query, top_k=3)]
                 self.memory.set_working("world_state_step", self.world_model.state.step)
+                # Inner life: a genuine surprise becomes a question it now holds.
+                if self.wonder is not None and wm_surprise >= 0.5:
+                    self.wonder.from_surprise(query, wm_surprise)
             except Exception:
                 pass
 
@@ -1088,6 +1115,17 @@ class CognitiveController:
                                         self.values, self.memory, note="shutdown")
             except Exception:
                 pass
+        if self.wonder is not None:
+            try:
+                self.wonder.save()
+            except Exception:
+                pass
+        if self.mesh is not None:
+            try:
+                self.mesh.stop()
+                self.mesh.store.save()
+            except Exception:
+                pass
         self.memory.save()
         if self.world_model is not None:
             try:
@@ -1115,8 +1153,60 @@ class CognitiveController:
             "taste": self.aesthetics.taste() if self.aesthetics else None,
             "values": self.values.stats() if self.values else None,
             "reflection": self.reflection.stats() if self.reflection else None,
+            "wonder": self.wonder.stats() if self.wonder else None,
         } if self.aesthetics is not None else None
+        s["mesh"] = self.mesh.stats() if self.mesh is not None else None
         return s
+
+    def ponder(self) -> dict:
+        """What the companion is genuinely wondering about right now."""
+        if self.wonder is None:
+            return {"error": "inner life disabled"}
+        chosen = self.wonder.ponder()
+        # let its current wondering feed what it chooses to learn next
+        if self.web_loop is not None:
+            self.wonder.feed_curiosity(self.web_loop.curiosity)
+        self.wonder.save()
+        return {"on_my_mind": self.wonder.surface(),
+                "pondering": chosen.question if chosen else None,
+                "open_questions": [w.question for w in self.wonder.open_questions(5)]}
+
+    def wonder_about(self, question: str, topic: str = "") -> dict:
+        """Plant a question the companion will hold and return to."""
+        if self.wonder is None:
+            return {"error": "inner life disabled"}
+        w = self.wonder.wonder_about(question, topic=topic, source="user",
+                                     intensity=0.7)
+        self.wonder.save()
+        return w.to_dict()
+
+    # -- device mesh public surface ------------------------------------------------
+
+    def start_mesh(self) -> dict:
+        """Start the background sync thread. Call after controller is fully init'd."""
+        if self.mesh is None:
+            return {"error": "mesh disabled (enable_mesh=False)"}
+        self.mesh.wire_controller(self)
+        self.mesh.start_background()
+        return {"started": True, "node_id": self.mesh.store.node_id,
+                "peers": self.mesh.peers}
+
+    def mesh_sync(self) -> dict:
+        """Force an immediate sync round with all peers; also exports local state."""
+        if self.mesh is None:
+            return {"error": "mesh disabled"}
+        self.mesh.wire_controller(self)
+        result = self.mesh.sync_once()
+        self.mesh.store.save()
+        # apply anything new received from peers back into local stores
+        applied = self.mesh.apply_to_controller(self)
+        return {"synced": result, "applied": applied}
+
+    def mesh_add_peer(self, peer_url: str) -> dict:
+        if self.mesh is None:
+            return {"error": "mesh disabled"}
+        self.mesh.add_peer(peer_url)
+        return {"peers": self.mesh.peers}
 
     # -- soul + identity public surface --------------------------------------------
 
