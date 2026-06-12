@@ -681,6 +681,7 @@ class CognitiveController:
         action_trust: int = 1,                 # 0 OBSERVE 1 STANDARD 2 TRUSTED 3 FULL
         outbox_auto_approve: bool = False,
         enable_soul: bool = True,
+        gateway_config=None,
     ):
         self.router       = ModeRouter()
         self.executor     = ParallelExecutor(mode_timeout=mode_timeout)
@@ -769,6 +770,11 @@ class CognitiveController:
             )
             self.agent_router.wire_karma(self.action_executor, self.scheduler,
                                          self.outbox)
+
+        # Messaging gateway: the companion's own Telegram/Discord presence.
+        # Built but NOT started here — call start_gateway() explicitly.
+        self.gateway = None
+        self._gateway_config = gateway_config
 
     def _init_web_learning(self, web_dir: str, kg_path: str,
                            allowed_domains: list[str] | None, fetcher) -> None:
@@ -1065,6 +1071,11 @@ class CognitiveController:
                 self.emotion_tracker.save()
             except Exception:
                 pass
+        if self.gateway is not None:
+            try:
+                self.gateway.stop()
+            except Exception:
+                pass
         if self.scheduler is not None:
             try:
                 self.scheduler.stop()
@@ -1148,6 +1159,30 @@ class CognitiveController:
             return {"error": "outbox disabled"}
         item = self.outbox.approve(item_id)
         return item.to_dict() if item else {"error": "not found"}
+
+    def build_gateway(self, config=None, telegram_transport=None):
+        """
+        Construct the Telegram/Discord gateway. Credentials come from the given
+        config, or are pulled from the credential store (TELEGRAM_BOT_TOKEN,
+        DISCORD_WEBHOOK, DISCORD_BOT_TOKEN). Returns the MessageGateway.
+        """
+        from synapseos.gateway import GatewayConfig, MessageGateway
+        if config is None:
+            config = self._gateway_config or GatewayConfig()
+            from synapseos.identity import CredentialStore
+            creds = CredentialStore()
+            config.telegram_token = config.telegram_token or (creds.get("TELEGRAM_BOT_TOKEN") or "")
+            config.discord_webhook = config.discord_webhook or (creds.get("DISCORD_WEBHOOK") or "")
+            config.discord_token = config.discord_token or (creds.get("DISCORD_BOT_TOKEN") or "")
+        self.gateway = MessageGateway(self, config=config,
+                                      telegram_transport=telegram_transport)
+        return self.gateway
+
+    def start_gateway(self, config=None) -> dict:
+        """Build (if needed) and start the messaging gateway. Returns status."""
+        if self.gateway is None:
+            self.build_gateway(config)
+        return self.gateway.start()
 
 
 # ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@
     "coherence": 0.5,
     "depth": 0.5
   },
-  "exposures": 1,
+  "exposures": 2,
   "reactions": [
     {
       "subject": "Euler",
@@ -20,6 +20,19 @@
       },
       "elegance": 0.271,
       "timestamp": 1781218993.781781
+    },
+    {
+      "subject": "Euler",
+      "kind": "proof",
+      "scores": {
+        "symmetry": 0.5,
+        "economy": 0.444,
+        "surprise": 0.0,
+        "coherence": 0.125,
+        "depth": 0.286
+      },
+      "elegance": 0.271,
+      "timestamp": 1781243817.563062
     }
   ]
 }
