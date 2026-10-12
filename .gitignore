@@ -119,3 +119,20 @@ scratch/
 # Companion secrets — never commit
 data/identity/credentials.json
 data/identity/
+
+# ============================================================
+# Companion runtime state — written by the running system and tests
+# ============================================================
+data/actions/
+data/affect/
+data/soul/
+data/mesh/
+data/gateway/
+data/web/
+data/creations/
+
+# Tooling state
+.claude-flow/
+
+# Action sandbox workspace
+data/workspace/
