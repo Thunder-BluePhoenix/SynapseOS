@@ -88,6 +88,38 @@ class EmotionTracker:
             "trigger_counts": self._trigger_counts,
         }, indent=2))
 
+    def merge_remote(self, state: dict, trigger_counts: dict) -> bool:
+        """
+        Fold another device's emotional state in. The more recently updated
+        EMA state wins (ties broken deterministically); pending trigger counts
+        take the per-topic max, so repeated-association evidence is never lost.
+        Returns True if anything changed (and saves).
+        """
+        try:
+            remote = EmotionalState(**state)
+            float(remote.valence_ema), float(remote.arousal_ema)
+            int(remote.observations), float(remote.updated_at)
+        except Exception:
+            return False
+        changed = False
+        mine = json.dumps(self.state.to_dict(), sort_keys=True)
+        theirs = json.dumps(remote.to_dict(), sort_keys=True)
+        if (remote.updated_at, theirs) > (self.state.updated_at, mine):
+            self.state = remote
+            changed = True
+        if isinstance(trigger_counts, dict):
+            for emotion, topics in trigger_counts.items():
+                if not isinstance(topics, dict):
+                    continue
+                for topic, count in topics.items():
+                    if (isinstance(count, int) and not isinstance(count, bool)
+                            and count > self._trigger_counts.get(emotion, {}).get(topic, 0)):
+                        self._trigger_counts.setdefault(emotion, {})[topic] = count
+                        changed = True
+        if changed:
+            self.save()
+        return changed
+
     # -- main entry --------------------------------------------------------------
 
     def observe(self, text: str, prosody_arousal: float | None = None) -> AffectResult:

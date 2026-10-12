@@ -264,6 +264,17 @@ class SemanticMemory:
         key = subject.lower()
         self._fact_index.setdefault(key, []).append(len(self.facts) - 1)
 
+    def remove_fact(self, subject: str, predicate: str, obj: str) -> int:
+        """Delete every fact exactly matching (subject, predicate, obj). Returns count."""
+        kept = [f for f in self.facts
+                if not (f.subject == subject and f.predicate == predicate
+                        and f.obj == obj)]
+        removed = len(self.facts) - len(kept)
+        if removed:
+            self.facts = kept
+            self._rebuild_index()
+        return removed
+
     def retrieve(self, subject: str, top_k: int = 10) -> list[SemanticFact]:
         """Retrieve facts about a subject (exact + partial match)."""
         subject_lower = subject.lower()
@@ -297,8 +308,8 @@ class SemanticMemory:
 
     # Sources representing knowledge the system acquired (web learning,
     # consolidation, user statements) rather than the bulk KG import.
-    LEARNED_SOURCES = ("web:", "world_model_consolidation", "user_stated", "inferred",
-                       "affect_observation")
+    LEARNED_SOURCES = ("web:", "mesh:", "world_model_consolidation", "user_stated",
+                       "inferred", "affect_observation")
 
     def retrieve_learned(self, query: str, top_k: int = 3) -> list[SemanticFact]:
         """

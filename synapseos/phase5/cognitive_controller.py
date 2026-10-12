@@ -687,6 +687,11 @@ class CognitiveController:
         mesh_store_path: str = "data/mesh/sync.json",
         mesh_sync_every: float = 30.0,
         mesh_transport=None,
+        mesh_shared_key: "str | bytes | None" = None,
+        mesh_allowed_peer_ids: "set[str] | list[str] | None" = None,
+        mesh_server_host: str | None = None,
+        mesh_server_port: int = 7700,
+        mesh_ssl_context=None,
     ):
         self.router       = ModeRouter()
         self.executor     = ParallelExecutor(mode_timeout=mode_timeout)
@@ -785,20 +790,53 @@ class CognitiveController:
         self._gateway_config = gateway_config
 
         # Device mesh: offline-first peer memory sync.
-        # Built but background thread NOT started here — call start_mesh() explicitly.
+        # Starts automatically at the end of __init__ when correctly configured.
+        # Network transport/server are only built with an explicit shared key and
+        # peer node-ID allowlist; there are no unauthenticated network defaults.
         self.mesh: "MeshNode | None" = None
+        self.mesh_error: str | None = None
+        self._mesh_started = False
+        self._mesh_server = None
         if enable_mesh:
-            try:
-                from synapseos.mesh import MeshNode, SyncStore
-                _store = SyncStore(path=mesh_store_path)
-                self.mesh = MeshNode(
-                    store=_store,
-                    peers=list(mesh_peers or []),
-                    transport=mesh_transport,
-                    sync_every=mesh_sync_every,
-                )
-            except Exception as e:
-                print(f"[CognitiveController] Mesh init failed ({e}) — disabled")
+            self._init_mesh(mesh_peers, mesh_store_path, mesh_sync_every,
+                            mesh_transport, mesh_shared_key,
+                            mesh_allowed_peer_ids, mesh_server_host,
+                            mesh_server_port, mesh_ssl_context)
+            if self.mesh is not None:
+                self.start_mesh()
+
+    def _init_mesh(self, peers, store_path, sync_every, transport, shared_key,
+                   allowed_peer_ids, server_host, server_port,
+                   ssl_context) -> None:
+        try:
+            from synapseos.mesh import HttpTransport, MeshNode, SyncStore
+            authed = bool(shared_key) and bool(allowed_peer_ids)
+            if transport is None and not authed:
+                raise ValueError(
+                    "mesh requires an explicit mesh_transport, or "
+                    "mesh_shared_key + mesh_allowed_peer_ids")
+            if server_host is not None and not authed:
+                raise ValueError(
+                    "mesh server requires mesh_shared_key + mesh_allowed_peer_ids")
+            store = SyncStore(path=store_path)
+            allowed = set(allowed_peer_ids or ())
+            if transport is None:
+                transport = HttpTransport(store.node_id, shared_key, allowed,
+                                          ssl_context=ssl_context)
+            node = MeshNode(store=store, peers=list(peers or []),
+                            transport=transport, sync_every=sync_every)
+            if server_host is not None:
+                server = HttpTransport.make_server(
+                    store, host=server_host, port=server_port,
+                    shared_key=shared_key, allowed_peers=allowed,
+                    ssl_context=ssl_context)
+                server.start()
+                self._mesh_server = server
+            self.mesh = node
+        except Exception as e:
+            self.mesh = None
+            self.mesh_error = str(e)
+            print(f"[CognitiveController] Mesh init failed ({e}) — disabled")
 
     def _init_web_learning(self, web_dir: str, kg_path: str,
                            allowed_domains: list[str] | None, fetcher) -> None:
@@ -1120,16 +1158,30 @@ class CognitiveController:
                 self.wonder.save()
             except Exception:
                 pass
-        if self.mesh is not None:
-            try:
-                self.mesh.stop()
-                self.mesh.store.save()
-            except Exception:
-                pass
+        self._stop_mesh()
         self.memory.save()
         if self.world_model is not None:
             try:
                 self.world_model.save()
+            except Exception:
+                pass
+
+    def _stop_mesh(self) -> None:
+        """Stop sync thread and HTTP server (idempotent); persist the mesh store."""
+        if self.mesh is not None:
+            try:
+                self.mesh.stop()
+            except Exception:
+                pass
+            try:
+                self.mesh.store.save()
+            except Exception:
+                pass
+        self._mesh_started = False
+        server, self._mesh_server = self._mesh_server, None
+        if server is not None:
+            try:
+                server.stop()
             except Exception:
                 pass
 
@@ -1183,11 +1235,16 @@ class CognitiveController:
     # -- device mesh public surface ------------------------------------------------
 
     def start_mesh(self) -> dict:
-        """Start the background sync thread. Call after controller is fully init'd."""
+        """Start background sync once (idempotent). Runs automatically when mesh is configured."""
         if self.mesh is None:
-            return {"error": "mesh disabled (enable_mesh=False)"}
+            return {"error": self.mesh_error or "mesh disabled (enable_mesh=False)"}
+        if self._mesh_started:
+            return {"started": True, "already_running": True,
+                    "node_id": self.mesh.store.node_id, "peers": self.mesh.peers}
         self.mesh.wire_controller(self)
-        self.mesh.start_background()
+        if self.mesh.sync_every > 0:
+            self.mesh.start_background()
+        self._mesh_started = True
         return {"started": True, "node_id": self.mesh.store.node_id,
                 "peers": self.mesh.peers}
 

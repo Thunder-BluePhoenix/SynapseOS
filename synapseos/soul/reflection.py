@@ -59,6 +59,21 @@ class SelfReflection:
         self.store_path.write_text(json.dumps(
             {"snapshots": [s.to_dict() for s in self.snapshots]}, indent=2))
 
+    def merge_remote(self, remote: dict) -> bool:
+        """Add a snapshot captured on another device (snapshots are immutable,
+        deduplicated by timestamp). Returns True if it was new (and saves)."""
+        try:
+            snap = Snapshot(**remote)
+            snap.timestamp = float(snap.timestamp)
+        except Exception:
+            return False
+        if any(s.timestamp == snap.timestamp for s in self.snapshots):
+            return False
+        self.snapshots.append(snap)
+        self.snapshots.sort(key=lambda s: s.timestamp)
+        self.save()
+        return True
+
     # -- capture -------------------------------------------------------------------
 
     def capture(self, emotion_tracker=None, aesthetics=None, values=None,

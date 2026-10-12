@@ -316,3 +316,26 @@ Trained an image world model **from scratch, no pretrained weights, no labels** 
 ### Still open
 - Scale I-JEPA further (more data/steps/capacity → higher probe accuracy); current is a small-scale proof on CIFAR
 - Cross-modal retrieval refinement: text-query vs image-obs live in different spaces, linked through shared z_t + captions; a unified CLIP text+image space would tighten it
+
+### Device mesh hardening (`synapseos/mesh/`)
+Closes the four mesh gaps.
+
+**1. Authentication (was the critical gap).** `HttpTransport` is now HMAC-signed and peer-allowlisted on every endpoint, in both directions.
+- Each request carries `X-Mesh-Node`, `X-Mesh-Timestamp`, `X-Mesh-Nonce` and `X-Mesh-Signature`. The signature is HMAC-SHA256 over method, path, node, timestamp, nonce and the body hash.
+- The server rejects, with one opaque 401: a node id not in the allowlist, a bad signature, a timestamp more than 60s off, a replayed nonce, or a body over 32 MiB.
+- Responses are signed and bound to the request nonce, so a MITM or a rogue server can't inject entries into a pull.
+- HMAC gives authenticity and integrity, not confidentiality. The server refuses a non-loopback bind without an `ssl_context`, and the client refuses plain `http://` to a non-loopback host.
+- `HttpTransport(node_id, shared_key, allowed_peers, ssl_context=None)` needs a key of at least 16 bytes and a non-empty allowlist. `push`/`pull` now raise on failure (`AuthError` etc.) instead of returning 0 or `[]`. `MeshNode._sync_peer` catches them, and an auth failure never marks entries as delivered.
+- Caveat: one shared key means any key-holder can claim any allowlisted node id. Use a separate key per mesh, and rotate it if a device is lost.
+
+**2. Wider sync scope.** Emotional state, aesthetic taste, values and reflection snapshots now sync, alongside facts, wonders and episode summaries. Each store has a `merge_remote` that joins rather than overwrites (newest affect wins, trigger counts take the max, the side with more aesthetic exposures wins the weights, only non-default value stances are exported, and snapshots are deduplicated by timestamp).
+
+**3. Merge behaviour.**
+- Fact deletions propagate as tombstones. A fact relearned after the tombstone survives it.
+- Wonder updates (resolve, intensity, notes) propagate, and a resolved wonder never reverts to open.
+- Incoming facts go through `BeliefReviser.integrate` with source `mesh:<node_id>`, not a direct `add_fact`.
+- Local writes are stamped strictly after the current winner, and equal timestamps break ties deterministically.
+
+**4. Automatic sync.** With `enable_mesh=True` and a valid config, `CognitiveController.__init__` exports state and starts the sync thread, and `start_mesh()` is idempotent. A config with neither an explicit `mesh_transport` nor `mesh_shared_key` + `mesh_allowed_peer_ids` disables the mesh and sets `mesh_error`. There is no insecure fallback. The optional listener (`mesh_server_host`, `mesh_server_port`, `mesh_ssl_context`) is off by default. `shutdown()` stops the thread and the server and is safe to call twice.
+
+**Tests:** `python tests/test_mesh.py` runs 36 tests and all pass. They include adversarial HTTP cases: wrong key, node outside the allowlist, replay, tampered body, stale timestamp, unsigned request, forged response, and insecure defaults. Note that `tests/test_mesh.py` uses its own runner, so run it as a script. `pytest` collects the `test()` helper as a test and errors.

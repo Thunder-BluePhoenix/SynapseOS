@@ -63,6 +63,30 @@ def _wid(question: str) -> str:
     return hashlib.sha1(question.lower().strip().encode()).hexdigest()[:12]
 
 
+def _merge_wonders(a: Wonder, b: Wonder) -> Wonder:
+    """
+    Commutative, idempotent join of two copies of the same wonder (so devices
+    that exchange wonders converge). The more recently visited copy supplies
+    intensity/topic/source; visits is the max, created_at the min, notes are
+    unioned; `resolved` sticks (with the lexicographically largest answer);
+    otherwise an `open` copy beats `dormant` (something rekindled it).
+    """
+    def rank(w: Wonder) -> tuple:
+        return (w.last_visited, w.intensity, w.topic, w.source, w.parent_id,
+                w.question)
+    newer = a if rank(a) >= rank(b) else b
+    merged = Wonder.from_dict(newer.to_dict())
+    merged.created_at = min(a.created_at, b.created_at)
+    merged.last_visited = max(a.last_visited, b.last_visited)
+    merged.visits = max(a.visits, b.visits)
+    merged.notes = sorted(set(a.notes) | set(b.notes))
+    statuses = {a.status, b.status}
+    merged.status = ("resolved" if "resolved" in statuses
+                     else "open" if "open" in statuses else "dormant")
+    merged.answer = max(a.answer, b.answer)
+    return merged
+
+
 class WonderJournal:
     """Persistent open questions with a genuine attention economy."""
 
@@ -188,6 +212,32 @@ class WonderJournal:
                 w.status = "resolved"
                 w.answer = answer
             return w
+
+    def all_wonders(self) -> list[Wonder]:
+        """Every wonder in every status (open, dormant, resolved)."""
+        with self._lock:
+            return list(self._wonders.values())
+
+    def merge_remote(self, remote: Wonder) -> str:
+        """
+        Fold a wonder received from another device into this journal.
+        Returns "added", "updated" or "unchanged". The merge is a deterministic
+        join, so devices that exchange wonders converge: the more recently
+        visited copy supplies intensity, `resolved` always sticks (with its
+        answer), visits/created_at take the max/min, notes are unioned.
+        """
+        with self._lock:
+            local = self._wonders.get(remote.id)
+            if local is None:
+                self._wonders[remote.id] = remote
+                return "added"
+            merged = _merge_wonders(local, remote)
+            before = local.to_dict()
+            before["notes"] = sorted(before["notes"])
+            if merged.to_dict() == before:
+                return "unchanged"
+            self._wonders[remote.id] = merged
+            return "updated"
 
     # -- expression -----------------------------------------------------------------
 

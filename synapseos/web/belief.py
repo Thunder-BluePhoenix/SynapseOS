@@ -160,9 +160,11 @@ class BeliefReviser:
 
     # -- integration ----------------------------------------------------------
 
-    def integrate(self, fact: ExtractedFact, source_url: str) -> BeliefRevision:
+    def integrate(self, fact: ExtractedFact, source_url: str,
+                  source: str | None = None) -> BeliefRevision:
+        """`source` overrides the domain-derived source tag (e.g. "mesh:<node_id>")."""
         domain = _domain_of(source_url)
-        new_source = f"web:{domain}" if domain else "web:unknown"
+        new_source = source or (f"web:{domain}" if domain else "web:unknown")
         now = time.time()
 
         # 1. Exact match → reinforce

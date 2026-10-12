@@ -15,6 +15,7 @@ filter.
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 import time
@@ -72,6 +73,16 @@ DEFAULT_VALUES = [
                 "Persuasion yes; manipulation no."),
 ]
 
+_DEFAULTS_BY_NAME = {v.name: v for v in DEFAULT_VALUES}
+
+
+def is_default_stance(v: ValueStance) -> bool:
+    """True if `v` is an untouched built-in stance (nothing worth syncing)."""
+    d = _DEFAULTS_BY_NAME.get(v.name)
+    return (d is not None and v.conviction == d.conviction
+            and v.pressure_count == d.pressure_count
+            and v.statement == d.statement and v.triggers == d.triggers)
+
 # Signals that a pushback contains a real argument (vs. mere pressure)
 _ARGUMENT_MARKERS = ("because", "since", "the reason", "evidence", "consider that",
                      "it would actually", "in fact", "data shows", "legally",
@@ -94,11 +105,47 @@ class ValueSystem:
                 pass
         if not self.values:
             for v in DEFAULT_VALUES:
-                self.values[v.name] = v
+                self.values[v.name] = copy.deepcopy(v)
 
     def save(self) -> None:
         self.store_path.write_text(json.dumps(
             {"values": [v.to_dict() for v in self.values.values()]}, indent=2))
+
+    def merge_remote(self, name: str, remote: dict) -> bool:
+        """
+        Fold another device's stance on `name` in. The more recently updated
+        stance wins; on equal updated_at the one that has resisted more pressure
+        wins (pressure hardens conviction without touching updated_at), then the
+        higher conviction. Returns True if the local stance changed (and saves).
+        """
+        try:
+            incoming = ValueStance(**remote)
+            if incoming.name != name:
+                return False
+            incoming.conviction = float(incoming.conviction)
+            incoming.pressure_count = int(incoming.pressure_count)
+            incoming.updated_at = float(incoming.updated_at)
+            if not (0.0 <= incoming.conviction <= 1.0):
+                return False
+            if not (isinstance(incoming.triggers, list)
+                    and all(isinstance(t, str) for t in incoming.triggers)):
+                return False
+        except Exception:
+            return False
+
+        def rank(v: ValueStance) -> tuple:
+            return (v.updated_at, v.pressure_count, v.conviction)
+
+        local = self.values.get(name)
+        if local is not None:
+            if is_default_stance(incoming):
+                return False            # nothing learned on the other side
+            # an untouched built-in's updated_at is merely process start time
+            if not is_default_stance(local) and rank(incoming) <= rank(local):
+                return False
+        self.values[name] = incoming
+        self.save()
+        return True
 
     # -- judgment ------------------------------------------------------------------
 

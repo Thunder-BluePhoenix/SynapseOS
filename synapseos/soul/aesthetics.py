@@ -103,6 +103,43 @@ class AestheticPreferences:
             "weights": self.weights, "exposures": self.exposures,
             "reactions": self.reactions[-500:]}, indent=2))
 
+    def merge_remote(self, remote: dict) -> bool:
+        """
+        Fold another device's taste in. The side that has seen more (higher
+        exposures; ties broken deterministically) supplies the weights, exposure
+        count is the max, and reactions are unioned (capped to the latest 500).
+        Returns True if anything changed (and saves).
+        """
+        try:
+            weights = {d: float(remote["weights"][d]) for d in DIMENSIONS}
+            exposures = int(remote.get("exposures", 0))
+            reactions = [r for r in remote.get("reactions", [])
+                         if isinstance(r, dict) and "timestamp" in r]
+        except Exception:
+            return False
+        changed = False
+        mine = (self.exposures, json.dumps(self.weights, sort_keys=True))
+        theirs = (exposures, json.dumps(weights, sort_keys=True))
+        if theirs > mine:
+            self.weights = weights
+            changed = True
+        if exposures > self.exposures:
+            self.exposures = exposures
+            changed = True
+        seen = {(r.get("subject"), r.get("kind"), r.get("timestamp"))
+                for r in self.reactions}
+        fresh = [r for r in reactions
+                 if (r.get("subject"), r.get("kind"), r.get("timestamp")) not in seen]
+        if fresh:
+            union = self.reactions + fresh
+            union.sort(key=lambda r: (r.get("timestamp", 0),
+                                      json.dumps(r, sort_keys=True)))
+            self.reactions = union[-500:]
+            changed = True
+        if changed:
+            self.save()
+        return changed
+
     # -- encounter -----------------------------------------------------------------
 
     def encounter(self, subject: str, text: str, kind: str = "idea") -> Reaction:
